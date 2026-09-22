@@ -4849,7 +4849,7 @@ ipcMain.handle('ms:login', async (event) => {
 // O token vai criptografado pelo safeStorage. Ele age EM SEU NOME no CRM da
 // empresa: mesmo cuidado do token de e-mail (ADR-004).
 
-const { criarSalesforce, idDoLink, escaparSoql, mascararSegredos, SalesforceErro } =
+const { criarSalesforce, idDoLink, ehIdDeCaso, escaparSoql, mascararSegredos, SalesforceErro } =
   require(path.join(__dirname, 'lib', 'salesforce'));
 
 const SF_CLIENT_ID = 'PlatformCLI';
@@ -4865,10 +4865,20 @@ const sfTokenPath = () => path.join(app.getPath('userData'), 'salesforce-token.e
 
 const SF_PADRAO = {
   dominio: '',
-  assuntoMigracao: 'Publicação (troca de DNS) - {dominio}',
+  assuntoMigracao: 'Publicação V1 -> V2 - {dominio}',
   comentarioMigracao: '{dominio}',
   textoFeed: 'Site publicado',
 };
+
+// Assuntos padrão antigos que podem ter ficado gravados no config de quem já
+// usou o Hub (o valor padrão vazava para o arquivo ao salvar). Se o que está
+// salvo é um deles, é porque ninguém personalizou de verdade — troco pelo novo
+// padrão sozinho, para o título mudar sem o Guilherme ter que mexer nas
+// configurações (ADR-090).
+const SF_ASSUNTOS_ANTIGOS = [
+  'Publicação (troca de DNS) - {dominio}',
+  'Publicação (Troca de DNS) - {dominio}',
+];
 
 class SfReauthNeeded extends Error {
   constructor(message) {
@@ -4881,7 +4891,12 @@ class SfReauthNeeded extends Error {
 function readSfConfig() {
   try {
     if (!fs.existsSync(sfConfigPath())) return { ...SF_PADRAO };
-    return { ...SF_PADRAO, ...JSON.parse(fs.readFileSync(sfConfigPath(), 'utf-8')) };
+    const cfg = { ...SF_PADRAO, ...JSON.parse(fs.readFileSync(sfConfigPath(), 'utf-8')) };
+    // Cura o assunto padrão antigo que ficou gravado (ADR-090).
+    if (SF_ASSUNTOS_ANTIGOS.includes(String(cfg.assuntoMigracao || '').trim())) {
+      cfg.assuntoMigracao = SF_PADRAO.assuntoMigracao;
+    }
+    return cfg;
   } catch (e) {
     return { ...SF_PADRAO };
   }
@@ -4994,6 +5009,25 @@ async function sfComSessao(fn) {
   }
 }
 
+// Coisas que não mudam no meio de uma rodada: quem sou eu e qual Status é
+// "concluída". Numa criação em massa de 76 tarefas, perguntar isso a cada
+// linha seriam 150 chamadas à toa. Guardo na memória do processo e limpo ao
+// desconectar (ADR-090).
+let sfSessaoCache = { eu: null, statusFechado: null };
+function limparSfCache() { sfSessaoCache = { eu: null, statusFechado: null }; }
+async function sfQuemSouEu(sf) {
+  if (!sfSessaoCache.eu) sfSessaoCache.eu = await sf.identidade();
+  return sfSessaoCache.eu;
+}
+async function sfStatusConcluida(sf) {
+  if (!sfSessaoCache.statusFechado) {
+    const status = await sf.consultar('SELECT ApiName, MasterLabel, IsClosed FROM TaskStatus ORDER BY SortOrder');
+    const fechado = status.find((s) => s.IsClosed);
+    sfSessaoCache.statusFechado = fechado?.ApiName || fechado?.MasterLabel || 'Completed';
+  }
+  return sfSessaoCache.statusFechado;
+}
+
 ipcMain.handle('salesforce:getConfig', () => {
   const cfg = readSfConfig();
   const token = readSfToken();
@@ -5021,6 +5055,7 @@ ipcMain.handle('salesforce:setConfig', (event, config) => {
 
 ipcMain.handle('salesforce:desconectar', () => {
   clearSfToken();
+  limparSfCache();
   return { ok: true };
 });
 
@@ -5332,6 +5367,82 @@ ipcMain.handle('salesforce:fecharTarefa', async (event, opcoes = {}) => {
       }
 
       return resultado;
+    });
+    return { ok: true, log, ...saida };
+  } catch (e) {
+    push(`Salesforce: ${e.message}`, 'error');
+    return { ok: false, error: e.message, reauth: !!e.reauth, log };
+  }
+});
+
+// Cria UMA tarefa de publicação, já concluída, dentro do caso apontado pelo
+// link. É o que roda por linha no "Publicar em massa" para os sites já
+// publicados (migração V1->V2 e afins): a tarefa nasce no caso certo, no seu
+// nome, com o domínio nos comentários, e SEM marcar ninguém no feed — a
+// marcação é só no fechamento pelo Publicar MPI+ (ADR-090).
+ipcMain.handle('salesforce:criarTarefaNoCaso', async (event, opcoes = {}) => {
+  const { casoLink, dominio, assunto, comentario } = opcoes || {};
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+
+  const casoId = idDoLink(casoLink);
+  if (!casoId) {
+    push('Não achei o Id do caso no link. Confira a coluna "Link do caso".', 'error');
+    return { ok: false, error: 'Link do caso inválido.', log };
+  }
+  if (!ehIdDeCaso(casoId)) {
+    push(`Esse link não é de um Caso (o Id ${casoId} não começa com 500). Na coluna "Link do caso" tem que ir o link do caso, não da tarefa nem da conta.`, 'error');
+    return { ok: false, error: 'O link não é de um caso.', log };
+  }
+  const dom = String(dominio || '').trim();
+  if (!dom) {
+    push('Sem domínio para essa linha.', 'error');
+    return { ok: false, error: 'Sem domínio.', log };
+  }
+
+  try {
+    const saida = await sfComSessao(async (sf) => {
+      const eu = await sfQuemSouEu(sf);
+      const cfg = readSfConfig();
+      const assuntoFinal = String(assunto || cfg.assuntoMigracao || 'Publicação V1 -> V2 - {dominio}').replace(/\{dominio\}/gi, dom);
+      const comentarioFinal = String(comentario || cfg.comentarioMigracao || '{dominio}').replace(/\{dominio\}/gi, dom);
+
+      // Confere que o caso existe e é acessível antes de criar, para a tarefa
+      // não nascer órfã num Id que não abre.
+      push(`GET caso ${casoId}`, 'cmd');
+      const casos = await sf.consultar(`SELECT Id, CaseNumber, Subject FROM Case WHERE Id = '${escaparSoql(casoId)}' LIMIT 1`);
+      const caso = casos[0];
+      if (!caso) {
+        push('Não consegui ler esse caso (confira se o link é de um caso que você acessa).', 'error');
+        throw new Error('Caso não encontrado.');
+      }
+      push(`Caso ${caso.CaseNumber}${caso.Subject ? ' — ' + caso.Subject : ''}`, 'info');
+
+      // Não cria duas vezes a mesma tarefa no mesmo caso: se já existe uma com
+      // esse assunto ali, pula. Deixa o botão "todos da planilha" e a criação
+      // durante a publicação conviverem sem duplicar (ADR-090).
+      const jaTem = await sf.consultar(
+        `SELECT Id FROM Task WHERE WhatId = '${escaparSoql(casoId)}' AND Subject = '${escaparSoql(assuntoFinal)}' LIMIT 1`
+      );
+      if (jaTem[0]) {
+        push(`Já existe uma tarefa "${assuntoFinal}" nesse caso (${jaTem[0].Id}); não criei outra.`, 'warn');
+        return { taskId: jaTem[0].id || jaTem[0].Id, casoNumero: caso.CaseNumber, assunto: assuntoFinal, jaExistia: true };
+      }
+
+      const statusConcluida = await sfStatusConcluida(sf);
+      const hoje = new Date();
+      const dataHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+      push(`POST criar Task no caso ${caso.CaseNumber} (dona ${eu.nome}, status ${statusConcluida}, data ${dataHoje}, sem marcar ninguém)`, 'cmd');
+      const criada = await sf.criar('Task', {
+        Subject: assuntoFinal,
+        WhatId: casoId,
+        OwnerId: eu.id,
+        Status: statusConcluida,
+        Description: comentarioFinal,
+        ActivityDate: dataHoje,
+      });
+      push(`Tarefa criada: ${criada.id} — "${assuntoFinal}"`, 'success');
+      return { taskId: criada.id, casoNumero: caso.CaseNumber, assunto: assuntoFinal };
     });
     return { ok: true, log, ...saida };
   } catch (e) {

@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('api', {
   salesforceDesconectar: () => ipcRenderer.invoke('salesforce:desconectar'),
   salesforceDiagnostico: (payload) => ipcRenderer.invoke('salesforce:diagnostico', payload),
   salesforceFecharTarefa: (payload) => ipcRenderer.invoke('salesforce:fecharTarefa', payload),
+  salesforceCriarTarefaNoCaso: (payload) => ipcRenderer.invoke('salesforce:criarTarefaNoCaso', payload),
   onSalesforceUrl: (callback) => {
     const handler = (_event, url) => callback(url);
     ipcRenderer.on('salesforce:url', handler);

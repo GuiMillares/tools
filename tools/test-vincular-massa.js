@@ -124,5 +124,34 @@ console.log('\n=== Sem coluna de domínio, nada roda ===');
   check('domínio não encontrado', r.mapa.dominio === -1, JSON.stringify(r.mapa));
 }
 
+console.log('\n=== Coluna "Link do caso" do Salesforce (ADR-090) ===');
+{
+  const caso = 'https://grupo-ideal-trends.lightning.force.com/lightning/r/Case/500bL00000cWRcEQAW/view';
+  const r = A.montar([
+    ['Razão Social', 'Domínio', 'Painel', 'Link do caso'],
+    ['Clínica X', 'clinicax.com.br', PAINEL, caso],
+  ]);
+  check('achou a coluna do caso pelo cabeçalho', r.mapa.caso >= 0, JSON.stringify(r.mapa));
+  check('painel e caso em colunas diferentes', r.mapa.painel !== r.mapa.caso && r.mapa.painel >= 0, JSON.stringify(r.mapa));
+  check('o link do caso vai para a linha', r.rows[0] && r.rows[0].caso === caso, JSON.stringify(r.rows[0]));
+  check('o domínio não foi confundido com o caso', r.rows[0] && r.rows[0].dominio === 'clinicax.com.br');
+}
+
+{
+  // Sem cabeçalho, só pela cara do dado: o link com /r/Case/ é o caso, o do
+  // idealplus é o painel, e os dois não podem cair na mesma coluna.
+  const caso = 'https://grupo-ideal-trends.lightning.force.com/lightning/r/Case/500bL00000cWRcEQAW/view';
+  const r = A.montar([['Clínica X', 'clinicax.com.br', PAINEL, caso]]);
+  check('sem cabeçalho, separa painel de caso', r.mapa.painel >= 0 && r.mapa.caso >= 0 && r.mapa.painel !== r.mapa.caso, JSON.stringify(r.mapa));
+  check('sem cabeçalho, o caso chega na linha', r.rows[0] && r.rows[0].caso === caso, JSON.stringify(r.rows[0]));
+}
+
+{
+  // Sem a coluna do caso, tudo continua funcionando e caso fica vazio.
+  const r = A.montar([['Razão Social', 'Domínio', 'Painel'], ['Clínica X', 'clinicax.com.br', PAINEL]]);
+  check('sem coluna de caso, mapa.caso = -1', r.mapa.caso === -1, JSON.stringify(r.mapa));
+  check('linha sem caso não quebra', r.rows[0] && r.rows[0].caso === '', JSON.stringify(r.rows[0]));
+}
+
 console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
 process.exit(falhas ? 1 : 0);

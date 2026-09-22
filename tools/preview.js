@@ -75,6 +75,7 @@ const STUB = () => {
     salesforceDesconectar: async () => ({ ok: true }),
     salesforceDiagnostico: async () => ({ ok: true, log: [] }),
     salesforceFecharTarefa: async () => ({ ok: true, log: [] }),
+    salesforceCriarTarefaNoCaso: async () => ({ ok: true, log: [], taskId: '00Tstub', casoNumero: '00088671' }),
     onSalesforceUrl: () => () => {},
     setPainelCreds: noop,
     clearPainelSession: noop,
@@ -258,14 +259,15 @@ const SCENES = {
       state.view = 'bulk';
       render();
       const P = 'https://idealplus.idealtrends.io/clientes/2775/hub?projeto=2851&tab=publicacao';
+      const C = 'https://grupo-ideal-trends.lightning.force.com/lightning/r/Case/500bL00000cWRcEQAW/view';
       carregarBulk(
         [
-          ['Razão Social', 'Domínio', 'Link do painel'],
-          ['Serviços 2EMS Ltda', 'servicos2ems.com.br', P],
-          ['Starex Emergências', 'starexemergencias.com.br', P],
-          ['Carste Engenharia', 'carste.com.br', P],
-          ['Nobre Frutas', 'nobrefrutas.com.br', P],
-          ['Sem Link Comércio', 'semlink.com.br', ''],
+          ['Razão Social', 'Domínio', 'Link do painel', 'Link do caso'],
+          ['Serviços 2EMS Ltda', 'servicos2ems.com.br', P, C],
+          ['Starex Emergências', 'starexemergencias.com.br', P, C],
+          ['Carste Engenharia', 'carste.com.br', P, ''],
+          ['Nobre Frutas', 'nobrefrutas.com.br', P, C],
+          ['Sem Link Comércio', 'semlink.com.br', '', ''],
         ],
         'clientes-mpiplus.xlsx'
       );

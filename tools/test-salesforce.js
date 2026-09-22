@@ -7,7 +7,7 @@
 // funções puras (Id do link, escape de SOQL, máscara de senha).
 
 const path = require('path');
-const { criarSalesforce, idDoLink, escaparSoql, mascararSegredos, SalesforceErro } =
+const { criarSalesforce, idDoLink, ehIdDeCaso, escaparSoql, mascararSegredos, SalesforceErro } =
   require(path.join(__dirname, '..', 'lib', 'salesforce'));
 
 let falhas = 0;
@@ -46,6 +46,15 @@ const sf = (token = 'TOKEN123') => criarSalesforce('https://grupo-ideal-trends.m
   check('link curto', idDoLink('https://x.my.salesforce.com/00T5e00000ABCDEFGH') === '00T5e00000ABCDEFGH');
   check('lixo devolve nulo', idDoLink('não é link') === null);
   check('vazio devolve nulo', idDoLink('') === null);
+
+  console.log('\n=== Link do caso: pega o caso, não a conta do ws= ===');
+  const linkTarefaComWs = 'https://grupo-ideal-trends.lightning.force.com/lightning/r/Task/00TbL00000eci7cUAA/view?ws=%2Flightning%2Fr%2FAccount%2F001bL00000oE5frQAC%2Fview';
+  const linkCaso = 'https://grupo-ideal-trends.lightning.force.com/lightning/r/Case/500bL00000cWRcEQAW/view?ws=%2Flightning%2Fr%2FAccount%2F001bL00000oE5frQAC%2Fview';
+  check('do link de tarefa tira a tarefa (não a conta do ws)', idDoLink(linkTarefaComWs) === '00TbL00000eci7cUAA', idDoLink(linkTarefaComWs));
+  check('do link de caso tira o caso (não a conta do ws)', idDoLink(linkCaso) === '500bL00000cWRcEQAW', idDoLink(linkCaso));
+  check('500... é reconhecido como caso', ehIdDeCaso('500bL00000cWRcEQAW'));
+  check('00T... (tarefa) NÃO é caso', !ehIdDeCaso('00TbL00000eci7cUAA'));
+  check('001... (conta) NÃO é caso', !ehIdDeCaso('001bL00000oE5frQAC'));
 
   console.log('\n=== SOQL não se quebra com aspas ===');
   check("aspa simples vira escapada", escaparSoql("o'brien") === "o\\'brien");

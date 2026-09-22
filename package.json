@@ -1,6 +1,6 @@
 {
   "name": "pr-merge-tool",
-  "version": "1.0.19",
+  "version": "1.0.22",
   "description": "Ferramenta local para revisar e mergear PRs do Bitbucket Cloud sem passar pela interface web",
   "main": "main.js",
   "author": "Guilherme",

@@ -230,11 +230,18 @@ Uma planilha de sites da MPI+ e, por site, as duas coisas na ordem que a
 publicação exige: **publicar**, se ainda não estiver publicado, e **vincular**.
 
 A planilha entra como a equipe a tem — `.xlsx`, `.csv` ou colada do Excel — com
-**Domínio** (obrigatório), **Link do painel** (obrigatório) e **Razão social**
-(opcional), em qualquer ordem e com ou sem cabeçalho. O app reconhece as colunas
-pelo nome e pelo conteúdo e mostra uma prévia com um seletor por coluna, para
-corrigir antes de rodar (ADR-053). Linha sem link válido do painel fica na
-lista, marcada e fora da rodada.
+**Domínio** (obrigatório), **Link do painel** (obrigatório), **Razão social**
+(opcional) e **Link do caso** (opcional, do Salesforce), em qualquer ordem e com
+ou sem cabeçalho. O app reconhece as colunas pelo nome e pelo conteúdo e mostra
+uma prévia com um seletor por coluna, para corrigir antes de rodar (ADR-053).
+Linha sem link válido do painel fica na lista, marcada e fora da rodada.
+
+Quando a linha tem **Link do caso** e o Salesforce está conectado, o Hub, ao
+terminar aquele site, cria a tarefa de publicação **dentro daquele caso**, já
+concluída, no nome de quem está logado, com o domínio nos comentários e **sem
+marcar ninguém** no feed (ADR-090). Serve para registrar os que já foram
+publicados — inclusive migrações V1→V2. Sem a coluna, ou com o Salesforce
+desconectado, nada de tarefa é criado e a publicação segue igual.
 
 Por site, na ordem:
 

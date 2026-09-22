@@ -1961,15 +1961,21 @@ let bulkSslAtivados = [];
 // Domínios cujo contato técnico não é nosso: o Hub não mexe no DNS deles, e a
 // lista vai para o atendimento falar com o cliente (ADR-072). Sai em .xlsx.
 let bulkForaDeCasa = [];
+let bulkSfConectado = false;   // Salesforce ligado nesta rodada? (ADR-090)
+let bulkSfCriadas = [];        // domínios cuja tarefa foi criada no caso
 
 const BULK_PAPEIS = {
   razao: { rotulo: 'Razão social', cabecalhos: ['razao social', 'razão social', 'razao', 'cliente', 'empresa', 'nome', 'nome fantasia', 'projeto'] },
   dominio: { rotulo: 'Domínio', cabecalhos: ['dominio', 'domínio', 'domain', 'site', 'url', 'url do site', 'endereco', 'endereço'] },
   painel: { rotulo: 'Link do painel', cabecalhos: ['painel', 'link', 'link do painel', 'hub', 'painel mpi', 'url do painel', 'mpi+'] },
+  caso: { rotulo: 'Link do caso', cabecalhos: ['caso', 'link do caso', 'link caso', 'caso salesforce', 'salesforce', 'sf', 'link do caso salesforce'] },
 };
 
 const pareceDominio = (v) => /^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(normalizeDomain(v) || '') && !/idealplus\.idealtrends\.io/i.test(v);
 const parecePainel = (v) => !!normalizePainelUrl(v);
+// Link do caso do Salesforce: ou um link Lightning com /r/Case/, ou um Id que
+// começa com 500. Não confundir com o link do painel (esse é do idealplus).
+const pareceCaso = (v) => /\/r\/Case\//i.test(String(v || '')) || /(^|[/=])500[a-zA-Z0-9]{12,15}(?:[/?#]|$)/.test(String(v || ''));
 
 // Um cabeçalho é uma linha em que pelo menos uma célula se chama como uma
 // coluna conhecida e nenhuma célula parece dado (domínio ou link).
@@ -1986,7 +1992,7 @@ function bulkDetectarCabecalho(linhas) {
 function bulkDetectarColunas(linhas, temCabecalho) {
   const corpo = temCabecalho ? linhas.slice(1) : linhas;
   const nCols = Math.max(0, ...linhas.map((l) => l.length));
-  const mapa = { razao: -1, dominio: -1, painel: -1 };
+  const mapa = { razao: -1, dominio: -1, painel: -1, caso: -1 };
   if (!nCols) return mapa;
 
   const cabecalho = temCabecalho ? linhas[0].map((c) => String(c || '').trim().toLowerCase()) : [];
@@ -1997,8 +2003,9 @@ function bulkDetectarColunas(linhas, temCabecalho) {
     const n = valores.length || 1;
     const p = {
       dominio: valores.filter(pareceDominio).length / n,
-      painel: valores.filter(parecePainel).length / n,
-      razao: valores.filter((v) => !pareceDominio(v) && !parecePainel(v) && /[a-zà-ú]/i.test(v)).length / n,
+      painel: valores.filter((v) => parecePainel(v) && !pareceCaso(v)).length / n,
+      caso: valores.filter(pareceCaso).length / n,
+      razao: valores.filter((v) => !pareceDominio(v) && !parecePainel(v) && !pareceCaso(v) && /[a-zà-ú]/i.test(v)).length / n,
     };
     for (const papel of Object.keys(BULK_PAPEIS)) {
       if (BULK_PAPEIS[papel].cabecalhos.includes(cabecalho[c] || '')) p[papel] += 1; // o nome vale mais que a amostra
@@ -2006,10 +2013,11 @@ function bulkDetectarColunas(linhas, temCabecalho) {
     pontos.push(p);
   }
 
-  // Um papel por coluna, e uma coluna por papel: os links e domínios primeiro,
-  // que são inconfundíveis; a razão social fica com o que sobrou.
+  // Um papel por coluna, e uma coluna por papel: o caso e os links primeiro,
+  // que são inconfundíveis; a razão social fica com o que sobrou. O caso vem
+  // antes do painel porque os dois são links e o caso é o mais específico.
   const usadas = new Set();
-  for (const papel of ['painel', 'dominio', 'razao']) {
+  for (const papel of ['caso', 'painel', 'dominio', 'razao']) {
     let melhor = -1;
     let melhorPonto = papel === 'razao' ? 0.3 : 0.5;
     pontos.forEach((p, c) => {
@@ -2034,6 +2042,7 @@ function bulkMontarLinhas() {
     const razao = cel(l, bulkMapa.razao);
     const dominio = normalizeDomain(cel(l, bulkMapa.dominio));
     const painel = cel(l, bulkMapa.painel);
+    const caso = cel(l, bulkMapa.caso);
 
     if (!dominio) {
       if (razao || painel) erros.push(`linha ${numero}: sem domínio`);
@@ -2050,6 +2059,7 @@ function bulkMontarLinhas() {
       razao,
       dominio,
       painel,
+      caso,
       externalId: '',
       painelOk,
       status: painel && !painelOk ? 'invalido' : 'pendente',
@@ -2091,7 +2101,7 @@ function renderBulkTool() {
     <div id="bulkPrevia"></div>
     <div id="bulkLista"></div>
     <div id="bulkDetalhe"></div>
-    <p class="hint">Cada site, na ordem que a publicação exige. Primeiro o contato técnico no Registro.br: se for nosso, o DNS entra; se não, o domínio vai para a lista dos que não estão conosco, que sai em .xlsx no fim para o atendimento. Zona que já existe na Cloudflare: só o A da raiz troca do IP antigo para o novo, e você confirma. Zona nova: a Cloudflare varre o DNS atual, o Hub completa com os autoritativos, replica tudo e troca só a raiz e o www; você confirma, e os nameservers vão para o Registro.br. Depois o painel: quem já está publicado é só vinculado; quem não está é aprovado e publicado. O SSL só é pedido quando o domínio já resolve para o servidor de produção; senão fica no aviso do fim. Por fim Analytics, Tag Manager e reCAPTCHA (reaproveita o que existe, cria o que faltar se a caixa estiver marcada), o painel (Integrações, Search Console, Relatório) e a linha na planilha. A única parada é a do DNS, uma por domínio.</p>
+    <p class="hint">Cada site, na ordem que a publicação exige. Primeiro o contato técnico no Registro.br: se for nosso, o DNS entra; se não, o domínio vai para a lista dos que não estão conosco, que sai em .xlsx no fim para o atendimento. Zona que já existe na Cloudflare: só o A da raiz troca do IP antigo para o novo, e você confirma. Zona nova: a Cloudflare varre o DNS atual, o Hub completa com os autoritativos, replica tudo e troca só a raiz e o www; você confirma, e os nameservers vão para o Registro.br. Depois o painel: quem já está publicado é só vinculado; quem não está é aprovado e publicado. O SSL só é pedido quando o domínio já resolve para o servidor de produção; senão fica no aviso do fim. Por fim Analytics, Tag Manager e reCAPTCHA (reaproveita o que existe, cria o que faltar se a caixa estiver marcada), o painel (Integrações, Search Console, Relatório) e a linha na planilha. A única parada é a do DNS, uma por domínio. Se a planilha tiver uma coluna <strong>Link do caso</strong> (o link do caso no Salesforce), o Hub cria também a tarefa de publicação naquele caso, já concluída e no seu nome, sem marcar ninguém — serve para registrar os que já foram publicados. Sem essa coluna, ou com o Salesforce desconectado, ele simplesmente não cria tarefa.</p>
   `;
 
   document.getElementById('backToHub').addEventListener('click', goHome);
@@ -2177,7 +2187,9 @@ function renderBulkPrevia() {
 
   const linhasHtml = amostra.map((l) => `<tr>${Array.from({ length: nCols }, (_, c) => `<td class="${papelDe(c) ? '' : 'faint'}">${escapeHtml(String(l[c] || ''))}</td>`).join('')}</tr>`).join('');
 
-  const faltando = Object.keys(BULK_PAPEIS).filter((k) => bulkMapa[k] < 0 && k !== 'razao').map((k) => BULK_PAPEIS[k].rotulo);
+  // Razão social e Link do caso são opcionais: sem razão a planilha ainda
+  // publica; sem caso, só não cria a tarefa no Salesforce daquela linha.
+  const faltando = Object.keys(BULK_PAPEIS).filter((k) => bulkMapa[k] < 0 && k !== 'razao' && k !== 'caso').map((k) => BULK_PAPEIS[k].rotulo);
 
   wrap.innerHTML = `
     <div class="section-label">Prévia, ${corpo.length} linha(s)</div>
@@ -2217,6 +2229,41 @@ const BULK_NADA_A_FAZER = ['ok'];
 
 function bulkFilaAtual() {
   return bulkRows.filter((r) => r.painelOk && !BULK_NADA_A_FAZER.includes(r.status));
+}
+
+// Depois de publicar todos, cria automaticamente a tarefa no Salesforce de
+// cada linha que tenha link do caso — 100% sozinho, sem botão (ADR-090). Cobre
+// todos os da planilha: recém-publicados e já publicados. Não cria para quem
+// falhou na publicação (marcar como concluída uma tarefa de um site que não
+// subiu seria mentira). Não duplica (o main confere no caso) e nunca derrubou
+// a publicação: aqui a rodada já acabou, isto é só o registro no fim.
+async function criarTarefasSalesforceNoFim() {
+  const alvo = bulkRows.filter((r) => r.caso && r.dominio && r.status !== 'falhou');
+  const pularam = bulkRows.filter((r) => r.caso && r.dominio && r.status === 'falhou');
+  if (!alvo.length && !pularam.length) return; // ninguém pediu tarefa
+
+  if (!bulkSfConectado) {
+    log(`${alvo.length + pularam.length} linha(s) têm link do caso, mas o Salesforce não está conectado — não criei tarefa nenhuma. Conecte nas configurações e rode de novo.`, 'warn');
+    return;
+  }
+  for (const r of pularam) log(`${r.dominio}: publicação falhou, não criei a tarefa no Salesforce (para não marcar como concluída sem o site no ar).`, 'warn');
+  if (!alvo.length) return;
+
+  log(`Salesforce: criando a tarefa de ${alvo.length} site(s) publicado(s), cada uma no seu caso.`, 'cmd');
+  for (const row of alvo) {
+    const res = await withBusy(`criando a tarefa no Salesforce de ${row.dominio}`, () =>
+      window.api.salesforceCriarTarefaNoCaso({ casoLink: row.caso, dominio: row.dominio })
+    );
+    if (res.log) for (const e of res.log) log(e.message, e.type);
+    if (res.ok) {
+      if (res.jaExistia) row.detalhe += ' · tarefa SF já existia';
+      else { row.detalhe += ` · tarefa SF no caso ${res.casoNumero || ''}`.trimEnd(); bulkSfCriadas.push(row.dominio); }
+    } else {
+      row.detalhe += ' · tarefa SF falhou';
+      log(`Tarefa do Salesforce de ${row.dominio} não foi criada: ${res.error}`, 'warn');
+    }
+    renderBulkLista();
+  }
 }
 
 function renderBulkLista() {
@@ -2335,6 +2382,17 @@ async function rodarBulk() {
   bulkSslPendentes = [];
   bulkSslAtivados = [];
   bulkForaDeCasa = [];
+  bulkSfCriadas = [];
+  // Alguma linha pede tarefa no Salesforce? Só então conferimos a conexão, uma
+  // vez, para não incomodar quem não usa essa coluna (ADR-090).
+  bulkSfConectado = false;
+  if (bulkRows.some((r) => r.caso)) {
+    try {
+      const sf = await window.api.salesforceGetConfig();
+      bulkSfConectado = !!(sf && sf.ok && sf.conectado);
+      if (!bulkSfConectado) log('Há linhas com link do caso, mas o Salesforce não está conectado. Vou publicar normalmente e, no fim, não crio as tarefas. Conecte nas configurações se quiser que ele crie sozinho.', 'warn');
+    } catch (e) { bulkSfConectado = false; }
+  }
   const marca = state.brand;
   log(`Publicar e vincular: ${fila.length} site(s) de ${brandName(marca)}, um por vez, no servidor Hestia ${host} (id ${servidorId}). Quem já estiver publicado é só vinculado.`, 'cmd');
   log(fila.map((r) => r.dominio).join(', '), 'info');
@@ -2503,6 +2561,9 @@ async function rodarBulk() {
     falhas ? 'warn' : 'success'
   );
 
+  // Publicou todos: agora as tarefas no Salesforce, sozinho, sem botão (ADR-090).
+  await criarTarefasSalesforceNoFim();
+
   // O SSL é a única etapa que depende de um relógio que não é nosso, então ele
   // tem o próprio resumo, no fim, onde não se perde no meio do log.
   if (bulkSslPendentes.length) {
@@ -2513,6 +2574,9 @@ async function rodarBulk() {
   }
   if (bulkSslAtivados.length) {
     log(`SSL ativado em ${bulkSslAtivados.length} site(s): ${bulkSslAtivados.join(', ')}.`, 'success');
+  }
+  if (bulkSfCriadas.length) {
+    log(`Salesforce: ${bulkSfCriadas.length} tarefa(s) criada(s) no caso, concluída(s) e no seu nome: ${bulkSfCriadas.join(', ')}.`, 'success');
   }
   if (!bulkSslPendentes.length && !bulkSslAtivados.length) {
     log('SSL: nada a fazer nesta rodada (ninguém precisou publicar).', 'info');

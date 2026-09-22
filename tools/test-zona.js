@@ -253,5 +253,27 @@ console.log('\n=== União do scan da Cloudflare com a fotografia ===');
   check('tipo em caixa alta e nome sem ponto final', u.every((r) => r.type === r.type.toUpperCase() && !r.name.endsWith('.')));
 }
 
+console.log('\n=== Subdomínio do cliente atrás do proxy da Cloudflare NÃO é copiado (ADR-091) ===');
+{
+  const { ehConteudoProxyCloudflare, ehIpCloudflareV6 } = require(path.join(__dirname, '..', 'lib', 'zona'));
+  check('reconhece o proxy por IPv6 também', ehIpCloudflareV6('2606:4700:3035::6815:1edf') && !ehIpCloudflareV6('2800:3f0:4000::1'));
+  check('conteúdo proxy pega v4 e v6', ehConteudoProxyCloudflare('104.21.30.223') && ehConteudoProxyCloudflare('2606:4700::1') && !ehConteudoProxyCloudflare('151.106.100.16'));
+
+  const D = 'cliente-cf.com.br';
+  const snapshot = { registros: [
+    { type: 'A', name: D, content: '151.106.100.16' },                 // raiz no servidor real (não é proxy)
+    { type: 'A', name: `loja.${D}`, content: '104.21.55.10' },          // subdomínio atrás do proxy
+    { type: 'AAAA', name: `loja.${D}`, content: '2606:4700:3035::abcd' },// mesmo subdomínio, AAAA do proxy
+    { type: 'A', name: `erp.${D}`, content: '200.100.50.25' },          // subdomínio no servidor real
+    { type: 'CNAME', name: `blog.${D}`, content: 'destino.externo.com' },// CNAME não é afetado
+  ] };
+  const z = montarZonaProposta({ dominio: D, snapshot, ipNovo: NOVO });
+  check('não copiou o A do subdomínio no proxy', !z.registros.some((r) => r.name === `loja.${D}` && r.type === 'A'), JSON.stringify(z.registros));
+  check('nem o AAAA do subdomínio no proxy', !z.registros.some((r) => r.name === `loja.${D}` && r.type === 'AAAA'), JSON.stringify(z.registros));
+  check('avisou sobre o subdomínio no proxy', z.avisos.some((a) => /loja\..*proxy da Cloudflare/.test(a)), z.avisos.join(' | '));
+  check('copiou normalmente o subdomínio no servidor real', z.registros.some((r) => r.name === `erp.${D}` && r.content === '200.100.50.25'), JSON.stringify(z.registros));
+  check('CNAME de subdomínio segue copiado', z.registros.some((r) => r.name === `blog.${D}` && r.type === 'CNAME'), JSON.stringify(z.registros));
+}
+
 console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
 process.exit(falhas ? 1 : 0);

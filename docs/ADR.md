@@ -3854,6 +3854,100 @@ certa.
 
 ---
 
+## ADR-090 — Criar a tarefa no caso certo pela coluna "Link do caso" da planilha
+
+**Status:** aceita
+
+**Contexto.** Além de fechar tarefa (ADR-089), o Guilherme precisa **registrar**
+no Salesforce sites que já foram publicados — os da migração V1→V2, por exemplo:
+mesmo assunto e domínio, mas é outra tarefa, e ela tem que nascer **dentro do
+caso do cliente**, não solta (toda conta de cliente tem caso, e cada caso tem
+suas tarefas). O "Publicar em massa" não mexia no Salesforce; por isso não criava
+nada.
+
+O que decide tudo é achar o caso certo de cada domínio. Adivinhar (procurar uma
+tarefa antiga do domínio e usar o caso dela) funciona na maioria, mas erra quando
+o domínio não tem tarefa antiga ou tem várias em casos diferentes — e criar
+tarefa no caso errado é pior do que não criar. Conversando, ficou decidido que o
+Guilherme põe o caso na mão: uma coluna nova na planilha com o **link do caso**.
+
+**Decisão.**
+
+1. **A planilha do Publicar em massa ganha a coluna opcional "Link do caso".**
+   O detector reconhece pelo cabeçalho e pela cara do dado (link com `/r/Case/`
+   ou Id que começa com `500`), e não a confunde com o link do painel (esse é do
+   `idealplus`). Sem a coluna, ou com o Salesforce desconectado, a publicação
+   corre igual e nenhuma tarefa é criada.
+2. **Para cada linha com link do caso, o Hub cria uma Tarefa naquele caso**
+   (`WhatId` = o caso), assunto `Publicação (Troca de DNS) - {domínio}`, o
+   domínio no campo Comentários (Description), dona quem está logado, status
+   concluída (resolvido pela `TaskStatus.IsClosed`), e **sem marcar ninguém no
+   feed** — marcação é só no fechamento pelo Publicar MPI+ (ADR-089). Vale tanto
+   para os recém-publicados quanto para os já publicados que entram na planilha
+   só para registrar.
+3. **O Id do caso sai do link recusando o que não for caso.** O `idDoLink` já
+   pega o Id do caminho e ignora o segundo Id que vem no `ws=` (a conta); o
+   `ehIdDeCaso` exige o prefixo `500`, então um link de tarefa (`00T`) ou de
+   conta (`001`) colado nessa coluna é recusado com aviso, em vez de pendurar a
+   tarefa no lugar errado.
+4. **Criar tarefa no Salesforce nunca derruba a publicação.** É acessório: se o
+   Salesforce falhar ou estiver desconectado, a linha segue publicada e o erro
+   vira só um aviso. Quem sou eu e qual status é "concluída" são lidos uma vez e
+   guardados na sessão, para 76 linhas não virarem 150 chamadas repetidas.
+
+**Ajustes depois do primeiro uso.**
+
+- O assunto passou a ser `Publicação V1 -> V2 - {domínio}`, para diferenciar a
+  tarefa nova da que existia na V1. O padrão antigo que tinha vazado para o
+  config de quem já usava se cura sozinho no `readSfConfig` (lista
+  `SF_ASSUNTOS_ANTIGOS`), sem o Guilherme precisar mexer nas configurações.
+- A tarefa nasce com `ActivityDate` = hoje, então fica datada do dia em que foi
+  registrada.
+- Não duplica: antes de criar, o Hub confere se já existe uma tarefa com aquele
+  assunto naquele caso e, se existe, pula.
+- **Sem botão: 100% automático no fim da rodada.** Depois de publicar todos os
+  sites, o Publicar em massa cria sozinho a tarefa de cada linha que tenha link
+  do caso — cobre os recém-publicados e os já publicados. Não cria para quem
+  falhou na publicação (marcar como concluída uma tarefa de um site que não
+  subiu seria mentira); esses saem num aviso. Se o Salesforce estiver
+  desconectado, avisa e não cria nada.
+
+**Consequências.** O Guilherme resolve os já publicados enchendo uma coluna a
+mais na planilha e rodando o Publicar em massa como sempre; as tarefas nascem
+sozinhas no fim, cada uma no caso certo porque foi ele quem apontou o caso, não
+o Hub adivinhando. O fechamento com marcação continua sendo só do Publicar MPI+.
+
+---
+
+## ADR-091 — Não copiar para a nossa zona o subdomínio do cliente que está atrás do proxy da Cloudflare
+
+**Status:** aceita
+
+**Contexto.** Ontem um cliente subiu errado: o Hub pegou o IP do proxy da
+Cloudflare, não o do apontamento real do cliente. A raiz já era tratada
+(ADR-085): se o A da raiz cai numa faixa do proxy, o Hub avisa e não usa aquele
+IP como "IP antigo". Mas a cópia dos **demais registros** tinha um buraco — o
+`add(r, 'copiado')` genérico do `montarZonaProposta` copiava qualquer A/AAAA de
+subdomínio como estava, inclusive um que apontava para o edge da Cloudflare
+(`104.x`, `172.67.x`, `2606:4700::…`). Resultado: o subdomínio ia para a nossa
+zona apontando para o proxy de outra conta, não para o servidor do cliente —
+que, atrás do proxy, está escondido e não dá para descobrir de fora.
+
+**Decisão.** Na cópia dos demais registros, um A ou AAAA cujo conteúdo é um IP
+do proxy da Cloudflare **não é copiado**. Em vez disso, vai um aviso nomeando o
+subdomínio e o IP, para o analista pegar o IP real do cliente e cadastrar à mão
+se aquele subdomínio precisar continuar no ar. A detecção agora cobre IPv4
+(faixas da ADR-085) e IPv6 (prefixos do proxy), porque um registro proxied tem
+os dois e copiar só o AAAA deixaria o subdomínio resolvendo para o edge do mesmo
+jeito.
+
+**Consequências.** O Hub nunca mais leva o IP do proxy para a nossa zona: ou o
+registro aponta para o servidor real do cliente e é copiado, ou está atrás do
+proxy e vira aviso para conferência manual. É a mesma disciplina da raiz (ADR-085),
+agora também nos subdomínios.
+
+---
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - `package.json` ainda se identifica como `pr-merge-tool` / `"PR Merge Tool"` /
