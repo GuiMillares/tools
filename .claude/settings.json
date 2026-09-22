@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node \"C:/Users/GUILHE~1.MIL/AppData/Local/Temp/claude/c--Users-guilherme-millares-Pictures-pr-merge-tool/a780213e-ae13-46e2-83ca-0cd2c627ef42/scratchpad/patch-steps-main.js\")",
+      "Bash(node --check main.js)"
+    ]
+  }
+}

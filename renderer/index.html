@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>Hub</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="4.5" r="2" fill="currentColor"/>
+          <circle cx="19" cy="9" r="2" fill="currentColor" opacity="0.75"/>
+          <circle cx="19" cy="15" r="2" fill="currentColor" opacity="0.75"/>
+          <circle cx="12" cy="19.5" r="2" fill="currentColor"/>
+          <circle cx="5" cy="15" r="2" fill="currentColor" opacity="0.75"/>
+          <circle cx="5" cy="9" r="2" fill="currentColor" opacity="0.75"/>
+          <line x1="12" y1="4.5" x2="12" y2="12" stroke="currentColor" stroke-width="1.4"/>
+          <line x1="19" y1="9" x2="12" y2="12" stroke="currentColor" stroke-width="1.4"/>
+          <line x1="19" y1="15" x2="12" y2="12" stroke="currentColor" stroke-width="1.4"/>
+          <line x1="12" y1="19.5" x2="12" y2="12" stroke="currentColor" stroke-width="1.4"/>
+          <line x1="5" y1="15" x2="12" y2="12" stroke="currentColor" stroke-width="1.4"/>
+          <line x1="5" y1="9" x2="12" y2="12" stroke="currentColor" stroke-width="1.4"/>
+          <circle cx="12" cy="12" r="2.6" fill="currentColor"/>
+        </svg>
+        <span id="topbarTitle">Hub</span>
+      </div>
+      <button id="settingsBtn" class="icon-btn" title="Configurações">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
+        </svg>
+      </button>
+    </header>
+
+    <main class="layout">
+      <section class="panel actions" id="leftPanel"></section>
+
+      <section class="panel terminal-panel">
+        <div class="terminal-header">
+          <span class="terminal-title">atividade</span>
+          <div class="terminal-tools">
+            <span id="terminalStatus" class="term-status">ocioso</span>
+            <button id="clearLogBtn" class="text-btn">Limpar</button>
+          </div>
+        </div>
+        <div id="terminal" class="terminal"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-box">
+      <h2>Configurações</h2>
+      <label class="field">
+        <span>E-mail da conta Bitbucket</span>
+        <input id="emailInput" type="email" placeholder="voce@exemplo.com" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>API Token</span>
+        <input id="tokenInput" type="password" placeholder="Token gerado em Configurações da conta &gt; Segurança" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Estratégia de merge padrão</span>
+        <select id="strategySelect">
+          <option value="merge_commit">Merge commit</option>
+          <option value="squash">Squash</option>
+          <option value="fast_forward">Fast forward</option>
+        </select>
+      </label>
+      <label class="checkbox-field">
+        <input id="closeBranchInput" type="checkbox" checked />
+        <span>Fechar branch de origem após o merge</span>
+      </label>
+      <div class="section-label">Workspace do Bitbucket, por marca</div>
+      <p class="hint">Onde mora o repositório de cada projeto. Preenchido, o app vai direto no repositório; vazio, ele tenta descobrir, e a descoberta depende de escopo que o token pode não ter. A MPI+ não aparece aqui porque não tem repositório no Bitbucket.</p>
+      <label class="field">
+        <span>Busca Cliente</span>
+        <input id="wsBcInput" type="text" placeholder="busca-clientes" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>MPI Solutions</span>
+        <input id="wsMpiSolutionsInput" type="text" placeholder="mpi-solutions" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Padrão (usado quando a marca acima está vazia)</span>
+        <input id="bitbucketWorkspaceInput" type="text" placeholder="Deixe vazio para descobrir automaticamente" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Caminho do arquivo da Service Account (Google)</span>
+        <input id="googleSaPathInput" type="text" placeholder="C:\Users\...\service-account.json" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Conta principal do Google (padrão, quando a marca não tem)</span>
+        <input id="googleOwnerEmailInput" type="email" placeholder="voce@empresa.com.br" autocomplete="off" />
+      </label>
+      <div class="section-label">Conta do Google, por marca</div>
+      <p class="hint">A conta humana que opera cada marca. Ela recebe acesso de publicação nos containers do Tag Manager criados e a posse das propriedades do Search Console, quem cria as duas é a service account, que não tem login de navegador.</p>
+      <label class="field">
+        <span>Busca Cliente</span>
+        <input id="brandAccountBcInput" type="email" placeholder="bcrelatorios@..." autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>MPI Solutions</span>
+        <input id="brandAccountMpiSolutionsInput" type="email" placeholder="ferramentasmpisolutions@..." autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>MPI+</span>
+        <input id="brandAccountMpiPlusInput" type="email" placeholder="bcrelatoriotags@..." autocomplete="off" />
+      </label>
+      <div class="section-label">Sessão do Google de cada marca</div>
+      <p class="hint">Registrar a propriedade no Search Console só a coloca na lista de <strong>quem chama</strong>. Feito pela service account, ela nasce fora do Search Console da marca, é por isso que ela aparece "validada" mas precisa ser criada à mão. Com a sessão da marca conectada aqui, o Hub registra pela própria conta e a propriedade nasce lá. Precisa do Client ID e do Secret abaixo.</p>
+      <div id="brandOauthList" class="brand-oauth"></div>
+
+      <label class="field">
+        <span>OAuth Client ID (ferramenta "Conceder acesso" e sessões das marcas)</span>
+        <input id="oauthClientIdInput" type="text" placeholder="000000-xxxx.apps.googleusercontent.com" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>OAuth Client Secret</span>
+        <input id="oauthClientSecretInput" type="password" placeholder="GOCSPX-..." autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Client ID do Azure (ferramenta "Suspender sites")</span>
+        <input id="msClientIdInput" type="text" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Tenant do Azure</span>
+        <input id="msTenantInput" type="text" placeholder="ID do diretório (locatário), da tela Visão geral do app no Entra" autocomplete="off" />
+      </label>
+      <div class="section-label">Painel MPI+</div>
+      <p class="hint">Usado para sincronizar os projetos da MPI+ no lugar do commit. A senha fica criptografada nesta máquina, como o token do Bitbucket.</p>
+      <label class="field">
+        <span>E-mail do painel</span>
+        <input id="painelEmailInput" type="email" placeholder="voce@idealtrends.com.br" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Senha do painel</span>
+        <input id="painelSenhaInput" type="password" placeholder="••••••••" autocomplete="off" />
+      </label>
+      <div class="section-label">Publicação MPI+ (DNS e produção)</div>
+      <p class="hint">Cada empresa tem a sua conta na Cloudflare e no Registro.br. O Hub usa a da empresa escolhida na tela de publicação. Tokens e senhas ficam criptografados nesta máquina; campo em branco não altera o que já está salvo.</p>
+      <label class="field">
+        <span>IP público do servidor Hestia (registro A da raiz)</span>
+        <input id="pubIpInput" type="text" placeholder="149.18.102.39" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Servidor Hestia padrão para produção</span>
+        <select id="pubServidorSelect">
+          <option value="11">192.168.3.143</option>
+          <option value="13">192.168.3.157</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Link da planilha de publicações (SharePoint, o link de compartilhamento do Book.xlsx)</span>
+        <input id="planilhaUrlInput" type="text" placeholder="https://buscacliente-my.sharepoint.com/:x:/r/personal/..." autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Desenvolvedor (coluna da planilha)</span>
+        <input id="desenvolvedorInput" type="text" placeholder="ex: Caique Coelho" autocomplete="off" />
+      </label>
+      <p class="hint">A planilha é escrita pela sua sessão da Microsoft (a mesma do envio de e-mail), que precisa da permissão de arquivos. Se você conectou antes desta versão, desconecte e conecte de novo em "Suspender sites" para a Microsoft pedir a permissão nova.</p>
+      <div class="section-label">Busca Cliente</div>
+      <label class="field">
+        <span>Token da Cloudflare (Zone:Edit, DNS:Edit)</span>
+        <input id="cfTokenBcInput" type="password" placeholder="••••••••" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>ID da conta da Cloudflare (só se o token enxergar mais de uma)</span>
+        <input id="cfAccountBcInput" type="text" placeholder="opcional" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Registro.br: código, CPF ou CNPJ</span>
+        <input id="rbrUserBcInput" type="text" placeholder="ex: ABC123 ou 00.000.000/0000-00" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Registro.br: senha</span>
+        <input id="rbrSenhaBcInput" type="password" placeholder="••••••••" autocomplete="off" />
+      </label>
+      <div class="section-label">MPI Solutions</div>
+      <label class="field">
+        <span>Token da Cloudflare (Zone:Edit, DNS:Edit)</span>
+        <input id="cfTokenMpiInput" type="password" placeholder="••••••••" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>ID da conta da Cloudflare (só se o token enxergar mais de uma)</span>
+        <input id="cfAccountMpiInput" type="text" placeholder="opcional" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Registro.br: código, CPF ou CNPJ</span>
+        <input id="rbrUserMpiInput" type="text" placeholder="ex: ABC123 ou 00.000.000/0000-00" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Registro.br: senha</span>
+        <input id="rbrSenhaMpiInput" type="password" placeholder="••••••••" autocomplete="off" />
+      </label>
+      <div class="section-label">Salesforce</div>
+      <label class="field">
+        <span>Domínio da empresa no Salesforce</span>
+        <input id="sfDominioInput" type="text" placeholder="ex: grupo-ideal-trends.my.salesforce.com" autocomplete="off" />
+      </label>
+      <div id="sfStatus"></div>
+      <label class="field">
+        <span>Assunto da tarefa criada na migração em massa</span>
+        <input id="sfAssuntoInput" type="text" placeholder="Publicação (troca de DNS) - {dominio}" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Comentários da tarefa criada na migração em massa</span>
+        <input id="sfComentarioInput" type="text" placeholder="{dominio}" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Texto do comentário no feed (quando a tarefa já existia)</span>
+        <input id="sfTextoFeedInput" type="text" placeholder="Site publicado" autocomplete="off" />
+      </label>
+      <p class="hint">O Hub entra com a sua conta pelo aplicativo conectado que a própria Salesforce distribui, então o histórico de login de lá vai registrar "Salesforce CLI". Tudo que ele fizer sai no seu nome. Use <code>{dominio}</code> nos modelos.</p>
+      <label class="field">
+        <span>Chave da API de histórico de DNS (WhoisXML)</span>
+        <input id="dnsHistKeyInput" type="password" placeholder="Opcional, só para consultar para onde o domínio já apontou" autocomplete="off" />
+      </label>
+      <p class="hint">O token do Bitbucket fica armazenado apenas nesta máquina, criptografado pelo Windows, e o token da Microsoft também, porque ele permite enviar e-mail em seu nome. Os caminhos e as credenciais do Google ficam em arquivos de configuração na pasta do app.</p>
+      <div class="modal-actions">
+        <button id="clearCredsBtn" class="text-btn danger">Remover credenciais</button>
+        <div class="spacer"></div>
+        <button id="cancelSettingsBtn" class="btn ghost">Cancelar</button>
+        <button id="saveSettingsBtn" class="btn primary">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

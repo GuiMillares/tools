@@ -1,0 +1,43 @@
+{
+  "name": "pr-merge-tool",
+  "version": "1.0.19",
+  "description": "Ferramenta local para revisar e mergear PRs do Bitbucket Cloud sem passar pela interface web",
+  "main": "main.js",
+  "author": "Guilherme",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "atualizar": "node tools/atualizar.js"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "playwright": "^1.62.1"
+  },
+  "dependencies": {
+    "googleapis": "^176.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "build": {
+    "appId": "com.castrotech.prmergetool",
+    "productName": "PR Merge Tool",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**/*",
+      "renderer/**/*",
+      "templates/**/*",
+      "assets/**/*",
+      "package.json"
+    ]
+  },
+  "allowScripts": {
+    "electron@31.7.7": true
+  }
+}

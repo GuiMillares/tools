@@ -1,0 +1,88 @@
+{
+    "exportFormatVersion": 2,
+    "exportTime": "2024-12-17 20:02:28",
+    "containerVersion": {
+        "path": "accounts/6254899739/containers/198882480/versions/0",
+        "accountId": "6254899739",
+        "containerId": "198882480",
+        "containerVersionId": "0",
+        "container": {
+            "path": "accounts/6254899739/containers/198882480",
+            "accountId": "6254899739",
+            "containerId": "198882480",
+            "name": "ciscsaude.com.br",
+            "publicId": "GTM-WF3FX4CB",
+            "usageContext": [
+                "WEB"
+            ],
+            "fingerprint": "1730228647174",
+            "tagManagerUrl": "https://tagmanager.google.com/#/container/accounts/6254899739/containers/198882480/workspaces?apiLink=container",
+            "features": {
+                "supportUserPermissions": true,
+                "supportEnvironments": true,
+                "supportWorkspaces": true,
+                "supportGtagConfigs": false,
+                "supportBuiltInVariables": true,
+                "supportClients": false,
+                "supportFolders": true,
+                "supportTags": true,
+                "supportTemplates": true,
+                "supportTriggers": true,
+                "supportVariables": true,
+                "supportVersions": true,
+                "supportZones": true,
+                "supportTransformations": false
+            },
+            "tagIds": [
+                "GTM-WF3FX4CB"
+            ]
+        },
+        "tag": [
+            {
+                "accountId": "6254899739",
+                "containerId": "198882480",
+                "tagId": "4",
+                "name": "Google Analytics",
+                "type": "googtag",
+                "parameter": [
+                    {
+                        "type": "TEMPLATE",
+                        "key": "tagId",
+                        "value": "{{G-GRM4GM8YG9}}"
+                    }
+                ],
+                "fingerprint": "1730238393103",
+                "firingTriggerId": [
+                    "2147479553"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            }
+        ],
+        "variable": [
+            {
+                "accountId": "6254899739",
+                "containerId": "198882480",
+                "variableId": "3",
+                "name": "G-GRM4GM8YG9",
+                "type": "c",
+                "parameter": [
+                    {
+                        "type": "TEMPLATE",
+                        "key": "value",
+                        "value": "G-GRM4GM8YG9"
+                    }
+                ],
+                "fingerprint": "1730238412950",
+                "formatValue": {}
+            }
+        ],
+        "fingerprint": "1734465748660",
+        "tagManagerUrl": "https://tagmanager.google.com/#/versions/accounts/6254899739/containers/198882480/versions/0?apiLink=version"
+    }
+}

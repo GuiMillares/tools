@@ -1,0 +1,15 @@
+{
+  // O editor é Electron e trata .asar como pasta: ao listar ou vigiar
+  // dist/win-unpacked/resources/app.asar ele abre o arquivo e não solta mais,
+  // e o `npm run dist` seguinte falha com "being used by another process".
+  // Só a pasta desempacotada fica de fora — o instalador em dist/ continua visível.
+  "files.exclude": {
+    "dist/win-unpacked": true
+  },
+  "files.watcherExclude": {
+    "**/dist/win-unpacked/**": true
+  },
+  "search.exclude": {
+    "dist": true
+  }
+}

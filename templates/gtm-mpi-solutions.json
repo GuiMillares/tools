@@ -1,0 +1,1083 @@
+{
+    "exportFormatVersion": 2,
+    "exportTime": "2025-11-24 17:02:06",
+    "containerVersion": {
+        "path": "accounts/6274377763/containers/235993635/versions/0",
+        "accountId": "6274377763",
+        "containerId": "235993635",
+        "containerVersionId": "0",
+        "container": {
+            "path": "accounts/6274377763/containers/235993635",
+            "accountId": "6274377763",
+            "containerId": "235993635",
+            "name": "soarestr.com.br",
+            "publicId": "GTM-TD3FGHL5",
+            "usageContext": [
+                "WEB"
+            ],
+            "fingerprint": "1764003360844",
+            "tagManagerUrl": "https://tagmanager.google.com/#/container/accounts/6274377763/containers/235993635/workspaces?apiLink=container",
+            "features": {
+                "supportUserPermissions": true,
+                "supportEnvironments": true,
+                "supportWorkspaces": true,
+                "supportGtagConfigs": false,
+                "supportBuiltInVariables": true,
+                "supportClients": false,
+                "supportFolders": true,
+                "supportTags": true,
+                "supportTemplates": true,
+                "supportTriggers": true,
+                "supportVariables": true,
+                "supportVersions": true,
+                "supportZones": true,
+                "supportTransformations": false
+            },
+            "tagIds": [
+                "GTM-TD3FGHL5"
+            ]
+        },
+        "tag": [
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "6",
+                "name": "Google Analytics",
+                "type": "googtag",
+                "parameter": [
+                    {
+                        "type": "TEMPLATE",
+                        "key": "tagId",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566402",
+                "firingTriggerId": [
+                    "2147479553"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "8",
+                "name": "Telefone - Clique",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Telefone - Clique"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566402",
+                "firingTriggerId": [
+                    "7"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "10",
+                "name": "Social - Clique - Linkedin",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Social - Clique - Linkedin"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566402",
+                "firingTriggerId": [
+                    "9"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "16",
+                "name": "Social - Clique - Facebook",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Social - Clique - Facebook"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566402",
+                "firingTriggerId": [
+                    "4"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "17",
+                "name": "Social - Clique - Youtube",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Social - Clique - Youtube"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566402",
+                "firingTriggerId": [
+                    "12"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "19",
+                "name": "Social - Clique - Tiktok",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Social - Clique - Tiktok"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566403",
+                "firingTriggerId": [
+                    "15"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "21",
+                "name": "Social - Clique - Pinterest",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Social - Clique - Pinterest"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566403",
+                "firingTriggerId": [
+                    "14"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "24",
+                "name": "CTA - Clique - Orçamento",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "CTA - Clique - Orçamento"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566403",
+                "firingTriggerId": [
+                    "3"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "25",
+                "name": "Email - Clique",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Email - Clique"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566403",
+                "firingTriggerId": [
+                    "18"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "26",
+                "name": "Social - Clique - Instagram",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Social - Clique - Instagram"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566403",
+                "firingTriggerId": [
+                    "22"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "27",
+                "name": "Social - Clique - Threads",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Social - Clique - Threads"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566403",
+                "firingTriggerId": [
+                    "11"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "28",
+                "name": "Orçamento - Clique - Botão",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Orçamento - Clique - Botão"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566403",
+                "firingTriggerId": [
+                    "23"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "29",
+                "name": "Social - Clique - Twitter",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "Social - Clique - Twitter"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566403",
+                "firingTriggerId": [
+                    "13"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "31",
+                "name": "WhatsApp - Clique - Telefone",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enhancedUserId",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "WhatsApp - Clique - Telefone"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003566404",
+                "firingTriggerId": [
+                    "30"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "tagId": "32",
+                "name": "WhatsApp - Clique - Botão",
+                "type": "gaawe",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "sendEcommerceData",
+                        "value": "false"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "eventName",
+                        "value": "WhatsApp - Clique - Botão"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "measurementIdOverride",
+                        "value": "{{G-WJDW3KZFT0}}"
+                    }
+                ],
+                "fingerprint": "1764003686565",
+                "firingTriggerId": [
+                    "20",
+                    "33"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            }
+        ],
+        "trigger": [
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "3",
+                "name": "Clique - CTA",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click ID}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "cta"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566401"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "4",
+                "name": "Clique - Facebook",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "facebook"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566401"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "7",
+                "name": "Clique - Telefone",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click ID}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "clique_tel"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566402"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "9",
+                "name": "Clique - Linkedin",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "linkedin"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566402"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "11",
+                "name": "Clique - Threads",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "threads"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566402"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "12",
+                "name": "Clique - Youtube",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "youtube"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566402"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "13",
+                "name": "Clique - Twitter",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "twitter"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566402"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "14",
+                "name": "Clique - Pinterest",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "pinterest"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566402"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "15",
+                "name": "Clique - TikTok",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "tiktok"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566402"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "18",
+                "name": "Clique - Email",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click ID}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "clique_email"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566403"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "20",
+                "name": "Botão - WhatsApp",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "whatsapp"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003639270"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "22",
+                "name": "Clique - Instagram",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "instagram"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566403"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "23",
+                "name": "Botão - Orçamento",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click Classes}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "btn-orc"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566403"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "30",
+                "name": "Clique - Tel - WhatsApp",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click ID}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "clique_tel_whatsapp"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003566403"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "triggerId": "33",
+                "name": "ID - WhatsApp",
+                "type": "CLICK",
+                "filter": [
+                    {
+                        "type": "CONTAINS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Click ID}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "whatsapp"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1764003682518"
+            }
+        ],
+        "variable": [
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "variableId": "5",
+                "name": "G-WJDW3KZFT0",
+                "type": "c",
+                "parameter": [
+                    {
+                        "type": "TEMPLATE",
+                        "key": "value",
+                        "value": "G-WJDW3KZFT0"
+                    }
+                ],
+                "fingerprint": "1764003708918",
+                "formatValue": {}
+            }
+        ],
+        "builtInVariable": [
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "PAGE_URL",
+                "name": "Page URL"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "PAGE_HOSTNAME",
+                "name": "Page Hostname"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "PAGE_PATH",
+                "name": "Page Path"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "REFERRER",
+                "name": "Referrer"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "EVENT",
+                "name": "Event"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "CLICK_ELEMENT",
+                "name": "Click Element"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "CLICK_CLASSES",
+                "name": "Click Classes"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "CLICK_ID",
+                "name": "Click ID"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "CLICK_URL",
+                "name": "Click URL"
+            },
+            {
+                "accountId": "6274377763",
+                "containerId": "235993635",
+                "type": "CONTAINER_ID",
+                "name": "Container ID"
+            }
+        ],
+        "fingerprint": "1764003726643",
+        "tagManagerUrl": "https://tagmanager.google.com/#/versions/accounts/6274377763/containers/235993635/versions/0?apiLink=version"
+    }
+}

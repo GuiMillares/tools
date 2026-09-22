@@ -1,0 +1,1444 @@
+/* ------------------------------------------------------------------
+   Hub — tema "neon frio" (PROPOSTA, ainda não é o tema oficial).
+
+   Mesma gramática de cor do tema anterior: categoria (violeta = git,
+   ciano = Google, verde = deploy) e estado (verde ok, âmbar ressalva,
+   rosa falhou). O que muda é a temperatura — fundo quase preto com
+   viés azul, acentos de neon frio — e, principalmente, a DENSIDADE.
+
+   Nada de brilho decorativo: o glow aparece só onde já havia ênfase
+   (botão primário, foco, linha ativa). Neon em tudo vira ruído e o
+   olho perde a informação, que é o contrário do que a cor serve aqui.
+   ------------------------------------------------------------------ */
+
+:root {
+  --bg: #07090e;
+  --panel: #0b0e15;
+  --panel-alt: #0f131c;
+  --panel-hi: #151a25;
+  --border: rgba(120, 200, 255, 0.11);
+  --border-hi: rgba(120, 200, 255, 0.22);
+  --text: #d8e5f2;
+  --text-dim: #7f8ea6;
+  --text-faint: #5a6a85;
+
+  --violet: #b16cff;
+  --violet-soft: rgba(177, 108, 255, 0.14);
+  --violet-line: rgba(177, 108, 255, 0.45);
+
+  --blue: #35c8ff;
+  --blue-soft: rgba(53, 200, 255, 0.13);
+  --blue-line: rgba(53, 200, 255, 0.45);
+
+  --green: #2bf5b0;
+  --green-soft: rgba(43, 245, 176, 0.12);
+  --green-line: rgba(43, 245, 176, 0.42);
+
+  --accent: var(--blue);
+  --warning: #ffb547;
+  --warning-soft: rgba(255, 181, 71, 0.11);
+  --warning-line: rgba(255, 181, 71, 0.4);
+  --error: #ff4d6d;
+  --error-soft: rgba(255, 77, 109, 0.11);
+  --error-line: rgba(255, 77, 109, 0.4);
+  --success: var(--green);
+
+  --mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  /* Um degrau abaixo da escala anterior, em todos os níveis. */
+  --fs-micro: 9px;
+  --fs-xs: 10.5px;
+  --fs-sm: 11.5px;
+  --fs-base: 12px;
+  --fs-lg: 14px;
+
+  /* Cantos mais retos: o arredondado macio puxava o app para "aplicativo
+     de celular"; 2/4 devolve a cara de ferramenta. */
+  --r-sm: 2px;
+  --r-md: 4px;
+
+  --snap: 110ms cubic-bezier(0.2, 0.7, 0.4, 1);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: var(--fs-base);
+}
+
+::selection { background: var(--violet-soft); }
+
+/* Um anel de foco só, coerente em tudo que é focável pelo teclado. */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #414a5a; background-clip: content-box; }
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ---------- Topbar ---------- */
+
+.topbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+/* Fio de identidade: as três cores do app, na ordem em que aparecem no hub. */
+.topbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--violet), var(--blue) 55%, var(--green));
+  opacity: 0.8;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+  font-size: var(--fs-base);
+  letter-spacing: 0.2px;
+}
+
+.brand svg { color: var(--blue); }
+
+.icon-btn {
+  -webkit-app-region: no-drag;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  padding: 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  display: flex;
+  transition: color var(--snap), background var(--snap), border-color var(--snap), transform var(--snap);
+}
+
+.icon-btn:hover {
+  color: var(--text);
+  background: var(--panel-alt);
+  border-color: var(--border-hi);
+}
+
+.icon-btn:hover svg { transform: rotate(35deg); }
+.icon-btn svg { transition: transform 220ms cubic-bezier(0.2, 0.7, 0.4, 1); }
+.icon-btn:active { transform: scale(0.94); }
+
+/* ---------- Layout ---------- */
+
+/* O painel esquerdo acompanha a janela em vez de ficar preso em 430px:
+   nunca aperta o formulário, nunca rouba largura do terminal. */
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: clamp(400px, 34%, 520px) 1fr;
+  min-height: 0;
+}
+
+.panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.actions {
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+/* ---------- Busca e rótulos ---------- */
+
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.search-wrap svg {
+  position: absolute;
+  left: 11px;
+  color: var(--text-faint);
+  pointer-events: none;
+  transition: color var(--snap);
+}
+
+.search-wrap:focus-within svg { color: var(--blue); }
+
+.search-input {
+  width: 100%;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px 10px 34px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-base);
+  font-family: var(--sans);
+  transition: border-color var(--snap), background var(--snap);
+}
+
+.search-input::placeholder { color: var(--text-faint); }
+.search-input:focus {
+  outline: none;
+  border-color: var(--blue-line);
+  background: var(--panel-hi);
+}
+
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-micro);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-faint);
+  margin: 18px 0 9px 0;
+}
+
+.section-label::before {
+  content: '';
+  width: 3px;
+  height: 11px;
+  border-radius: 1px;
+  background: var(--cat, var(--blue));
+}
+
+/* ---------- Recentes (chips) ---------- */
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
+  font-family: var(--sans);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: color var(--snap), background var(--snap), border-color var(--snap);
+}
+
+.chip svg { width: 13px; height: 13px; color: var(--cat, var(--blue)); flex-shrink: 0; }
+
+.chip:hover {
+  color: var(--text);
+  background: var(--cat-soft, var(--blue-soft));
+  border-color: var(--cat-line, var(--blue-line));
+}
+
+/* ---------- Cards de ferramenta ---------- */
+
+[data-cat="git"] { --cat: var(--violet); --cat-soft: var(--violet-soft); --cat-line: var(--violet-line); }
+[data-cat="deploy"] { --cat: var(--green); --cat-soft: var(--green-soft); --cat-line: var(--green-line); }
+[data-cat="google"] { --cat: var(--blue); --cat-soft: var(--blue-soft); --cat-line: var(--blue-line); }
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tool-card {
+  position: relative;
+  overflow: hidden;
+  text-align: left;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px 14px 30px 14px;
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-family: var(--sans);
+  transition: background var(--snap), border-color var(--snap), transform var(--snap), box-shadow var(--snap);
+}
+
+/* A faixa da categoria mora no ::before pra poder engrossar no hover
+   sem empurrar o conteúdo do card um pixel pro lado. */
+.tool-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--cat, var(--blue));
+  transition: width var(--snap), box-shadow var(--snap);
+}
+
+/* O nome da categoria, direto do atributo — sem duplicar no JS. */
+.tool-card::after {
+  content: attr(data-cat);
+  position: absolute;
+  left: 15px;
+  bottom: 11px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  transition: color var(--snap);
+}
+
+.tool-card:hover {
+  background: var(--panel-hi);
+  border-color: var(--border-hi);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px -12px #000;
+}
+
+.tool-card:hover::before { width: 5px; box-shadow: 0 0 12px -2px var(--cat, var(--blue)); }
+.tool-card:hover::after { color: var(--cat, var(--blue)); }
+
+.tool-card:hover .tool-card-icon {
+  background: var(--cat, var(--blue));
+  color: #10131a;
+}
+
+.tool-card:active { transform: translateY(0); box-shadow: none; }
+
+.tool-card-icon {
+  color: var(--cat, var(--blue));
+  background: var(--cat-soft, var(--blue-soft));
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  transition: background var(--snap), color var(--snap);
+}
+
+.tool-card-name { font-size: var(--fs-base); font-weight: 600; }
+.tool-card-desc { font-size: var(--fs-xs); color: var(--text-dim); line-height: 1.55; }
+
+/* ---------- Voltar ---------- */
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  padding: 0 0 13px 0;
+  margin-bottom: 6px;
+  width: 100%;
+  transition: color var(--snap);
+}
+
+.back-btn:hover { color: var(--text); }
+.back-btn:hover svg { transform: translateX(-2px); }
+.back-btn svg { flex-shrink: 0; transition: transform var(--snap); }
+
+/* ---------- Abas (segmented) ---------- */
+
+.segmented {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  margin-bottom: 18px;
+}
+
+.seg-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-faint);
+  font-family: var(--sans);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: background var(--snap), color var(--snap);
+}
+
+.seg-btn svg { transition: color var(--snap); }
+.seg-btn:hover { color: var(--text); background: var(--panel-alt); }
+
+.seg-btn.active {
+  background: var(--panel-hi);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.seg-btn.active svg { color: var(--blue); }
+
+/* ---------- Inputs ---------- */
+
+.add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.add-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-family: var(--mono);
+  transition: border-color var(--snap), background var(--snap);
+}
+
+.add-row input::placeholder { color: var(--text-faint); }
+.add-row input:focus {
+  outline: none;
+  border-color: var(--violet-line);
+  background: var(--panel-hi);
+}
+
+/* ---------- Botões ------------------------------------------------
+   Quatro variantes que não se confundem nem paradas nem no hover:
+
+   primary  → única preenchida; hover acende e ganha halo
+   copy     → contorno verde vazado; hover preenche por dentro
+   ghost    → neutro plano; hover levanta uma barra azul à esquerda
+   danger   → neutro apagado; hover vira vermelho por inteiro
+   ------------------------------------------------------------------ */
+
+.btn {
+  border: 1px solid var(--border-hi);
+  background: var(--panel-alt);
+  color: var(--text);
+  padding: 9px 14px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: var(--fs-base);
+  font-weight: 500;
+  line-height: 1.2;
+  transition: background var(--snap), border-color var(--snap), color var(--snap),
+              box-shadow var(--snap), transform var(--snap), filter var(--snap);
+}
+
+.btn:active { transform: translateY(1px); }
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+
+/* criar / gerar / mergear — a ação principal da tela.
+   O gradiente é vertical e curto: simula a luz batendo numa tecla,
+   não é o arco-íris horizontal que todo app genérico usa. */
+.btn.primary {
+  background: linear-gradient(180deg, #606ee9, #4a5ad6);
+  border-color: #3f4dc6;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #6e7bf0, #5464e0);
+  border-color: #5867e6;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 0 3px rgba(93, 110, 232, 0.22);
+}
+
+.btn.primary:active:not(:disabled) {
+  background: #4a5bd6;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* copiar — verde, vazado; o hover preenche de dentro pra fora */
+.btn.copy {
+  background: transparent;
+  border-color: var(--green-line);
+  color: var(--green);
+  font-weight: 600;
+}
+
+.btn.copy:hover:not(:disabled) {
+  background: var(--green-soft);
+  border-color: var(--green);
+  box-shadow: inset 0 0 20px -8px var(--green);
+}
+
+.btn.copy:active:not(:disabled) { background: rgba(47, 212, 138, 0.22); }
+
+/* neutro — o hover traz uma barra azul à esquerda */
+.btn.ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--panel-alt);
+  border-color: var(--border-hi);
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+
+/* remover / perigo — só acende quando o mouse chega perto */
+.btn.danger {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--error-soft);
+  border-color: var(--error);
+  color: var(--error);
+}
+
+/* mergear com pendência — PR sem aprovação ou com build quebrado.
+   Âmbar parado, âmbar sólido no hover: o aviso chega antes do clique. */
+.btn.caution {
+  background: transparent;
+  border-color: var(--warning-line);
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.btn.caution:hover:not(:disabled) {
+  background: var(--warning);
+  border-color: var(--warning);
+  color: #1a1509;
+  box-shadow: 0 0 0 3px var(--warning-soft);
+}
+
+/* modificador de tamanho — compõe com qualquer variante acima */
+.btn.compact {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  padding: 5px 11px;
+  white-space: nowrap;
+}
+
+.btn.copied {
+  background: var(--green-soft) !important;
+  border-color: var(--green) !important;
+  color: var(--green) !important;
+  box-shadow: none !important;
+  filter: none;
+}
+
+.btn.full-width { width: 100%; padding: 9px 10px; font-size: var(--fs-sm); }
+
+.text-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  padding: 4px 7px;
+  border-radius: 3px;
+  transition: color var(--snap), background var(--snap);
+}
+
+.text-btn:hover { color: var(--text); background: var(--panel-alt); }
+.text-btn.danger:hover { color: var(--error); background: var(--error-soft); }
+
+/* ---------- Cards -------------------------------------------------
+   Uma base e cinco variantes com peso visual diferente, porque são
+   coisas diferentes: um PR na fila não é um resultado, que não é um
+   cartão de status, que não é um item de busca.
+   ------------------------------------------------------------------ */
+
+.queue {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 2px;
+}
+
+.card {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  border-radius: var(--r-md);
+  padding: 13px 14px;
+  margin-bottom: 10px;
+}
+
+.card:last-child { margin-bottom: 0; }
+.queue .card { margin-bottom: 0; }
+
+.card__meta {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.4px;
+  color: var(--text-faint);
+  margin-bottom: 5px;
+}
+
+.card__title {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  margin-bottom: 6px;
+  line-height: 1.45;
+}
+
+.card__title .card__author { color: var(--text-dim); font-weight: 400; }
+
+.card__branches {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  margin-bottom: 9px;
+}
+
+.card__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.card__actions .btn {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: var(--fs-sm);
+}
+
+/* PR na fila — categoria git, faixa violeta cheia à esquerda. */
+.card--pr { border-left: 3px solid var(--violet); }
+.card--pr.loading { opacity: 0.5; border-left-color: var(--border-hi); }
+
+/* Mergeado: recolhe pro fundo, mas mantém a marca verde de concluído. */
+.card--pr.merged {
+  border-left-color: var(--green);
+  background: var(--panel);
+}
+.card--pr.merged .card__title { color: var(--text-dim); }
+
+/* Resultado de uma operação — o eixo aqui é ESTADO, não categoria:
+   verde quando deu certo, vermelho quando falhou. Ganha um leve
+   degradê a partir da borda pra pesar mais que um card comum. */
+.card--result {
+  border-left: 3px solid var(--green);
+  background: linear-gradient(90deg, var(--green-soft), transparent 55%), var(--panel-alt);
+}
+
+.card--error {
+  border-left: 3px solid var(--error);
+  background: linear-gradient(90deg, var(--error-soft), transparent 55%), var(--panel-alt);
+}
+
+.card--error .card__title { color: var(--error); }
+
+/* Status de conexão — mais leve que os outros: sem faixa, só um ponto.
+   Desconectado fica tracejado, pra ler como "ainda falta fazer isso". */
+.card--status {
+  background: var(--panel);
+  padding: 11px 13px;
+}
+
+.card--status.off { border-style: dashed; }
+
+.card--status .card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.card--status .card__title::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+
+.card--status.off .card__title::before {
+  background: var(--text-faint);
+  box-shadow: none;
+}
+
+/* Esperando o usuário voltar do navegador — âmbar pulsando. */
+.card--status.pending { border-color: var(--warning-line); }
+
+.card--status.pending .card__title::before {
+  background: var(--warning);
+  box-shadow: 0 0 8px var(--warning);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+/* Item de busca — compacto, feito pra bater o olho e copiar o ID. */
+.card--pick { padding: 11px 13px; }
+.card--pick .card__title { font-size: var(--fs-sm); margin-bottom: 2px; }
+
+.empty-state {
+  margin-top: 40px;
+  text-align: center;
+  color: var(--text-faint);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.empty-state p { margin: 0; line-height: 1.6; font-size: var(--fs-sm); }
+.empty-state strong { color: var(--text-dim); }
+
+/* ---------- Badges ---------- */
+
+.badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 11px;
+}
+
+.badge {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.3px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+}
+
+.badge.ok { background: var(--green-soft); color: var(--green); border-color: var(--green-line); }
+.badge.warn { background: var(--warning-soft); color: var(--warning); border-color: var(--warning-line); }
+.badge.err { background: var(--error-soft); color: var(--error); border-color: var(--error-line); }
+.badge.neutral { background: rgba(135, 141, 155, 0.08); color: var(--text-faint); border-color: var(--border-hi); }
+
+/* Valor literal (hash de commit) — caixa alta descaracterizaria o dado. */
+.badge.raw { text-transform: none; letter-spacing: 0; }
+
+/* ---------- Deploy ---------- */
+
+.deploy-row {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.deploy-select {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-family: var(--sans);
+  transition: border-color var(--snap), color var(--snap);
+}
+
+.deploy-select:focus {
+  outline: none;
+  border-color: var(--green-line);
+  color: var(--text);
+}
+
+/* ---------- Reaproveitar tags existentes ---------- */
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 6px;
+  margin: 0 -6px;
+  border-radius: var(--r-sm);
+  border-top: 1px solid var(--border);
+  transition: background var(--snap);
+}
+
+.pick-row:hover { background: var(--panel-hi); }
+
+.pick-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mono-id {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+  user-select: text;
+}
+
+.pick-sub {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pick-empty {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+/* ---------- Histórico de merges ---------- */
+
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -6px 0 12px 0;
+}
+
+.history-count {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  color: var(--text-faint);
+}
+
+.history-error {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--error);
+  background: var(--error-soft);
+  border-left: 2px solid var(--error);
+  padding: 7px 9px;
+  border-radius: 0 3px 3px 0;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
+/* O trecho do terminal fica fechado por padrão: o card é pra bater o olho,
+   o log é pra quando precisa investigar. */
+.log-excerpt {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  margin-bottom: 11px;
+  overflow: hidden;
+}
+
+.log-excerpt > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 7px 10px;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition: color var(--snap), background var(--snap);
+}
+
+.log-excerpt > summary::-webkit-details-marker { display: none; }
+
+/* Triângulo próprio, que gira ao abrir — o marcador nativo não acompanha a
+   fonte monoespaçada do resto. */
+.log-excerpt > summary::before {
+  content: '▸';
+  color: var(--text-faint);
+  transition: transform var(--snap), color var(--snap);
+}
+
+.log-excerpt[open] > summary::before { transform: rotate(90deg); }
+.log-excerpt > summary:hover { color: var(--text); background: var(--panel-hi); }
+.log-excerpt > summary:hover::before { color: var(--blue); }
+
+.log-excerpt-body {
+  background: #0b0d11;
+  border-top: 1px solid var(--border);
+  padding: 9px 10px 9px 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/* Coluna de horário mais estreita que no terminal ao vivo: aqui o card já é
+   metade da largura. */
+.log-excerpt-body .log-line { grid-template-columns: 12px 54px 1fr; }
+.log-excerpt-body .log-line .ts { opacity: 0.4; }
+
+/* ---------- Bloco de código (preview do geral.php) ---------- */
+
+.code-block {
+  margin: 0 0 11px 0;
+  padding: 11px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+  color: var(--text-dim);
+  /* Chave do reCAPTCHA tem 40 caracteres: sem quebrar, o valor some pra
+     fora do card e não dá pra conferir o que vai ser commitado. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+
+.code-block.wrap {
+  max-height: 150px;
+  overflow-y: auto;
+  color: var(--text);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  background: var(--panel-hi);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--text-dim);
+}
+
+/* ---------- Terminal ----------------------------------------------
+   Metade da tela é isto aqui, então vale tratar como tela principal:
+   coluna de glifo, coluna de horário e coluna de mensagem, pra linha
+   quebrada continuar alinhada com a de cima em vez de voltar pra
+   margem. Cada tipo tem um glifo próprio — dá pra varrer a coluna da
+   esquerda sem ler o texto.
+   ------------------------------------------------------------------ */
+
+.terminal-panel { background: #0b0d11; }
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.terminal-title {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.4px;
+  color: var(--text-faint);
+}
+
+.terminal-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Indicador de execução: parado é discreto, rodando pulsa em azul. */
+.term-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-faint);
+  padding: 3px 9px 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  transition: color var(--snap), border-color var(--snap), background var(--snap);
+}
+
+.term-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: background var(--snap), box-shadow var(--snap);
+}
+
+.terminal-panel.busy .term-status {
+  color: var(--blue);
+  border-color: var(--blue-line);
+  background: var(--blue-soft);
+}
+
+.terminal-panel.busy .term-status::before {
+  background: var(--blue);
+  box-shadow: 0 0 8px var(--blue);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.terminal {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px 20px 10px;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  line-height: 1.65;
+}
+
+.terminal:empty::before {
+  content: 'nenhuma atividade ainda — as chamadas de API aparecem aqui';
+  display: block;
+  padding: 6px 8px;
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.log-line {
+  display: grid;
+  grid-template-columns: 13px 60px 1fr;
+  align-items: start;
+  gap: 0 8px;
+  padding: 1px 8px 1px 6px;
+  border-left: 2px solid transparent;
+  border-radius: 0 3px 3px 0;
+}
+
+/* Cada bloco novo de comando ganha ar e um fio, pra separar uma
+   execução da anterior sem precisar limpar o terminal. */
+.log-line:not(.cmd) + .log-line.cmd {
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+
+.log-glyph {
+  text-align: center;
+  font-weight: 700;
+  opacity: 0.75;
+  user-select: none;
+}
+
+/* Horário é referência, não conteúdo: fica apagado até o mouse passar. */
+.log-line .ts {
+  color: var(--text-faint);
+  opacity: 0.45;
+  transition: opacity var(--snap);
+  user-select: none;
+}
+
+.log-line:hover .ts { opacity: 1; }
+
+.log-msg {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.log-line.info { color: var(--text-dim); }
+.log-line.info .log-glyph { opacity: 0.35; }
+.log-line.cmd { color: var(--blue); }
+.log-line.success { color: var(--green); }
+
+/* Avisos e erros ficam destacados: barra colorida + leve fundo. */
+.log-line.warn {
+  color: var(--warning);
+  border-left-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.log-line.error {
+  color: var(--error);
+  border-left-color: var(--error);
+  background: var(--error-soft);
+}
+
+.log-line.warn .log-glyph,
+.log-line.error .log-glyph { opacity: 1; }
+
+/* ---------- Modal de configurações ---------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 9, 12, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.hidden { display: none; }
+
+.modal-box {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border-hi);
+  border-radius: 8px;
+  padding: 22px;
+  width: 400px;
+  max-height: 86vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+}
+
+.modal-box::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(90deg, var(--violet), var(--blue) 55%, var(--green));
+}
+
+.modal-box h2 {
+  margin: 0 0 18px 0;
+  font-size: var(--fs-lg);
+  letter-spacing: 0.2px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 13px;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.field input, .field select, .field textarea {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-family: var(--sans);
+  transition: border-color var(--snap), background var(--snap);
+}
+
+/* Listas de IDs coladas de fora — monoespaçado pra conferir número por número. */
+.field textarea {
+  font-family: var(--mono);
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 76px;
+}
+
+.field input::placeholder, .field textarea::placeholder { color: var(--text-faint); }
+
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: none;
+  border-color: var(--blue-line);
+  background: var(--panel-hi);
+}
+
+/* O seletor de projeto decide em quais contas do Google o app vai mexer —
+   ganha uma barra colorida por marca pra não passar batido. */
+.brand-select {
+  font-weight: 600;
+  border-left-width: 3px !important;
+}
+
+.brand-select[data-brand="bc"] { border-left-color: var(--blue); }
+.brand-select[data-brand="mpisolutions"] { border-left-color: var(--green); }
+.brand-select[data-brand="mpiplus"] { border-left-color: var(--violet); }
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  margin-bottom: 13px;
+  cursor: pointer;
+}
+
+.checkbox-field input { accent-color: #5b6ce8; width: 14px; height: 14px; cursor: pointer; }
+.checkbox-field:hover { color: var(--text); }
+
+/* Lista de etapas da aba "Criar novo": itens de um mesmo grupo, mais juntos
+   que um campo solto. Travada = a dependência dela não está marcada. */
+.checkbox-field.step { margin-bottom: 7px; }
+.checkbox-field.step:last-of-type { margin-bottom: 13px; }
+
+.checkbox-field.disabled,
+.checkbox-field.disabled:hover { opacity: 0.42; cursor: not-allowed; color: var(--text-dim); }
+.checkbox-field.disabled input { cursor: not-allowed; }
+
+/* Commitar não é uma etapa da criação — a linha separa as duas coisas. */
+.checkbox-field.after-steps {
+  margin-top: 3px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.hint {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  margin: 10px 0 14px 0;
+  line-height: 1.65;
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.spacer { flex: 1; }
+
+
+/* ==================================================================
+   PASSE DE DENSIDADE
+
+   Só espaçamento e tamanho. Nenhuma regra de cor aqui — cor é assunto
+   do bloco :root lá em cima, e misturar os dois é o caminho para um
+   arquivo que ninguém mais ajusta com segurança.
+   ================================================================== */
+
+.topbar { padding: 6px 12px; }
+.topbar::after { height: 1px; opacity: 0.55; }
+.brand { gap: 7px; }
+.icon-btn { padding: 4px; }
+
+.layout { padding: 10px; gap: 10px; }
+.actions { padding-right: 1px; }
+
+/* Home ------------------------------------------------------------ */
+.search-wrap { margin-bottom: 12px; }
+.search-input { padding: 7px 10px 7px 29px; }
+.section-label { gap: 6px; margin-bottom: 4px; padding-bottom: 9px; }
+.chips { gap: 5px; }
+.chip { padding: 4px 8px 4px 6px; gap: 5px; }
+.chip svg { width: 12px; height: 12px; }
+
+.tool-grid { gap: 8px; }
+.tool-card { padding: 10px 11px 20px 11px; gap: 7px; }
+.tool-card-icon { height: 26px; }
+.tool-card-icon svg { width: 16px; height: 16px; }
+.tool-card-desc {
+  line-height: 1.45;
+  /* Duas linhas e ponto: o cartão existe para ser reconhecido de relance,
+     não lido. Sem isto, uma descrição longa estica a fileira inteira. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Controles ------------------------------------------------------- */
+.segmented { gap: 2px; padding: 2px; margin-bottom: 12px; }
+.seg-btn { padding: 5px 9px; gap: 5px; }
+.field { gap: 6px; margin-bottom: 10px; }
+.field input, .field select, .field textarea { padding: 6px 9px; }
+.btn { padding: 6px 11px; gap: 6px; }
+.btn.full-width { padding: 7px 10px; }
+.text-btn { padding: 3px 8px; }
+.checkbox-field { gap: 7px; margin-bottom: 10px; }
+.checkbox-field input { width: 13px; height: 13px; }
+
+.checkbox-field.after-steps { padding-top: 9px; }
+
+/* Cards ----------------------------------------------------------- */
+.queue { gap: 7px; }
+.card { padding: 9px 11px; margin-bottom: 7px; }
+.card__meta { margin-bottom: 4px; }
+.card__title { margin-bottom: 4px; line-height: 1.35; }
+.card__branches { margin-bottom: 7px; }
+.card__actions { gap: 6px; }
+.card__actions .btn { padding: 6px 8px; }
+.card--status { padding: 9px 11px; }
+.card--pick { padding: 8px 10px; }
+.badges { gap: 5px; margin-bottom: 8px; }
+.badge { padding: 2px 6px; }
+.hint { margin: 7px 0 10px 0; line-height: 1.55; }
+.code-block { padding: 7px 9px; }
+
+/* Terminal -------------------------------------------------------- */
+.terminal-header { padding: 6px 10px 6px 11px; gap: 8px; }
+.terminal { padding: 8px 11px 16px 8px; line-height: 1.5; }
+
+/* O brilho mora aqui e em mais dois lugares — não em tudo. */
+.btn.primary { box-shadow: 0 0 0 1px rgba(53, 200, 255, 0.25), 0 0 14px -4px rgba(53, 200, 255, 0.55); }
+.btn.primary:hover { box-shadow: 0 0 0 1px rgba(53, 200, 255, 0.4), 0 0 18px -3px rgba(53, 200, 255, 0.7); }
+:focus-visible { outline-width: 1px; outline-offset: 2px; }
+
+/* Modal ----------------------------------------------------------- */
+.modal-box { padding: 16px; width: 372px; border-radius: 6px; }
+.modal-box h2 { margin: 0 0 14px 0; }
+.modal-actions { margin-top: 14px; gap: 7px; }
+
+/* ---------- Lista "O que criar" ------------------------------------
+   A caixa de seleção solta num fundo escuro some: o alvo de clique é o
+   quadradinho de 13px, e o estado só se lê olhando de perto. Aqui a
+   LINHA inteira é o alvo e o estado, com a marca à direita — o olho
+   varre uma coluna de marcas em vez de caçar quadradinhos.
+   ------------------------------------------------------------------ */
+
+.checkbox-field.step {
+  position: relative;
+  padding: 7px 34px 7px 10px;
+  margin-bottom: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel-alt);
+  color: var(--text-dim);
+  transition: border-color var(--snap), background var(--snap), color var(--snap);
+}
+
+.checkbox-field.step:hover:not(.disabled) {
+  border-color: var(--border-hi);
+  background: var(--panel-hi);
+  color: var(--text);
+}
+
+/* A caixa nativa vira só o alvo de teclado: invisível, mas focável. */
+.checkbox-field.step input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+
+.checkbox-field.step span { flex: 1; }
+
+/* A marca: um "✓" desenhado à direita, que só existe quando marcado. */
+.checkbox-field.step::after {
+  content: '';
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  width: 9px;
+  height: 5px;
+  margin-top: -4px;
+  border-left: 1.5px solid var(--green);
+  border-bottom: 1.5px solid var(--green);
+  transform: rotate(-45deg) scale(0.6);
+  opacity: 0;
+  transition: opacity var(--snap), transform var(--snap);
+}
+
+.checkbox-field.step:has(input:checked) {
+  border-color: var(--green-line);
+  background: var(--green-soft);
+  color: var(--text);
+}
+
+.checkbox-field.step:has(input:checked)::after {
+  opacity: 1;
+  transform: rotate(-45deg) scale(1);
+}
+
+/* Foco de teclado no item inteiro, já que a caixa nativa está escondida. */
+.checkbox-field.step:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.checkbox-field.step.disabled,
+.checkbox-field.step.disabled:hover {
+  background: transparent;
+  border-color: var(--border);
+  border-style: dashed;
+  color: var(--text-faint);
+}
+
+/* ---------- Campo de arquivo (planilha do vínculo em massa) ----------
+   O input[type=file] nativo entra com a cara do sistema operacional no meio de
+   uma tela que não tem nada com essa cara. O ::file-selector-button é a única
+   parte estilizável: vira o mesmo botão discreto dos outros. */
+.field input[type='file'] {
+  padding: 7px 9px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.field input[type='file']::file-selector-button {
+  margin-right: 9px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-hi);
+  border-radius: 4px;
+  background: var(--panel-hi);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color var(--snap), background var(--snap);
+}
+
+.field input[type='file']::file-selector-button:hover {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+/* Lista de sessões do Google por marca, nas configurações. */
+.brand-oauth {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+/* Chave que não foi criada: fica na lista, apagada, para a linha não sumir. */
+.mono-id.faint { color: var(--text-faint); font-weight: 400; }
+.card--result .pick-row:first-of-type { border-top: 0; }
