@@ -74,6 +74,13 @@ const STUB = () => {
     salesforceConectar: async () => ({ ok: true, nome: 'Guilherme Millares' }),
     salesforceDesconectar: async () => ({ ok: true }),
     salesforceDiagnostico: async () => ({ ok: true, log: [] }),
+    manterAcordado: async () => ({ ok: true }),
+    gravarLog: async () => ({ ok: true }),
+    abrirPastaLogs: async () => ({ ok: true }),
+    salvarRodada: async () => ({ ok: true }),
+    lerRodada: async () => ({ ok: true, estado: null }),
+    apagarRodada: async () => ({ ok: true }),
+    procurarNaPlanilha: async () => ({ ok: true, log: [], achado: null }),
     salesforceFecharTarefa: async () => ({ ok: true, log: [] }),
     salesforceCriarTarefaNoCaso: async () => ({ ok: true, log: [], taskId: '00Tstub', casoNumero: '00088671' }),
     onSalesforceUrl: () => () => {},
@@ -110,6 +117,70 @@ const STUB = () => {
     oauthLogout: noop,
     listBrandAccounts: noop,
     grantAccessBulk: noop,
+    // O que o preload.js ganhou depois e faltava aqui (ADR-012): sem o
+    // doutorStatus, a tela de configurações quebrava no preview.
+    doutorStatus: async () => ({ ok: true, configured: true, emailMpi: 'doutor@mpisolutions.com.br', emailBusca: 'doutor@buscacliente.com.br', temSenha: true }),
+    doutorSetCreds: noop,
+    doutorBloquear: noop,
+    pararProcesso: noop,
+    liberarProcesso: noop,
+    clearEmpresa: noop,
+    conferirApontamento: noop,
+    montarZonaCloudflare: noop,
+    exportarPlanilha: noop,
+    acharContratoNoPainel: noop,
+    listGtmBrandAccounts: noop,
+    grantGtmAccessBulk: noop,
+    usuarioLogado: async () => ({ ok: true, nome: 'Guilherme Millares', fonte: 'salesforce' }),
+    recursos: async () => ({ ok: true, memMb: 420 }),
+    // Redesign v2.4 (ADR-115)
+    telemetria: async () => ({ ok: true, memMb: 420, cpuPct: 1.2, processos: 6, pid: 18492 }),
+    executarComando: async () => ({ ok: true, pid: 1 }),
+    pararComando: async () => ({ ok: true }),
+    abrirLink: async () => ({ ok: true }),
+    onComandoSaida: () => () => {},
+    // Git Bash (ADR-128): o dublê guarda quem recebe a saída, e a cena manda
+    // um prompt de mentira por ele.
+    bashAbrir: async () => ({ ok: true, shell: 'C:\\Git\\bin\\bash.exe', pid: 4242, build: 26200 }),
+    bashEscrever: () => {},
+    bashTamanho: () => {},
+    bashFechar: async () => ({ ok: true, fechou: true }),
+    onBashDados: (cb) => { window.__bashDados = cb; return () => {}; },
+    onBashSaiu: () => () => {},
+    statusCredenciais: async () => ({ ok: true, hestia: { ip: '149.18.102.39', servidor: '192.168.3.143' }, itens: [
+      { id: 'bitbucket', nome: 'Bitbucket API', ok: true, detalhe: 'API Token gravado (DPAPI)' },
+      { id: 'google_sa', nome: 'Google Service Account', ok: true, detalhe: 'hub-automacao.json' },
+      { id: 'google_oauth', nome: 'Google OAuth Client', ok: true, detalhe: 'Client ID + Secret' },
+      { id: 'salesforce', nome: 'Salesforce', ok: true, detalhe: 'Guilherme Millares' },
+      { id: 'microsoft', nome: 'Microsoft Graph', ok: true, detalhe: 'guilherme.millares@buscacliente.com.br' },
+      { id: 'cloudflare_bc', nome: 'Cloudflare · Busca Cliente', ok: true, detalhe: 'token gravado' },
+      { id: 'cloudflare_mpi', nome: 'Cloudflare · MPI Solutions', ok: true, detalhe: 'token gravado' },
+      { id: 'registrobr_bc', nome: 'Registro.br · Busca Cliente', ok: true, detalhe: 'BCTDL' },
+      { id: 'registrobr_mpi', nome: 'Registro.br · MPI Solutions', ok: false, detalhe: 'sem login' },
+      { id: 'painel', nome: 'Painel MPI+', ok: true, detalhe: 'guilherme@idealtrends.com.br' },
+      { id: 'doutor', nome: 'Painel /doutor', ok: true, detalhe: 'sig@mpisolutions.com.br' },
+      { id: 'dnshist', nome: 'Histórico de DNS (WhoisXML)', ok: false, detalhe: 'opcional' },
+    ] }),
+    salesforceMoverTarefa: async () => ({ ok: true, log: [], status: 'In Progress', rotulo: 'Em andamento', assumida: true }),
+    salesforceTarefas: async () => ({ ok: true, log: [], instancia: 'https://grupo-ideal-trends.my.salesforce.com',
+      eu: { id: '005A', nome: 'Guilherme Millares', email: 'guilherme.millares@buscacliente.com.br' },
+      filas: [{ id: '00GA', nome: 'Deploy Busca Cliente', marca: 'bc' }, { id: '00GB', nome: 'Deploy MPI Solutions', marca: 'mpisolutions' }],
+      colunas: { afazer: { api: 'Not Started', rotulo: 'A fazer' }, andamento: { api: 'In Progress', rotulo: 'Em andamento' }, concluido: { api: 'Completed', rotulo: 'Concluído' } },
+      tarefas: [
+        { id: '00T1', assunto: 'Site Pisteker Eletricidade', status: 'Not Started', coluna: 'afazer', fechada: false, prazo: new Date().toISOString().slice(0, 10), fila: '00GA', donoId: '00GA', dono: 'Deploy Busca Cliente', relativo: 'Pisteker Eletricidade', relativoTipo: 'Case', minha: false, autor: 'Ana Paula', criada: '2026-09-25T13:10:00.000Z', descricao: 'Publicar o site novo em pisteker.com.br.\nDNS já está na Cloudflare da Busca Cliente; falta aprovar no painel, ativar o SSL e vincular as tags.\nCliente pediu retorno até sexta.' },
+        { id: '00T2', assunto: 'PR #412 aprovado - layoutcenografia.com.br', status: 'In Progress', coluna: 'andamento', fechada: false, prazo: null, fila: '00GA', donoId: '00GA', dono: 'Deploy Busca Cliente', relativo: 'Layout Cenografia', relativoTipo: 'Case', minha: false },
+        { id: '00T3', assunto: 'Commit geral.php - clinicasaovicente.com.br', status: 'Not Started', coluna: 'afazer', fechada: false, prazo: '2026-10-02', fila: '00GA', donoId: '00GA', dono: 'Deploy Busca Cliente', relativo: '', relativoTipo: '', minha: false },
+        { id: '00T4', assunto: 'BFW Soluções - publicação', status: 'Not Started', coluna: 'afazer', fechada: false, prazo: new Date(Date.now() + 86400000).toISOString().slice(0, 10), fila: '00GB', donoId: '00GB', dono: 'Deploy MPI Solutions', relativo: 'BFW Soluções', relativoTipo: 'Case', minha: false },
+        { id: '00T5', assunto: 'DNS Cloudflare - anrservicos.com.br', status: 'In Progress', coluna: 'andamento', fechada: false, prazo: null, fila: '00GB', donoId: '00GB', dono: 'Deploy MPI Solutions', relativo: 'ANR Serviços', relativoTipo: 'Case', minha: false },
+        { id: '00T6', assunto: 'Tags GA4 / GTM - bfwsolucoes.com.br', status: 'Not Started', coluna: 'afazer', fechada: false, prazo: null, fila: '00GB', donoId: '00GB', dono: 'Deploy MPI Solutions', relativo: '', relativoTipo: '', minha: false },
+        { id: '00T7', assunto: 'reCAPTCHA v3 - pisteker.com.br', status: 'Not Started', coluna: 'afazer', fechada: false, prazo: null, fila: '00GB', donoId: '00GB', dono: 'Deploy MPI Solutions', relativo: '', relativoTipo: '', minha: false },
+        { id: '00T8', assunto: 'Ajuste de SSL e certificado wildcard Pisteker', status: 'In Progress', coluna: 'andamento', fechada: false, prazo: new Date().toISOString().slice(0, 10), fila: null, donoId: '005A', dono: 'Guilherme Millares', relativo: 'Pisteker Eletricidade', relativoTipo: 'Case', minha: true },
+        { id: '00T9', assunto: 'Subdomínio institucional BFW Soluções e landing page', status: 'Not Started', coluna: 'afazer', fechada: false, prazo: new Date(Date.now() + 86400000).toISOString().slice(0, 10), fila: null, donoId: '005A', dono: 'Guilherme Millares', relativo: 'BFW Soluções', relativoTipo: 'Case', minha: true },
+        { id: '00TA', assunto: 'Publicação V1 -> V2 - nobrefrutas.com.br', status: 'Completed', coluna: 'concluido', fechada: true, prazo: null, fila: null, donoId: '005A', dono: 'Guilherme Millares', relativo: 'Nobre Frutas', relativoTipo: 'Case', minha: true },
+        { id: '00TB', assunto: 'Publicação V1 -> V2 - carste.com.br', status: 'Completed', coluna: 'concluido', fechada: true, prazo: null, fila: null, donoId: '005A', dono: 'Guilherme Millares', relativo: 'Carste Engenharia', relativoTipo: 'Case', minha: true },
+      ] }),
+    whois: async ({ dominio }) => ({ ok: true, dominio, dns: { ns: ['ns1.cloudflare.com', 'ns2.cloudflare.com'], a: ['149.18.102.39'], mx: ['10 mx.'+dominio], resolveu: true }, whois: { host: 'whois.registro.br', texto: 'owner: CLIENTE LTDA\nstatus: published', campos: { titular: 'CLIENTE LTDA', registrador: '', criado: '20180312', expira: '20260312', status: 'published', nameservers: ['ns1.cloudflare.com'] } } }),
+    checarOuvidoria: async ({ dominio }) => ({ ok: true, achou: true, razao: 'CLIENTE LTDA', situacao: 'Cancelado — 05/08/2026 [00085674]', ativarSsl: 'não', temOuvidoria: true, log: [] }),
   };
 };
 
@@ -194,7 +265,47 @@ const FIXTURES = {
 
 const SCENES = {
   home: async (page) => {
-    await page.evaluate(() => { state.view = 'home'; render(); });
+    await page.evaluate(async () => { hubSfConectado = true; await carregarTarefasSf(true); state.view = 'home'; render(); });
+    await page.waitForTimeout(200);
+  },
+  // Os dois terminais (ADR-128): o Git Bash aberto embaixo do meio, com o
+  // prompt do Git for Windows, e a Atividade minimizada no trilho.
+  terminais: async (page) => {
+    await page.evaluate(async () => {
+      await abrirBash();
+      const e = String.fromCharCode(27);
+      window.__bashDados(`${e}[36m"Embora ninguém possa voltar e fazer um novo começo, qualquer um pode começar a partir de agora e fazer um novo final."${e}[0m ${e}[35m— Carl Bard${e}[0m\r\n\r\n${e}[32mguilherme.millares@PAT-02131 ${e}[35mMINGW64 ${e}[33m~/Pictures/pr-merge-tool${e}[36m (master)${e}[0m\r\n$ git status -sb\r\n${e}[32m## master...origin/master${e}[0m\r\n ${e}[31mM${e}[0m renderer/app.js\r\n${e}[31m??${e}[0m renderer/terminais.js\r\n\r\n${e}[32mguilherme.millares@PAT-02131 ${e}[35mMINGW64 ${e}[33m~/Pictures/pr-merge-tool${e}[36m (master)${e}[0m\r\n$ `);
+    });
+    await page.waitForTimeout(250);
+  },
+  'terminais-atividade-min': async (page) => {
+    await page.evaluate(() => { mudarAtividade('minimizado'); log('Chegou enquanto estava minimizada.', 'warn'); });
+    await page.waitForTimeout(250);
+  },
+  'home-sem-terminais': async (page) => {
+    await page.evaluate(() => { mudarAtividade('fechado'); mudarBash('fechado'); state.view = 'home'; render(); });
+    await page.waitForTimeout(250);
+  },
+  'home-de-volta': async (page) => {
+    await page.evaluate(() => { mudarAtividade('aberto'); });
+    await page.waitForTimeout(150);
+  },
+  kanban: async (page) => {
+    await page.evaluate(async () => { hubSfConectado = true; await carregarTarefasSf(true); sfKanban.fila = 'todas'; state.view = 'kanban'; render(); });
+    await page.waitForTimeout(200);
+  },
+  'kanban-tarefa': async (page) => {
+    await page.evaluate(async () => { hubSfConectado = true; await carregarTarefasSf(true); sfKanban.fila = 'todas'; state.view = 'kanban'; render(); abrirTarefaNoSalesforce(sfKanban.dados.tarefas[0]); });
+    await page.waitForTimeout(250);
+  },
+  'config-cloudflare': async (page) => {
+    await page.evaluate(() => { fecharTarefaAberta(); });
+    await page.evaluate(() => { state.view = 'home'; render(); openSettings('cloudflare'); });
+    await page.waitForTimeout(250);
+  },
+  'config-acesso': async (page) => {
+    await page.evaluate(() => { state.view = 'home'; render(); openSettings('acesso'); document.getElementById('gaAccountIds').value = '312884706\n298117403'; });
+    await page.waitForTimeout(250);
   },
   historico: async (page, f) => {
     await page.evaluate((f) => {
@@ -208,14 +319,14 @@ const SCENES = {
   },
   criar: async (page, f) => {
     await page.evaluate((f) => {
-      state.view = 'newproject'; render();
+      state.view = 'newproject'; state.npTab = 'create'; render();
       renderNpCreateResult(document.getElementById('npResult'), f.createResult);
     }, f);
   },
   'criar-mpiplus': async (page, f) => {
     await page.evaluate((f) => {
       state.brand = 'mpiplus';
-      state.view = 'newproject'; render();
+      state.view = 'newproject'; state.npTab = 'create'; render();
       renderNpCreateResult(document.getElementById('npResult'), {
         ...f.createResult,
         domain: 'clinicahumanizzi.com.br',
@@ -238,7 +349,7 @@ const SCENES = {
   },
   acesso: async (page) => {
     await page.evaluate(() => {
-      state.view = 'grantaccess'; render();
+      openSettings('acesso');
       document.getElementById('gaAccountIds').value = '312884706\n298117403\n455920188\n501773624';
     });
   },
@@ -256,6 +367,7 @@ const SCENES = {
   vincular: async (page) => {
     await page.evaluate(() => {
       state.brand = 'mpiplus';
+      state.sfTarefasAuto = true;
       state.view = 'bulk';
       render();
       const P = 'https://idealplus.idealtrends.io/clientes/2775/hub?projeto=2851&tab=publicacao';
@@ -276,6 +388,21 @@ const SCENES = {
       bulkRows[1].status = 'parcial'; bulkRows[1].detalhe = 'não existia: reCAPTCHA';
       bulkRows[2].status = 'rodando';
       renderBulkLista();
+    });
+  },
+  retomar: async (page) => {
+    await page.evaluate(async () => {
+      const P = 'https://idealplus.idealtrends.io/clientes/2775/hub?projeto=2851&tab=publicacao';
+      window.api.lerRodada = async () => ({ ok: true, estado: {
+        versao: 1, fase: 'publicando', marca: 'mpiplus', origem: 'Publicação em Massa.xlsx', salvoEm: '2026-09-22T23:41:00.000Z',
+        linhas: [['Razão Social', 'Domínio', 'Link do painel'], ['A', 'a.com.br', P], ['B', 'b.com.br', P], ['C', 'c.com.br', P]],
+        mapa: { razao: 0, dominio: 1, painel: 2, caso: -1 }, temCabecalho: true,
+        sites: [{ dominio: 'a.com.br', status: 'ok', publicado: true }, { dominio: 'b.com.br', status: 'rodando', publicado: true }, { dominio: 'c.com.br', status: 'pendente' }],
+      } });
+      state.brand = 'mpiplus';
+      state.view = 'bulk';
+      render();
+      await new Promise((r) => setTimeout(r, 100));
     });
   },
   publicar: async (page) => {
@@ -348,17 +475,44 @@ const SCENES = {
     await page.click('#mailCheckBtn');
     await page.waitForSelector('#mailSendBtn');
   },
+  doutor: async (page) => {
+    await page.evaluate(() => {
+      state.view = 'doutor';
+      doutorEstado.marca = 'mpisolutions';
+      doutorEstado.dominio = 'clinicasaovicente.com.br';
+      doutorEstado.acao = 'bloquear';
+      doutorEstado.ultimo = { ok: true, titulo: 'Contatos bloqueados: Cl\u00ednica S\u00e3o Vicente', sub: 'o telefone passa a aparecer como ## no site' };
+      render();
+    });
+  },
+  ouvidoria: async (page) => {
+    await page.evaluate(() => {
+      state.view = 'ouvidoria';
+      ouvEstado = {
+        dominios: ['layoutcenografia.com.br', 'clinicasaovicente.com.br', 'transportesnorte.com.br', 'adifertampoes.com.br'],
+        origem: 'clientes-ssl.xlsx',
+        rodando: false, parar: false, feito: true,
+        linhas: [
+          { dominio: 'layoutcenografia.com.br', achou: true, razao: 'Layout Cenografia Ltda', situacao: 'Conclu\u00eddo', ativarSsl: 'sim' },
+          { dominio: 'clinicasaovicente.com.br', achou: true, razao: 'Cl\u00ednica S\u00e3o Vicente', situacao: 'Cancelado', ativarSsl: 'n\u00e3o' },
+          { dominio: 'transportesnorte.com.br', achou: true, razao: 'Transportes Norte S.A.', situacao: 'Jur\u00eddico', ativarSsl: 'n\u00e3o' },
+          { dominio: 'adifertampoes.com.br', achou: false, motivo: 'nenhuma tarefa cita o dom\u00ednio', situacao: 'n\u00e3o encontrado no Salesforce (nenhuma tarefa cita o dom\u00ednio)', ativarSsl: 'revisar' },
+        ],
+      };
+      render();
+    });
+  },
   config: async (page) => {
-    await page.evaluate(() => { state.view = 'home'; render(); openSettings(); });
+    await page.evaluate(() => { state.view = 'home'; render(); openSettings('geral'); });
+    await page.waitForTimeout(250);
   },
   'config-salesforce': async (page) => {
-    await page.evaluate(() => { state.view = 'home'; render(); openSettings(); });
+    await page.evaluate(() => { state.view = 'home'; render(); openSettings('salesforce'); });
     await page.waitForTimeout(250);
-    await page.evaluate(() => { document.getElementById('sfStatus')?.scrollIntoView({ block: 'center' }); });
   },
   'config-contas': async (page) => {
     await page.evaluate(async () => {
-      state.view = 'home'; render(); openSettings();
+      state.view = 'home'; render(); openSettings('google');
       state.brandAccounts = {
         bc: 'bcrelatorios@gmail.com',
         mpisolutions: 'ferramentasmpisolutions@gmail.com',
@@ -367,9 +521,8 @@ const SCENES = {
       await renderBrandOauth();
       // Mostra o marco de cima ("Conta do Google, por marca") junto, para dar
       // para achar a seção rolando a tela.
-      const rotulos = Array.from(document.querySelectorAll('.modal .section-label'));
-      const alvo = rotulos.find((x) => /Conta do Google/i.test(x.textContent));
-      if (alvo) alvo.scrollIntoView({ block: 'start' });
+      const alvo = document.getElementById('brandOauthList');
+      if (alvo) alvo.scrollIntoView({ block: 'center' });
     });
     await page.waitForTimeout(200);
   },
@@ -378,7 +531,7 @@ const SCENES = {
 (async () => {
   fs.mkdirSync(path.join(ROOT, OUT), { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.HUB_CHROME || undefined });
-  const page = await browser.newPage({ viewport: { width: 1240, height: Number(process.env.HUB_ALTURA) || 800 }, deviceScaleFactor: 2 });
+  const page = await browser.newPage({ viewport: { width: Number(process.env.HUB_LARGURA) || 1600, height: Number(process.env.HUB_ALTURA) || 1000 }, deviceScaleFactor: 1 });
 
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -386,7 +539,7 @@ const SCENES = {
 
   await page.addInitScript(STUB);
   await page.goto(RENDERER);
-  await page.waitForFunction(() => typeof render === 'function' && document.getElementById('toolGrid'));
+  await page.waitForFunction(() => typeof render === 'function' && document.getElementById('leftPanel'));
 
   // Terminal com histórico realista em todas as telas.
   await page.evaluate((f) => {
@@ -396,7 +549,7 @@ const SCENES = {
 
   for (const [name, run] of Object.entries(SCENES)) {
     await run(page, FIXTURES);
-    await page.waitForTimeout(120);
+    await page.waitForTimeout(450);
     await page.screenshot({ path: path.join(ROOT, OUT, `${name}.png`) });
     // Rolagem lateral no painel esquerdo é defeito de layout, não de dado:
     // um botão a mais na linha já provoca (ADR-072). Conta como erro.

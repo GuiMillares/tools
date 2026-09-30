@@ -276,7 +276,7 @@ ou onde separa o app do resto da tela (o fio da topbar, o topo do modal).
 
 ## ADR-011 — O terminal é a superfície principal, não um rodapé de debug
 
-**Status:** aceita
+**Status:** aceita — pela ADR-128 ele pode ser minimizado ou fechado, e volta sozinho quando o Hub pergunta algo
 
 **Contexto.** O terminal ocupa mais da metade da janela e é onde o usuário
 descobre o que o app fez. Tratado como log cru, virava um paredão de texto onde
@@ -2492,7 +2492,7 @@ superfícies grandes e estáticas, é imperceptível. A luz ambiente é a única
 
 ## ADR-056 — Verde é o destaque; cartões voltam, menores
 
-**Status:** aceita (ajusta a ADR-055)
+**Status:** aceita (ajusta a ADR-055) — os cartões saíram da tela inicial na ADR-127; o verde como destaque continua
 
 **Contexto.** Duas devoluções depois da ADR-055: a tela inicial em lista não
 agradou (os cartões eram melhores, só grandes), e a paleta ainda lia como
@@ -3948,7 +3948,1733 @@ agora também nos subdomínios.
 
 ---
 
+## ADR-092 — Chave do Google recusada e aba Publicação lenta não derrubam a rodada em massa
+
+**Status:** aceita
+
+**Contexto.** Numa rodada de 32 sites, dois problemas apareceram:
+
+1. `invalid_grant: Invalid JWT Signature` em todo site que precisava do Google.
+   É o Google recusando a chave da service account: a chave do arquivo
+   configurado não existe mais no Google Cloud (revogada/apagada na troca das
+   credenciais). O Hub tentava de novo a cada site, e pior, marcava a linha como
+   **falhou** — inclusive sites que ele tinha acabado de publicar em produção
+   (neuroclinicadepsicologia, ecorealambiental). Linha "falhou" não vai para a
+   planilha e, pela ADR-090, não ganha tarefa no Salesforce: um site no ar
+   ficava sem registro nenhum.
+2. `o painel não expôs window.__mpiHubPubPublication; a aba Publicação mudou?`
+   num site que já estava publicado (wselevadores). O script olhava o gancho
+   uma vez só, logo no load, enquanto o botão logo abaixo era esperado por até
+   20s. Página um pouco mais lenta = falha na hora, com uma pergunta que não
+   ajudava.
+
+**Decisão.**
+
+1. **Erro de chave vira instrução.** `diagnosticoChaveSa` reconhece o
+   `invalid_grant` do JWT da service account (também quando o motivo vem no
+   corpo da resposta) e diz o que fazer: gerar chave nova, salvar fora da pasta
+   do projeto, apontar nas configurações. "Invalid JWT" sem "Signature" aponta
+   para o relógio do Windows. Login OAuth revogado não tem "JWT" e não cai aqui.
+2. **Na rodada em massa, a primeira recusa da chave desliga o Google até o
+   fim da rodada**, porque a chave é a mesma para todos. Publicação, DNS,
+   planilha e Salesforce seguem.
+3. **Publicado é publicado.** Quando `publicarSeNecessario` volta sem erro, a
+   linha fica marcada como publicada. Daí em diante, falha no Google, falta de
+   Measurement ID ou painel que não aceita o vínculo deixam a linha **parcial**,
+   não falha: vai para a planilha, ganha a tarefa no Salesforce no fim, e volta
+   para a fila na próxima rodada só para refazer o vínculo.
+4. **A tarefa do Salesforce passa a depender de "publicado"**, não de "não
+   falhou". Linha que não entrou na rodada ou em que não deu para confirmar a
+   publicação sai num aviso, sem tarefa.
+5. **A aba Publicação é esperada** (até 20s, como o botão) e, se ainda assim
+   não carregar, a etapa de conferir o estado recarrega a página do zero uma vez
+   antes de dar o site como falho.
+
+**Consequências.** Chave vencida vira um aviso só e uma rodada que termina com
+todos os sites publicados registrados; o vínculo é refeito numa segunda rodada
+depois da chave nova, sem republicar nada. Página lenta do painel deixa de
+derrubar site já publicado.
+
+---
+
+## ADR-093 — 403 do Salesforce pede reconexão, e as tarefas que não saíram ficam pendentes
+
+**Status:** aceita
+
+**Contexto.** No fim de uma rodada, as 17 tarefas do Salesforce falharam com
+`GET /services/oauth2/userinfo respondeu 403`. Não era sessão expirada (essa
+volta 401 e o Hub renova sozinho): o token guardado tinha deixado de valer, e
+desconectar e conectar de novo resolveu. O Hub não reconhecia o 403 como
+problema de sessão, repetia o mesmo erro linha a linha e a lista se perdia:
+para criar as tarefas, só rodando a publicação inteira de novo.
+
+**Decisão.**
+
+1. **403 (ou sessão que não renovou) vira "reconecte o Salesforce".** O
+   handler limpa o cache da sessão e devolve `precisaReconectar`, com a
+   instrução de desconectar e conectar nas configurações. Vale para criar e
+   para fechar tarefa.
+2. **O laço para no primeiro 403**, porque o token é o mesmo para todas. A
+   linha que tomou o 403 e as seguintes ficam **pendentes**, marcadas na lista.
+3. **Falha que se resolve tentando de novo (rede, sessão) fica pendente; link
+   do caso errado não fica**, porque tentar de novo não muda nada até a
+   planilha ser corrigida e carregada outra vez.
+4. **Ação "Criar as N tarefas pendentes"**, que só aparece quando sobrou alguma:
+   cria só essas, sem refazer a rodada. A criação normal continua automática no
+   fim da publicação (ADR-090). Como o main não duplica tarefa no mesmo caso,
+   repetir é seguro. Planilha nova zera a lista.
+
+**Consequências.** Token vencido vira um aviso só e um clique depois de
+reconectar, em vez de 17 erros e uma rodada inteira de novo.
+
+---
+
+## ADR-094 — Rodada em massa não pode travar com a tela bloqueada
+
+**Status:** aceita — o ponto 1 na janela principal foi substituído pela ADR-126: ela só deixa de desacelerar enquanto algo roda (rodada, automação, publicação); as janelas ocultas continuam como aqui
+
+**Contexto.** O Publicar em massa às vezes parava e não avançava mais —
+principalmente com a tela do Windows bloqueada, e depois de alguns sites. No
+log, a última linha era o cabeçalho de um site e nem a primeira etapa (abrir o
+Registro.br) aparecia: as mensagens de cada etapa só chegam quando ela termina,
+então ele estava preso dentro dela. Duas causas somadas:
+
+1. As janelas ocultas (painel e Registro.br) e a própria janela do Hub rodavam
+   com o *background throttling* do Chromium ligado. Janela oculta com a tela
+   bloqueada tem os timers segurados ou a página congelada, e os scripts do Hub
+   esperam elementos com timers.
+2. `rodarNoPainel` (o único ponto que roda script nessas janelas) não tinha
+   prazo. Página congelada = promessa que nunca volta = rodada parada para
+   sempre, sem erro nenhum.
+
+**Decisão.**
+
+1. `backgroundThrottling: false` na janela principal e nas duas ocultas.
+2. `rodarNoPainel` com prazo de 3 minutos (o script mais longo espera 90s de
+   propósito). Passou, a janela é fechada e a etapa falha com motivo; o site
+   segue as regras normais (falhou ou parcial) e a rodada vai para o próximo.
+3. Chamadas ao Google com prazo de 60s por requisição, pelo mesmo motivo.
+4. Durante a rodada, `powerSaveBlocker('prevent-app-suspension')`: o Windows
+   não suspende o app no meio. A tela continua bloqueando normalmente.
+
+**Consequências.** Bloquear a tela no meio de uma rodada deixa de parar o Hub.
+Se uma página travar mesmo assim, o pior caso é perder aquele site por 3
+minutos, não a rodada inteira.
+
+---
+
+## ADR-095 — Procurar o domínio nas duas abas antes de perguntar a empresa
+
+**Status:** aceita
+
+**Contexto.** Quando o contato técnico no Registro.br não é nosso, o Registro.br
+não diz de qual empresa é o site, e o Publicar em massa perguntava ("De qual
+empresa é X?") para decidir a aba da planilha. Rodando de novo uma planilha de
+sites já publicados, ele perguntava de novo para cada um desses — mesmo com
+todos já registrados na planilha — e a rodada ficava parada esperando resposta.
+Quem deixa a rodada correndo e vai embora volta e encontra ela no 2º site.
+
+**Decisão.** Antes de perguntar, o Hub procura o domínio nas duas abas (MPI e
+Busca Cliente) pelo `planilha:procurar`, só leitura. Achou: usa a aba de onde
+ele está, não pergunta e não escreve de novo. Não achou em nenhuma: pergunta
+como antes. A busca falhou (Graph fora, sessão da Microsoft): pergunta, em vez
+de chutar a aba. Quando a empresa já é conhecida pelo contato técnico, nem
+procura.
+
+**Consequências.** Rodar de novo uma planilha de já publicados anda sozinho do
+começo ao fim. A única parada que continua existindo é a confirmação do DNS de
+quem precisa trocar IP, que é de propósito (ADR-072).
+
+---
+
+## ADR-096 — Log em arquivo e rodada em massa que sobrevive ao Windows fechar tudo
+
+**Status:** aceita
+
+**Contexto.** O Guilherme deixa o Publicar em massa rodando e vai embora. De
+madrugada o Windows reinicia ou encerra a sessão (atualização, política da TI)
+e fecha todos os programas, o Hub junto. O log e o progresso da rodada existiam
+só na memória: de manhã não havia nem registro do que aconteceu, e as tarefas do
+Salesforce — que saem no fim da rodada — nunca eram criadas. O Hub não tem como
+impedir o Windows de reiniciar; o que ele pode é não perder nada quando isso
+acontece.
+
+**Decisão.**
+
+1. **Todo log vai também para um arquivo**, um por dia, em
+   `Documentos\Hub\logs\hub-AAAA-MM-DD.txt`. As linhas são juntadas por meio
+   segundo antes de gravar. Botão "Abrir pasta de logs" no Publicar em massa.
+2. **A rodada é salva em disco antes de cada site** (`rodada-em-massa.json` na
+   pasta de dados do Hub): a planilha crua, o mapa de colunas, a marca e o
+   estado de cada site (terminou, publicado, empresa), mais as listas do fim
+   (SSL pendente, fora de casa, tarefas pendentes). Escrita atômica (grava num
+   temporário e troca), para um desligamento no meio da gravação não deixar um
+   arquivo pela metade.
+3. **Ao abrir o Hub, se há rodada que não terminou, o terminal avisa, e o
+   Publicar em massa mostra "Retomar de onde parou" / "Descartar".** Retomar
+   remonta a lista como estava: quem terminou fica de fora da fila, quem estava
+   rodando volta para ela, e a empresa já descoberta volta junto (não pergunta
+   de novo). No fim, as tarefas do Salesforce saem para todos os publicados,
+   inclusive os de antes do reinício, sem duplicar (ADR-090).
+4. **Rodada que termina apaga o arquivo**; se sobraram tarefas pendentes do
+   Salesforce, ele fica, e o botão das pendentes volta depois de um reinício.
+
+**Consequências.** O Windows fechar o Hub no meio da noite custa só o tempo de
+abrir de novo e clicar em Retomar. O Hub não abre sozinho depois do reinício nem
+retoma sem alguém clicar: a rodada pode ter parada de DNS, e retomar sozinho
+mexeria em produção sem ninguém olhando.
+
+---
+
+## ADR-097 — Achar o caso da tarefa V1 -> V2 pelo padrão, sem colar link
+
+**Status:** aceita (a criação sozinha só depois do Guilherme validar a conferência)
+
+**Contexto.** A ADR-090 pedia a coluna "Link do caso" em toda linha, porque
+adivinhar o caso era arriscado. Na prática, colar 30 links à mão é o gargalo.
+O Guilherme apontou dois padrões na org: toda publicação tem uma tarefa antiga
+de "Publicação (troca de DNS)" pendurada no caso certo — mas as antigas não têm
+o domínio no assunto, só nos comentários —, e todo cliente tem um caso cujo
+assunto começa com "Ongoing CS" ("Ongoing CS - BC - <razão social>"), em geral
+no status "Reunião de Nutrição", numa conta com a razão social exata como nome.
+Existe também "Ongoing Growth", que não serve.
+
+O campo Comentários (Description) da tarefa é texto longo, e o SOQL não deixa
+filtrar texto longo. A busca global (SOSL), a mesma da barra de pesquisa do
+Salesforce, procura nele.
+
+**Decisão.**
+
+A primeira conferência real (5 sites) mostrou que a tarefa antiga acerta o
+cliente, mas o caso dela é o de implantação ("MPI+", "IMPLEMENTAÇÃO MPI
+SOLUTIONS - …"), já fechado; as tarefas novas da operação vivem no Ongoing CS.
+
+1. **A tarefa antiga dá a conta.** SOSL pelo domínio nas tarefas; ficam só as
+   de assunto "Publicação…" penduradas num caso e que citam o domínio de
+   verdade no assunto ou nos comentários (a SOSL é aproximada: `textoTemDominio`
+   recusa "outrodominio.com.br" e "dominio.com.brasil"). A conta desses casos é
+   a do cliente; se forem duas contas, a razão social desempata.
+2. **Sem tarefa antiga, a conta pela razão social**: o nome exato primeiro;
+   não havendo, uma busca pelo nome sem o tipo societário, ficando com a conta
+   cujo nome, sem sufixo ("LTDA", "- ME", "EPP", "EIRELI"…) e sem acento, é o
+   mesmo da planilha (ADIFER: a conta é "… LTDA - ME" e a tarefa antiga cita o
+   domínio escrito errado, "adifertampeos"). Duas contas com o mesmo nome base,
+   ou só nomes parecidos com outra palavra, não servem: o motivo mostra quais.
+3. **O caso é o da operação: o ABERTO do tipo de registro "Ongoing CS".** O
+   assunto não entra (às vezes vem vazio: LMARQUES, 00085674) e o status
+   também não: ele anda com o cliente (TURBO GERAIS, 00087546, estava em
+   "Kickoff/Selling Class" e a versão que exigia "Reunião de Nutrição" caiu no
+   caso de implantação fechado). Com mais de um Ongoing CS aberto, o status
+   "Reunião de Nutrição" desempata (valor lido da configuração do Caso, com o
+   rótulo de reserva). Org sem tipo de registro no Caso: a consulta repete sem
+   o campo e vale assunto "Ongoing CS" ou o status, fora o Ongoing Growth.
+4. **Sem esse caso (ou com dois em dúvida), vai no caso da publicação
+   antiga**, o mais recente, mesmo fechado: registrar o que foi feito vale mais
+   que não registrar. O log diz que foi o plano B e por quê.
+5. **Nada disso dando um caso, não cria**, e a linha sai no resumo do fim com o
+   motivo (só acontece sem tarefa antiga, pela razão social). Tentar de novo
+   não muda nada, então não vira pendente (ADR-093).
+6. **O "Link do caso" continua mandando** quando preenchido.
+7. **Opção lembrada** no Publicar em massa, desligada por padrão, para uma
+   publicação comum não ganhar tarefa "V1 -> V2" sem querer.
+8. **"Conferir os casos no Salesforce"**, só leitura: para cada linha diz qual
+   caso usaria, como achou e se a tarefa já está lá. É o passo de validação
+   antes de deixar criar sozinho, como foi com o fechamento de tarefa.
+
+**Consequências.** A planilha volta a precisar só de razão social, domínio e
+link do painel. Os poucos que o padrão não resolver aparecem nomeados, e só
+esses pedem o link à mão.
+
+---
+
+## ADR-098 — Achar o link do painel pela razão social, confirmado pelo temporário
+
+**Contexto.** Cada linha do Publicar em massa precisava do link do painel colado
+na planilha. O painel dá para achar pela razão social, mas um cliente pode ter
+vários projetos (um por site) e cada projeto seus contratos; escolher "o
+primeiro" publicaria o site errado.
+
+**Mapeamento (23/09/2026, só leitura, no painel logado).** A busca
+`GET /clientes?busca=` acha pela razão social mesmo quando o nome do cliente é
+outro ("confeccoeshp" ← "HP - CONFECCOES HUMBERTO PASCUINI LTDA"); por domínio
+não acha. `/clientes/<c>` lista os projetos (`<h3>` com o nome, quase sempre o
+domínio). `/clientes/<c>/hub?projeto=<p>` traz os cartões dos contratos
+(`…&contrato=<k>`), mas é pesada (2 MB, ~20 s até o primeiro byte), então só o
+começo é lido. `/clientes/<c>/projetos/<p>/contratos/<k>/wordpress-full-install/status`
+devolve JSON com `wordpress_temporary_url`, que é o link do alto da aba
+Publicação (`root.wordpressTemporaryUrl`). Detalhes em `lib/painel-achar.js`.
+
+**Decisão.**
+
+1. **Coluna nova "Link temporário"** (reconhecida pelo cabeçalho ou por
+   terminar em `mpitemporario.com.br`; não é confundida com o domínio).
+2. **Linha sem link do painel, com razão social, entra na rodada.** No começo
+   do site, antes do DNS, o Hub busca a razão social, abre os projetos (os que
+   têm o domínio no nome primeiro) e fica com o contrato cujo temporário é o da
+   planilha. Achou, para de procurar.
+3. **Sem temporário na planilha, só segue com um cliente e um contrato**, e
+   avisa que não conferiu. Com mais de um, a linha falha listando os contratos
+   e os temporários que viu, para preencher a coluna.
+4. **Com link do painel e temporário, confere**: abre o link e compara o
+   temporário do contrato aberto. Diferente, para sem mexer em nada.
+5. **A publicação confere de novo** o temporário na leitura de estado que já
+   fazia, antes de aprovar.
+6. O link achado é guardado no arquivo da rodada: retomando, não procura de novo.
+7. **O Publicar MPI+ faz o mesmo** antes da primeira etapa: campo "Link
+   temporário", e o campo do link do painel saiu da tela. Não achando o
+   contrato, o Hub pede o link no terminal (campo de texto na própria
+   pergunta), confere pelo temporário e segue por ele; link de outro contrato
+   é recusado e ele pede de novo; cancelar não começa nada. Trocar a razão
+   social, o temporário ou o domínio descarta o link achado. E ganhou a última etapa, "Fechar a
+   tarefa no Salesforce" (ADR-089): com o link da tarefa, assume, conclui e
+   comenta "Site publicado" embaixo da "Tarefa criada" no caso, marcando quem
+   criou. Sem link, pula; falhando (403, por exemplo), pergunta se tenta de
+   novo ou pula, porque o site já está publicado.
+
+**Consequências.** A planilha pode ter só razão social, domínio e link
+temporário. Cada site procurado custa ~20 s por projeto aberto, uma vez. Tudo
+é GET; o Hub não clica nem grava nada no painel para achar o contrato.
+
+## ADR-099 — invalid_grant na sessão da conta da marca não é API desabilitada
+
+**Contexto.** O Search Console é registrado e o sitemap é enviado com a sessão
+OAuth da conta da marca (bcrelatoriotags@gmail.com, ADR-049). Quando o Google
+recusa essa sessão, as três chamadas caem com `invalid_grant` e o log mandava
+"habilitar a Google Search Console API", que já estava ativada. `invalid_grant`
+aqui é o refresh token guardado não valer mais: revogado, senha trocada, ou o
+app OAuth em modo "Teste" na Tela de consentimento, que derruba o token a cada
+7 dias. API desabilitada é outro erro (SERVICE_DISABLED).
+
+**Decisão.** Na primeira recusa, o Hub diz que é o login da conta, explica o
+modo "Teste", apaga o token morto (Configurações passa a mostrar a conta
+desconectada) e refaz a etapa pela service account, que já é dona do site.
+A dica da API só aparece quando o erro é mesmo de API desabilitada.
+
+**Consequências.** O sitemap não se perde por causa da sessão. A propriedade
+registrada pela service account continua sem aparecer sozinha na conta da
+marca até reconectar (limitação da ADR-049).
+
+## ADR-100 — Search Console depois do SSL de produção
+
+**Contexto.** No Publicar MPI+ as tags podem rodar antes do SSL (quando o SSL
+fica para depois da propagação, ou é pulado). A verificação do Search Console
+abria `https://dominio/`, o servidor respondia com o certificado dele
+(`srv-wp-02.idealplus.idealtrends.io`), e a etapa falhava depois de quatro
+esperas com "Sincronize as integrações no painel e publique o site": errado,
+as integrações estavam no painel. A publicação parava ali, sem planilha e sem
+fechar a tarefa.
+
+**Decisão.** Erro de certificado na página não é retentado: vira "SSL de
+produção não está ativo", com o nome do certificado que o servidor mandou. No
+Publicar MPI+, com o SSL ainda não ativo, a etapa das tags põe as integrações
+no painel e deixa o Search Console e o relatório para depois; quando a etapa
+do SSL termina bem, eles rodam sozinhos. Se o SSL não sair, o fim da
+publicação avisa para ativar o SSL e usar "Sincronizar no painel".
+
+## ADR-101 — O SSL está ativo quando o certificado do domínio está no ar
+
+**Contexto.** Ativar o SSL de produção no painel (`activateProductionSsl`)
+quase sempre responde erro, 504 Gateway Timeout ou outro, e ativa mesmo
+assim. O Hub acreditava na resposta: dava o SSL como não ativado, seguia, e a
+verificação do Search Console caía no certificado do servidor
+(`srv-wp-02.idealplus.idealtrends.io`). E a tarefa do Salesforce podia fechar
+com o SSL e o Search Console pendentes.
+
+**Decisão.**
+
+1. **Quem decide é o certificado.** Antes de pedir, o Hub abre TLS na porta
+   443 do domínio (com o nome do domínio no SNI): se o certificado já é dele e
+   é confiável, o SSL já estava ativo e o painel nem é chamado. Depois do
+   pedido, com ou sem erro do painel (o HTML do 504 vira só o título), confere
+   a cada 15 s por até 5 min. Apareceu: SSL ativo, "o erro do painel foi só na
+   resposta". Não apareceu: falha dizendo de quem é o certificado que o
+   domínio entrega.
+2. **A tarefa só fecha com tudo concluído.** Com o SSL esperando a
+   propagação, a etapa do Salesforce fica para depois dele e roda sozinha no
+   fim. Com o SSL ou o Search Console pendentes, ela tenta de novo o que falta
+   (o SSL, se o domínio já aponta; depois o Search Console e o relatório) e
+   só então fecha; se ainda faltar, falha dizendo o quê, e "Tentar de novo"
+   repete a tentativa.
+
+## ADR-102 — Parar no meio
+
+**Contexto.** Com um dado errado na tela (domínio, razão social, link), a
+única saída era fechar o app. O Publicar em massa só tinha "Parar depois
+deste site".
+
+**Decisão.** Botão "Parar agora" no Publicar MPI+ e no Publicar em massa. A
+tela avisa o processo principal (`processo:parar`), que interrompe na hora
+toda espera em andamento (`dormir`) e todo script na janela oculta do painel
+(a janela é fechada: o estado dela deixou de ser confiável), e recusa as novas
+até a tela terminar de parar (`processo:liberar`). As perguntas abertas no
+terminal fecham, e as esperas da própria tela (propagação, SSL adiado) param.
+Uma requisição que já saiu (um registro na Cloudflare, o PATCH de um campo)
+termina: não se corta uma gravação no meio, corta-se o passo seguinte.
+
+No Publicar MPI+, a etapa do meio fica "parado por você": "Continuar" retoma
+dela, e "Descartar esta publicação" limpa a tela (sem desfazer o que já foi
+feito). No Publicar em massa, o site do meio fica "parado por você", os
+seguintes não começam, as tarefas do Salesforce não são criadas e a rodada
+fica salva: "Retomar" continua dali e faz o fim.
+
+**Consequência.** Um job que o painel já começou (a publicação em produção no
+servidor, por exemplo) continua lá: parar interrompe o Hub esperando, não o
+servidor.
+
+## ADR-103 — Publicar outro site enquanto um espera a propagação
+
+**Contexto.** Quando o Registro.br publica a troca de DNS só daqui a ~2 horas,
+o Publicar MPI+ ficava esperando com a tela presa (ADR-080): não dava para
+publicar outro site nesse tempo.
+
+**Decisão.**
+
+1. **O site sai da tela e vai para a lista "Aguardando a propagação"**, com o
+   que falta: o SSL de produção, o Search Console e o relatório (quando
+   ficaram para depois do SSL, ADR-100) e fechar a tarefa do Salesforce. As
+   tags e a planilha já foram feitas antes. A tela volta vazia, com a mesma
+   empresa, para o próximo site.
+2. **Um vigia confere o DNS de todos a cada minuto.** Quando um aponta, ele
+   termina esse site inteiro: SSL (pelo certificado, ADR-101), Search Console
+   e relatório, e só então a tarefa. Com vários prontos, **um de cada vez,
+   primeiro o de previsão mais cedo**. Enquanto o Publicar em massa roda, o
+   vigia espera.
+3. **O painel atende uma chamada por vez.** A janela oculta é uma só; um
+   segundo site abrindo o painel fechava a janela do primeiro no meio. As
+   chamadas `painel:publicar`, `painel:sync` e `painel:acharContrato` entram
+   numa fila no processo principal.
+4. **Não apontou até 30 min depois da previsão**: o site fica "falta algo",
+   com "Tentar de novo" e "Remover" na lista. O mesmo quando o SSL, o Search
+   Console ou a tarefa falham: nada é dado como feito sem estar.
+5. **A lista sobrevive a fechar o app** (guardada na máquina, só com campos
+   sem segredo: a chave secreta do reCAPTCHA não vai para o disco). Ao abrir,
+   o vigia volta a conferir.
+
+## ADR-104 — A espera do SSL olha o DNS público, e o vigia aparece no log
+
+**Contexto.** Um site (climagemcarpina.com.br) ficou na lista "Aguardando a
+propagação" (ADR-103) e o Hub não terminou depois da hora prevista, apesar de
+o domínio já resolver para 149.18.102.39 em todos os resolvedores públicos (o
+DNS Checker confirmou). Duas causas:
+
+1. A conferência (`dns:apontando`) usava só o resolvedor da máquina, cujo cache
+   ainda tinha o valor antigo. O mundo já via o IP novo; a máquina, não.
+2. O vigia conferia calado. Sem nada no log, parecia que tinha parado.
+
+**Decisão.**
+
+1. **Conferir em local + públicos** (Google, Cloudflare, Quad9, OpenDNS) e
+   considerar que aponta quando qualquer um vê o IP de produção; o log diz onde
+   foi visto. É o SSL do servidor que segue o DNS público, não o cache local.
+2. **O vigia fala**: aviso na primeira conferência, quando o motivo muda e a
+   cada 10 min ("Aguardando X: … Confiro de novo em 1 min").
+3. **Um erro numa espera não derruba o vigia** das outras: cada conferência é
+   protegida, e a falha vira detalhe da linha, com nova tentativa no minuto
+   seguinte.
+4. O IP de produção passou a ter o mesmo padrão (149.18.102.39) na conferência,
+   em vez de falhar calado quando o campo vinha vazio.
+
+## ADR-105 — Ferramenta "Bloquear contatos" no /doutor
+
+**Contexto.** Outra equipe do grupo bloqueia os contatos de um site pelo painel
+`/doutor` (o telefone passa a aparecer como `##`). O script que eles usavam
+testava uma LISTA de senhas em sequência até uma entrar — isso o Hub não faz.
+Os painéis do grupo usam **uma senha só**, e o e-mail muda pela marca. Então a
+automação aqui é do mesmo tipo que a do painel MPI+: uma credencial guardada,
+login direto, sem adivinhar nada.
+
+**Decisão.**
+
+1. **Credencial em Configurações**, criptografada (safeStorage): uma senha e
+   dois e-mails (MPI Solutions e Busca Cliente). O e-mail é escolhido pela
+   marca; a senha é a mesma. Os e-mails são digitados pela equipe, o Hub não
+   adivinha domínio. A senha nunca volta do processo; trocar só o e-mail pede
+   a senha de novo.
+2. **Ferramenta "Bloquear contatos"**: escolhe a marca, cola o domínio,
+   confirma (guarda contra erro de digitação), e o Hub abre
+   `https://<domínio>/doutor/` numa janela oculta, entra com a credencial da
+   marca, acha a empresa do cliente (a linha que não é "Doutores da Web") e
+   clica no cadeado se estiver verde (desbloqueado). Laranja (já bloqueado)
+   não faz nada. A confirmação é lida pelo certificado do cadeado virar, não
+   pela resposta.
+3. **Correção sobre o script original**: este painel usa **SweetAlert2**
+   (`.swal2-confirm`), não a v1 (`div.sweet-alert`/`button.confirm`) que o
+   script deles esperava — com a v1 o modal de confirmação nunca aparecia.
+4. **Entra na mesma fila do painel** (ADR-103): uma janela oculta por vez.
+
+**A validar numa página real** (como foi com o painel MPI+): os seletores da
+listagem e do cadeado foram lidos do `index.php`/`painel.php` de exemplo, mas o
+clique e o modal precisam de uma execução de verdade para confirmar.
+
+## ADR-106 — Medir antes de mexer: a suíte inteira, benchmark, CPU e memória
+
+**Status:** aceita — desde 30/09/2026, teste que precisa de pasta em disco usa a sua, do `mkdtempSync` no %TEMP%, e a apaga no `exit`, mesmo que lance (o `tools/test-ssl-painel.js` apaga a dele logo depois de ler a chave TLS). Antes, cada `npm test` deixava uma `hub-tls-*` no %TEMP%, e 13 testes usavam pastas fixas em `C:\tmp`, quatro deles a mesma (`hub-test`)
+
+**Contexto.** Pedido do Guilherme (25/09/2026): benchmark, eval, consumo de CPU
+e de memória. Havia 27 testes em `tools/test-*.js`, cada um rodado à mão, e
+nenhum número de desempenho: o PRD dizia só que a operação mais longa "leva
+alguns segundos". Sem linha de base não dá para saber se uma mudança piorou
+alguma coisa, nem onde está o gargalo. E quase tudo que o Hub faz é rede, cujo
+tempo é do outro lado.
+
+**Decisão.**
+
+1. **`npm test` (`tools/rodar-testes.js`) é a eval.** Roda todos os
+   `tools/test-*.js`, cada um no próprio processo (teste que troca
+   `Module._load` ou chama `process.exit` não contamina o vizinho), resume por
+   arquivo e sai com 1 se qualquer um falhar. O harness visual (ADR-012) fica à
+   parte, porque depende do Playwright.
+2. **`npm run bench` (`tools/bench.js`)** mede só o que roda na máquina:
+   planilha (texto e .xlsx), reconhecer colunas, montar o lote, zona da
+   Cloudflare, domínios. As funções são recortadas pelo mesmo marcador dos
+   testes. Mede também o custo de carregar cada dependência, num processo novo
+   a cada rodada. `--electron` roda no Node do Electron, que é o do app.
+3. **`npm run medir` (`tools/medir-recursos.js`)** abre o Hub de verdade com
+   `electron -r` e uma pasta de dados descartável (`--user-data-dir`, a saída
+   da ADR-088). Documentos, Músicas e Downloads também vão para lá, e rede,
+   área de transferência e `shell.openExternal` ficam bloqueados e contados:
+   sem credencial e sem rede, nenhuma etapa alcança produção. Mede a abertura,
+   o app parado, a navegação, o terminal cheio, o IPC e a planilha, por
+   `app.getAppMetrics()` e pelo protocolo do DevTools. `--css` injeta um
+   estilo para comparar antes e depois sem editar o app.
+4. Duas armadilhas de medição ficam anotadas no código. O `percentCPUUsage` do
+   Electron já vem dividido pelo número de núcleos (100% = a máquina, a mesma
+   conta do Gerenciador de Tarefas; conferido contra o tempo de CPU). E o
+   `HeapProfiler` do DevTools ligado o tempo todo deixa o layout ~40% mais
+   lento com o terminal cheio, por isso ele só liga na hora do GC.
+
+**Linha de base** (i5-10210U 4 núcleos/8 threads, 16 GB, Windows 11; Hub
+1.0.36 com o código de 25/09/2026, 12:46):
+
+| O quê | Medido |
+| --- | --- |
+| Suíte | 28 arquivos, 1.076 verificações, 0 falha, 17 s. Harness visual: 19 telas sem erro de console |
+| Abertura até a tela inicial | 3,2 a 3,9 s com o perfil já usado (3,9 a 6,4 s com perfil novo). Só o `require('googleapis')`: 2,0 a 2,3 s e +57 MB de heap |
+| Memória logo depois de abrir | ~425 MB de working set nos 4 processos (principal 170, GPU 120, janela 80, rede 55); ~265 MB de memória privada |
+| Parado na tela inicial | 0,1% da máquina em 60 s, sem crescer memória |
+| Abrir uma ferramenta | 13 a 18 ms (mediana), primeira vez até 0,2 s. Sem vazamento em 15 voltas: +5 KB de heap por volta, nós e listeners estáveis |
+| IPC ida e volta | 1,4 ms (mediana), 1,7 ms (p99) |
+| Planilha no Publicar em massa | 60 ms com 32 linhas; 0,8 s com 3.000 (1 s em .xlsx) |
+| Terminal com 1.000 / 5.500 / 20.000 linhas | cada `log()` 93 ms / 490 ms / 1,6 s (sem o DevTools e com linhas mais curtas: 53 ms / 0,3 s / 1,3 s); a janela chega a 0,2 / 0,7 / 2,6 GB durante os `log()` |
+
+**Consequências.**
+
+- **O terminal é o gargalo, e a causa é CSS.** O `.layout` é um grid sem
+  `grid-template-rows`: a linha implícita é `auto`, então cada linha nova no
+  terminal obriga o Chromium a medir o terminal inteiro de novo, e o
+  `scrollHeight` lido no `log()` força isso na hora. São ~55 a 80 µs por linha
+  que já está lá, a cada `log()`, na mesma thread que roda a rodada em massa. O dia
+  pesado de 23/09 teve 5.487 linhas no arquivo de log: nesse tamanho, cada
+  linha nova custa de 0,3 a 0,5 s, conforme o comprimento das linhas. Medido
+  pelo `--css`, com
+  `.layout { grid-template-rows: minmax(0, 1fr); }`: 11 ms com 5.500 linhas e
+  40 ms com 20.000 (40 vezes menos), e o pico de memória da rodada cai de
+  3,0 GB para 0,8 GB. Não foi aplicado nesta mudança: mexe na tela, e havia
+  outra frente editando `renderer/` ao mesmo tempo. Abrir ferramenta com o
+  terminal cheio não é afetado (medido: 22 ms com 5.500 linhas, com e sem a
+  correção).
+- **Depois de "Limpar", a memória não volta inteira.** Com 20.000 linhas, a
+  janela ficou com 1,5 GB de memória privada comprometida mesmo com o terminal
+  limpo (323 MB com a correção). O Chromium guarda para reusar; para o Windows,
+  continua ocupado.
+- **A abertura é o `googleapis`.** A linha 7 do `main.js` carrega as 335 APIs
+  do pacote para usar 6 (`tagmanager`, `analyticsadmin`, `siteVerification`,
+  `searchconsole`, `recaptchaenterprise`, `oauth2`). Carregar só as 6 custa
+  ~0,3 s e +3 a 5 MB de heap, contra 2,2 a 2,6 s e +50 a 61 MB. Não é troca de
+  uma linha: `google.options({ auth })` é global no objeto do pacote, e cada
+  API separada precisa receber a autenticação.
+- O resto não pede nada. Parado não gasta CPU, IPC é ~1 ms, navegar não vaza, e
+  o que é local na planilha e na zona fica em milissegundos (o pior caso, .xlsx
+  de 3.000 linhas, 130 ms). O tempo das operações longas é o do outro lado
+  (painel, Registro.br, Google, propagação), e o benchmark não mede isso de
+  propósito.
+- Limites: as janelas ocultas do painel e do Registro.br não entram, porque
+  precisam de login. A medição roda na máquina de quem mede e varia com a carga
+  dela: a abertura oscilou de 3,2 a 3,9 s entre rodadas iguais. Por isso a
+  comparação que vale é antes e depois na mesma máquina, na mesma hora.
+
+## ADR-107 — Só as 6 APIs do Google, carregadas no primeiro uso
+
+**Status:** aceita
+
+**Contexto.** A ADR-106 mediu que a linha 7 do `main.js`,
+`require('googleapis')`, carregava as 335 APIs do pacote para o Hub usar 6:
+2,2 s dos 3,5 s até a tela inicial e +55 MB de heap no processo principal, em
+toda abertura, mesmo para quem só ia mergear PR. As saídas eram (a) carregar
+só as 6 APIs, o que tira o custo de vez, ou (b) carregar o pacote inteiro no
+primeiro uso, o que só adia: a primeira ação do Google de cada sessão pagaria
+2 a 3 s, e a memória voltaria aos +50 MB depois dela. O Guilherme escolheu a
+(a).
+
+O ponto delicado era o `google.options()` global. A service account
+(`buildGoogleAuthClient`) e o OAuth "global" (`loadUserOauthClient`) trocam a
+autenticação de todos os clientes de uma vez, inclusive dos que já existem, e o
+`options()` do pacote substitui as opções inteiras (o OAuth global derruba o
+`timeout: 60000` da service account). Separadas, as APIs não enxergam nada
+disso.
+
+**Decisão.**
+
+1. **`lib/google.js`** monta um `google` com a mesma cara do pacote:
+   `google.auth.GoogleAuth`, `google.auth.OAuth2`, `google.options()` e uma
+   função por API (`tagmanager`, `analyticsadmin`, `siteVerification`,
+   `searchconsole`, `recaptchaenterprise`, `oauth2`). Cada API vem do próprio
+   pacote, `googleapis/build/src/apis/<nome>`, e só no primeiro uso. No
+   `main.js` muda só a linha do require; nenhuma chamada muda.
+2. **O comportamento global é o mesmo por construção.** A função de cada API
+   recebe esse objeto como contexto, e o googleapis-common lê
+   `google._options` a cada requisição (`apirequest.js`). O `options()`
+   substitui em vez de juntar, como o `GoogleApis.options()` do pacote. As
+   classes de autenticação são as do próprio AuthPlus do googleapis: a mesma
+   classe, não uma cópia.
+3. **Nenhum pacote novo.** O `googleapis` continua em `dependencies`, e o
+   pacote não tem campo `exports`, então o caminho interno é permitido. Os
+   pacotes `@googleapis/<api>` fariam o mesmo por caminho público e deixariam o
+   instalador menor, ao preço de 6 dependências novas; não foi preciso.
+4. **`tools/test-google-leve.js`** roda o mesmo roteiro no pacote inteiro e no
+   leve (service account com prazo, OAuth global trocando todos e tirando o
+   prazo, cliente com autenticação própria) e exige as mesmas requisições, com
+   a mesma autenticação e o mesmo prazo. Confere também que abrir o `main.js`
+   não carrega nada do Google e que toda API que o `main.js` chama está na
+   lista. Uma mutação de propósito (juntar as opções em vez de substituir) faz
+   o teste falhar. Os 13 testes que trocavam o módulo `'googleapis'` por
+   dublês passaram a trocar o `lib/google`.
+
+**Consequências.** Medido antes e depois na mesma máquina, na mesma hora
+(`npm run medir -- --so-abertura --aberturas 5` e
+`npm run bench -- --electron`):
+
+| | Antes | Depois |
+| --- | --- | --- |
+| Até a tela inicial, perfil já usado (mediana de 5) | 3,54 s (3,33 a 3,85) | 1,40 s (1,25 a 1,80) |
+| Até a tela inicial, perfil novo | 4,73 s | 1,65 s |
+| Topo do `main.js` | 2,20 s | 22 ms |
+| Processo principal 3 s depois de abrir | 171 MB de working set, 55 MB de heap | 101 MB, 5,6 MB |
+| Os 4 processos 3 s depois de abrir | 421 MB | 349 MB |
+| Primeira ação do Google na sessão | nada a carregar | +0,35 s e +2,8 MB de heap |
+
+- API nova no `main.js` precisa entrar na lista do `lib/google.js`; o teste
+  falha dizendo qual falta.
+- O caminho `googleapis/build/src/apis/<nome>` é interno ao pacote. Depois de
+  atualizar o `googleapis`, `npm test` diz se ele mudou, antes do app.
+- O instalador continua levando o `googleapis` inteiro; só a abertura deixou de
+  pagar por ele.
+
+## ADR-108 — A linha do grid tem a altura da tela, não a do terminal
+
+**Status:** aceita
+
+**Contexto.** A ADR-106 achou o gargalo do terminal. O `.layout` era um grid
+sem `grid-template-rows`, e a linha implícita (`auto`) fazia a altura da linha
+depender do conteúdo. Por isso, cada linha nova no terminal obrigava o Chromium
+a medir o terminal inteiro de novo, e o `scrollHeight` que o `log()` lê para
+rolar até o fim forçava essa medição na hora. O custo crescia com o que já
+estava na tela, na mesma thread que roda a rodada em massa. O dia pesado de
+23/09 teve 5.487 linhas no arquivo de log.
+
+**Decisão.**
+
+1. **`.layout { grid-template-rows: minmax(0, 1fr); }`**: a linha passa a ter
+   a altura que sobra na tela, e o conteúdo de um painel deixa de entrar na
+   conta. Nada mais mudou no terminal nem no `log()`.
+2. **O harness visual voltou a rodar.** O dublê do `window.api` em
+   `tools/preview.js` estava sem 12 métodos que o `preload.js` ganhou (os do
+   `/doutor` da ADR-105, o parar da ADR-102, o achar contrato da ADR-098,
+   entre outros), e o preview quebrava ao abrir as configurações. É o risco
+   que a ADR-012 descreve; os 12 entraram no dublê.
+
+**Consequências.** Medido antes e depois na mesma máquina, na mesma hora
+(`npm run medir`, rodada completa):
+
+| Linhas no terminal | Cada `log()` | Até aparecer na tela | Pico da janela durante os `log()` |
+| --- | --- | --- | --- |
+| 1.000 | 117 ms → 2,4 ms | 139 → 17 ms | 186 → 103 MB |
+| 5.500 | 645 ms → 11 ms | 770 → 44 ms | 858 → 161 MB |
+| 20.000 | 2,14 s → 47 ms | 2,30 s → 171 ms | 2,6 GB → 451 MB |
+
+- Cada linha já mostrada encarece o próximo `log()` em 2,3 µs, contra 107 µs
+  antes. O cenário do terminal gastou 16 s de CPU da janela, contra 111 s, para
+  o mesmo trabalho. O pico de memória da rodada caiu de 2,8 GB para 722 MB, e a
+  memória privada que ficava presa depois de "Limpar" caiu de 1,6 GB para
+  319 MB.
+- **Visual: nenhuma mudança de layout.** Com o horário do terminal fixo e a
+  rolagem do painel zerada, 18 das 19 telas do harness saíram idênticas pixel a
+  pixel com e sem a correção; a outra difere só na bolinha de status que pisca
+  (animação `pulse`). A geometria de todos os painéis, em todas as cenas, é a
+  mesma. Abrir ferramenta não mudou (mediana de 13 a 17 ms).
+- Uma diferença de comportamento, a favor: sem a correção, o `log()` no meio
+  de uma troca de tela forçava o layout do grid inteiro, e a ancoragem de
+  rolagem do Chromium empurrava o painel esquerdo até o fim (no harness,
+  abrindo o Publicar em massa depois de uma tela rolada). Agora o painel fica
+  onde estava.
+- O terminal continua guardando tudo no DOM: ~13,5 MB de RAM por mil linhas e
+  +2,3 µs no `log()` por linha. Guardar na tela só as últimas 3.000 linhas (o
+  mesmo tamanho do `LOG_BUFFER_MAX`, que já corta o buffer do recorte do
+  histórico; o arquivo de log guarda tudo, ADR-096) deixaria o `log()` em
+  ~7 ms e a janela em ~130 MB, por mais dias que o Hub fique aberto. É decisão
+  de produto e fica como proposta ao Guilherme, não como dívida.
+
+## ADR-109 — O terminal mostra as últimas 3.000 linhas; o arquivo do dia guarda todas
+
+**Status:** aceita
+
+**Contexto.** Depois da ADR-108 cada linha nova ficou barata, mas o terminal
+ainda guardava tudo na tela: ~13,5 MB de RAM por mil linhas, e o `log()` um
+pouco mais lento a cada linha, por quantos dias o Hub ficasse aberto (com
+20.000 linhas, 76 ms por linha e 360 MB na janela). O buffer do recorte do
+histórico (`LOG_BUFFER_MAX`, ADR-014) já parava em 3.000, e o arquivo do dia
+(ADR-096) guarda tudo. O Guilherme aprovou mostrar só as últimas.
+
+**Decisão.**
+
+1. **A tela vai até 3.300 linhas e volta a 3.000 de uma vez**
+   (`LOG_TELA_MAX = LOG_BUFFER_MAX`, `LOG_TELA_FOLGA = 300`). É em lote porque
+   tirar uma linha do topo a cada `log()` obriga o Chromium a reposicionar
+   todas as de baixo. Num experimento controlado, com 3.000 linhas: 33 a 42 ms
+   por `log()` cortando uma por vez, contra 12 ms cortando em lote, o mesmo que
+   só acrescentar (com um pico de ~60 ms a cada 300 linhas).
+2. **Quando o corte começa, a primeira linha do terminal vira um aviso:** "As
+   linhas mais antigas saíram da tela para ela não ficar lenta. O arquivo do
+   dia, em Documentos\Hub\logs, tem todas." Aparece uma vez só; "Limpar" apaga
+   o aviso, e ele volta no próximo corte.
+3. **Pergunta sem resposta no terminal (ADR-064) nunca sai**: é por ela que a
+   rodada está esperando. A já respondida sai como qualquer linha.
+4. O corte roda nos três lugares que põem linha no terminal: o `log()` e as
+   duas perguntas. O recorte do histórico e o arquivo do dia não mudam.
+
+**Consequências.** Medido antes e depois (`npm run medir`, rodada curta):
+
+| Linhas produzidas | Na tela | Cada `log()` | RAM da janela |
+| --- | --- | --- | --- |
+| 1.000 | 1.015 | 4,5 → 3,4 ms | 100 → 101 MB |
+| 5.500 | 5.515 → 3.015 | 19 → 7,9 ms | 161 → 138 MB |
+| 20.000 | 20.015 → 3.015 | 76 → 12 ms | 360 → 142 MB |
+
+- Por mais que o Hub fique aberto, a janela fica em ~140 MB, e cada linha nova
+  custa de 8 a 12 ms. Linha que saiu da tela se lê no arquivo do dia; o
+  histórico de merges continua com o recorte de cada operação.
+- **O corte conta os filhos uma vez só.** O `childElementCount` percorre os
+  filhos, e perguntar a cada volta do laço deixava um corte grande quadrático:
+  12,5 s para cortar 17 mil linhas de uma vez. No uso real entra uma linha por
+  vez, mas o laço não depende disso.
+- **Parecia vazamento e não era.** Depois de "Limpar", o DevTools às vezes
+  seguia contando os nós das linhas apagadas. O GC pedido pelo DevTools nem
+  sempre finaliza os nós soltos do DOM; com o `gc()` da própria janela, todas
+  as variantes (inclusive sem corte nenhum) voltaram à contagem de base na
+  hora. O `tools/medir-recursos.js` passou a chamar os dois.
+- `tools/test-terminal-limite.js` cobre a folga, o aviso, a pergunta aberta, o
+  "Limpar", o corte grande e os três lugares que põem linha. Duas mutações de
+  propósito (tirar a proteção da pergunta; cortar linha a linha) fazem ele
+  falhar.
+
+## ADR-110 — /doutor: bloqueio pela chamada AJAX, mapeado ao vivo
+
+**Contexto.** A primeira versão (ADR-105) foi montada a partir do PHP de
+exemplo e de um script antigo, e errou o caminho: parava em "não achei a
+listagem". Mapeando um /doutor real (renovareengseg) no navegador, o fluxo é:
+
+1. Login (`user`/`pass`/`AdminLogin`).
+2. O acesso cai no contexto da empresa do cliente (só "Informações Empresa").
+   A lista de todas as empresas fica no contexto do **SIG** (a agência).
+3. O botão **"Voltar"** (`button.j_view`) abre um aviso "Acessar empresa?" e,
+   confirmado, troca para o SIG (recarrega).
+4. Em Empresa → Listar (`painel.php?exe=CMSemp/index`) aparecem a agência
+   ("SIG - Busca Cliente"/"SIG - MPI Solutions") e o cliente.
+5. O cadeado (`button.j_AlteraStatus`) não abre "tem certeza?": o clique faz um
+   `POST _cdn/ajax/functions.php {action:UpStatus, empresa_id (rel), empresa_status (val)}`
+   e mostra um SweetAlert de resultado. `val="2"` é desbloqueado (alvo),
+   `"1"` é bloqueado.
+
+**Decisão.**
+
+1. **O bloqueio é feito pela MESMA chamada AJAX** (`UpStatus`), não por clique.
+   Assim não depende da versão do SweetAlert — e esta versão é a **v1**
+   (`.sweet-alert`), não a v2 que a ADR-105 supôs; as duas convivem no grupo.
+2. **A agência não é alvo**: fica de fora quem começa com "SIG" ou é "Doutores
+   da Web". Sobrando uma empresa, é ela; sobrando várias, a que casa com o
+   domínio; sem casar, lista e não chuta.
+3. **Chegar na listagem**: tenta `CMSemp/index` direto; vazio, faz "Voltar" +
+   confirmar (v1/v2) e tenta de novo; ainda vazio, procura o link "Listar" de
+   Empresa da versão.
+4. **Só bloqueia quem está desbloqueado** (`val="2"`); já bloqueado não faz
+   nada. Se a chamada devolver "desbloqueada", avisa em vez de dar por feito.
+
+**A validar:** rodar num /doutor de versão diferente (v2 do SweetAlert, ou
+layout de listagem diferente) e ajustar os seletores se necessário.
+
+## ADR-111 — Checador de Ouvidoria / SSL a partir de uma lista de domínios
+
+**Contexto.** Antes de ativar SSL em massa, é preciso saber quais clientes têm
+um caso de Ouvidoria que desaconselha (cancelamento, jurídico). A entrada é uma
+planilha só com domínios (133, no primeiro uso).
+
+**Decisão.** Ferramenta nova "Ouvidoria / SSL":
+
+1. **Conta pelo domínio** (`acharContaPorDominio`, passo 1 do ADR-097 sem razão
+   social): a tarefa de publicação que cita o domínio dá a conta. Uma conta →
+   ela; nenhuma ou várias → "não encontrado", para revisão manual (sem Google,
+   sem chutar — decisão do Guilherme).
+2. **Campos pelo rótulo, via describe** (`sfCamposOuvidoria`): "Definição" e
+   "Data de Conclusão" têm nome de API gerado; o Hub descobre pelo rótulo, uma
+   vez por sessão, em vez de hardcodar.
+3. **Casos de Ouvidoria** (RecordType contém "ouvidoria"; pode ter mais de um).
+   **Situação** = o valor da Definição + a data de conclusão de cada um.
+4. **Ativar SSL** = "não" quando alguma Ouvidoria estiver **Cancelado** ou
+   **Jurídico**; "sim" no resto (inclusive sem caso de Ouvidoria). Jurídico é só
+   anotado, para validar com financeiro/ouvidoria.
+5. **Saída**: .xlsx com Razão Social, Domínio, Situação e Ativar SSL?.
+
+**A validar num Salesforce real:** que os rótulos são exatamente "Definição" e
+"Data de Conclusão" (se diferirem, a Situação sai vazia e o log avisa), e que o
+RecordType de Ouvidoria casa com "ouvidoria".
+
+## ADR-112 — /doutor: desbloquear também, e o nome pelo alt (não pela coluna)
+
+**Contexto.** Dois problemas no /doutor:
+1. Só existia bloquear. Sem a volta, um bloqueio errado não teria como ser
+   desfeito pelo Hub.
+2. Rodando na RENOVARE, deu "mais de uma empresa e nenhuma casou com o domínio:
+   2, 6" — os ids no lugar dos nomes. A extração do nome pegava a primeira
+   célula de texto não-numérica, que nesta versão da tabela caiu no id.
+
+**Decisão.**
+1. **Ação Bloquear / Desbloquear** na ferramenta. As duas usam a mesma chamada
+   `UpStatus` (um toggle no servidor), mas o Hub só age quando o estado atual é
+   o oposto do pedido: bloquear só desbloqueado, desbloquear só bloqueado. Já no
+   estado pedido, não mexe — então não há risco de inverter por engano, e dá
+   para desfazer. A resposta é conferida (`status==1` = liberado) e, se sair o
+   contrário do pedido, avisa em vez de dar por feito.
+2. **O nome vem do `alt`/`title` do avatar** (ou do `alt` do botão "ver"), que é
+   confiável, com a coluna de texto só como último recurso. As linhas são
+   deduplicadas por id (o FixedHeader/responsive do DataTables pode repetir a
+   linha). Assim a agência ("SIG - …") é reconhecida e fica de fora, sobrando o
+   cliente.
+
+## ADR-113 — Tela inicial: saudação com o nome e WHOIS/DNS de um domínio
+
+**Contexto.** Pedido do Guilherme: a home saudando pelo nome (nome e sobrenome
+do usuário logado) e um WHOIS + "quais DNS o domínio usa" ali mesmo. O resto
+das abas ele desenha. Paleta dada: Petroleum Glass & Terminal (primário
+#5EE970, secundário/ciano #22F2EF, neutro #0A1C17, JetBrains Mono nos rótulos)
+— que é essencialmente o tema que o Hub já tem; só faltava o ciano.
+
+**Decisão.**
+
+1. **Saudação com o nome** (`sistema:usuario`): prefere o nome do Salesforce
+   (nome e sobrenome de verdade) quando conectado; senão deriva do e-mail
+   (guilherme.millares → "Guilherme Millares"); senão o usuário do sistema. A
+   home mostra o primeiro nome + a marca (ciano).
+2. **WHOIS + DNS** (`dns:whois`): nameservers, A da raiz e MX pelo resolvedor,
+   e WHOIS pela porta 43 (whois.registro.br para .br; para o resto, o referral
+   do whois.iana.org). O parser puxa titular, registrador, criado, expira,
+   status e nameservers, com o texto cru num "ver completo".
+3. **Ciano** (`--accent-2`) somado aos tokens; o card e a saudação usam o tema
+   existente, sem mexer nas outras telas.
+
+**Fora do escopo (o Guilherme desenha):** as filas de deploy, o kanban e o
+terminal ao vivo do mockup — não foram fabricados com dados de mentira.
+
+**A validar na máquina real:** o WHOIS depende da porta 43 sair na rede da
+empresa; se o firewall bloquear, o DNS ainda aparece e o WHOIS mostra
+"indisponível".
+
+## ADR-114 — A moldura v2.4: todas as telas na cara dos mockups
+
+**Status:** aceita — as pílulas de status do topo e a statusbar saíram na ADR-126
+
+**Contexto.** Depois da home (ADR-113), o Guilherme mandou os mockups das
+telas (Hub v2.4 / Huber v2.0) e disse: "pode fazer as telas iguais as fotos,
+o que for necessário pedir para retirar eu peço para você." Os mockups fixam
+uma moldura única em volta de toda ferramenta — não é tela por tela, é um
+esqueleto compartilhado que a ferramenta ativa preenche no centro.
+
+**Decisão.** Uma moldura só (`renderChrome()` roda antes de qualquer tela),
+com quatro regiões fixas e a paleta Petroleum Glass & Terminal:
+
+1. **Topbar.** Marca "Hub v2.4", pílulas de status (Bitbucket / Salesforce,
+   verde quando conectado via `hubSfConectado`), busca de ferramenta
+   (`#tbSearch`, Enter cai na home e espelha no `#hubSearch`), MEM/CPU ao vivo
+   e o usuário + marca (ciano). Sem `#topbarTitle` — o título saiu daqui e
+   virou o breadcrumb de cada tela.
+2. **Sidebar de módulos** (`.app-nav` / `#navList`). Lista fixa (`MODULES`)
+   com ícone (`NAV_ICON`, SVG inline), item ativo destacado, e os que ainda
+   não existem (Deploy, Salesforce Kanban) marcados "em breve" e roteados para
+   `renderEmBreve` — nada de dado falso.
+3. **Centro.** A ferramenta ativa, com um cabeçalho breadcrumb
+   (`.tool-head`, `backButtonHtml()` reescrito): `← Hub / <nome> [MOD_<VIEW>]`,
+   mantendo o `#backToHub`.
+4. **Terminal / atividade** à direita (título por ferramenta via
+   `#terminalTitle`) e **statusbar** no rodapé (`#sbState`,
+   "Hub Engine v2.4.1 · Local · TLS 1.3 Seguro … READY").
+
+**Ao vivo** (`iniciarTopbarLive()`): a MEM vem de `sistema:recursos`
+(`process.memoryUsage`) e o estado das pílulas de `salesforceGetConfig`,
+repolados a cada 15s. Sem inventar CPU — mostra "Ocioso"/estado real.
+
+**Tokens.** Somados `--accent-2` (ciano #22F2EF) e `--accent-3` (#49DC7A) ao
+`:root`; o bloco de CSS novo ("Moldura v2.4") traz a grade `.app-body`
+(210px / 400px / 1fr), as pílulas, a nav, a statusbar e o breadcrumb, sem
+mexer no corpo das ferramentas que já existiam.
+
+**Preview.** Conferido no harness Playwright (`tools/preview.js`, com o
+`window.api` stubado): home e telas de ferramenta renderam sem erro de
+console e batendo com os mockups (sidebar, topbar, breadcrumb, terminal,
+statusbar).
+
+**Fora do escopo (o Guilherme pede para tirar o que sobrar):** os corpos de
+cada ferramenta seguem como estavam; a moldura é que passou a existir em
+volta de todas. As filas de deploy e o kanban continuam "em breve".
+
+
+## ADR-115 — Redesign v2.4: cada tela na cara do mockup, kanban e terminal com comando
+
+**Status:** aceita — pela ADR-126, saíram as pílulas do topo, o rodapé de status e o "CLI / READY" da sidebar; os pontos deixaram de pulsar para sempre, e as linhas do lote e os cartões do kanban deixaram de ter a animação de entrada. A grade de ferramentas da tela inicial saiu na ADR-127, e o terminal minimiza e fecha, com o Git Bash embaixo do meio (ADR-128)
+
+**Contexto.** O Guilherme mandou os mockups de todas as telas (home, Bloquear
+Contatos, Ouvidoria, Ativação SSL, Configurações, Publicar MPI+, Publicação em
+Massa) e pediu: "faça igual as fotos; as únicas coisas que quero que tire são
+coisas que não temos". Com duas exceções, que ele pediu para construir de
+verdade: o **Salesforce Kanban** (a home lista as duas filas de deploy e o
+Kanban move as tarefas entre a fazer / em andamento / concluído) e o
+**terminal com linha de comando** ("para fazer teste direto dali"). Pediu ainda
+que "Carlos" vire o nome de quem está logado, telemetria de memória e CPU de
+verdade, o Conceder acesso como última aba das Configurações, e animações de
+abertura, hover e clique nos botões.
+
+**Decisão.**
+
+1. **Moldura.** Topo com `Hub v2.4`, pílulas Bitbucket / SFDC / Graph, busca
+   (Ctrl+K), `MEM` e `CPU` de verdade e o usuário (avatar com a inicial, nome
+   completo e a marca). Sidebar só com módulo que existe, sem "em breve", e
+   as **Configurações no pé**. Rodapé de status com o que o Hub sabe: CF API
+   (token gravado), Registro.br (login gravado), Hestia node (servidor padrão),
+   `Fila: N pendente(s)` (tarefas abertas nas filas do Salesforce).
+2. **Telemetria de verdade** (`sistema:telemetria`): memória é a soma do
+   working set de todos os processos do Electron (`app.getAppMetrics`), CPU é
+   a soma do `percentCPUUsage` dividida pelos núcleos, como o Gerenciador de
+   Tarefas. "Ocioso" abaixo de 5%, "Ativo" acima; nunca um número fixo.
+3. **Nome de quem está logado** em todo lugar que o mockup dizia "Carlos":
+   saudação, topo, prompt do terminal. Vem do `sistema:usuario` da ADR-113
+   (Salesforce → e-mail → usuário do Windows).
+4. **Home:** saudação, **Filas ativas de produção** (as filas `Deploy …` do
+   Salesforce, `Group WHERE Type = 'Queue'`, com até 4 tarefas cada e o botão
+   Kanban), **Tarefas do Salesforce** (abertas, entregas em menos de 24h, sem
+   prazo, e as três de prazo mais perto), WHOIS/DNS e a grade de ferramentas.
+   Sem Salesforce conectado o cartão diz isso e aponta para as Configurações;
+   nada de dado inventado. Na home o centro é mais largo que o terminal.
+5. **Salesforce Kanban** (`salesforce:tarefas`, `salesforce:moverTarefa`):
+   três colunas mapeadas ao `TaskStatus` da org, não a valores chutados: "A
+   fazer" é o status padrão, "Concluído" é o que tem `IsClosed`, "Em
+   andamento" é qualquer outro aberto (prefere um cujo nome contenha
+   andamento/progress). Filtro por fila, "Minhas" e "Todas". Arrastar ou usar
+   as setas troca o Status; ir para "Em andamento" **assume a tarefa para
+   você** (tarefa em andamento numa fila sem dono é ninguém fazendo).
+   "Concluído" mostra o que fechou nos últimos 7 dias. **Só as filas das
+   marcas do Hub** (nome com "Busca" ou "MPI") entram; as outras da org, como
+   "Deploy - Ideal Marketing", são ignoradas com uma linha no log. Clicar no
+   cartão (no quadro ou na home) **abre a tarefa** num cartão por cima:
+   título, comentário inteiro, autor (`CreatedBy`), responsável, prazo,
+   status, registro relacionado, e os botões de mover, copiar o link e abrir
+   no Salesforce (`sistema:abrirLink`, só http(s)). O cache dura 60 s;
+   `#recarregar-filas` força.
+6. **Terminal com comando** (`terminal:executar`, `terminal:parar`): o que
+   você digita roda no shell do Windows (um por vez, 120 s de limite, saída
+   por evento linha a linha, 400 linhas no máximo na tela) e entra no mesmo
+   `log()` de sempre, então vai para o arquivo do dia. `dns`, `whois`,
+   `limpar`, `parar` e `ajuda` são do próprio Hub, porque o Windows não tem
+   whois e o Hub já sabe consultar. **Atalhos** (`#dns`, `#whois`,
+   `#nslookup`, `#ping`, e por tela `#testar-dns-todos`, `#abrir-doutor`,
+   `#ns-no-pai`, `#recarregar-filas`, `#testar-credenciais`, `#git-version`)
+   pegam o domínio do campo da tela e já executam. Setas navegam o histórico;
+   Ctrl+` foca o campo. Uma pergunta aberta do Hub (ADR-064) continua nas
+   linhas do terminal e não passa por aqui.
+7. **Configurações viram tela**, não modal, com seis abas: Geral & Git,
+   Contas Google & Azure, Cloudflare & Registro.br, Salesforce & Servidores,
+   Painéis & /Doutor e **Conceder acesso** (a ferramenta inteira, movida para
+   cá). Os campos continuam sendo os mesmos nós do HTML (ids e listeners do
+   salvar não mudaram): o bloco mora escondido em `#settingsHost` e é movido
+   para o painel central quando a tela abre, e de volta antes de qualquer
+   outra tela sobrescrever o painel. Em cima, a **auditoria de credenciais**
+   (`sistema:credenciais`): só "tem / não tem", sem revelar nada; "Testar
+   todas" confere no terminal o que o Hub sabe conferir de verdade (sessões
+   Google, Microsoft, Salesforce, painel MPI+, /doutor). Ctrl+S salva.
+8. **Corpo das ferramentas no padrão dos mockups:** seções em cartão com
+   título em mono, rótulo com tag à direita, botão principal grande com a
+   linha `timeout / idempotente` embaixo, cartões de estado (credencial
+   ativa, último estado, status do envio, última fila) e o texto longo de
+   cada ferramenta numa caixa dobrável **"Como funciona essa automação"**,
+   fechada por padrão. Publicar MPI+ ganhou as abas Parâmetros | Etapas
+   (o "Continuar para validação de etapas" leva para a segunda); Propriedades
+   Google, Criar novo | Buscar existente (a ferramenta "Buscar propriedades"
+   virou essa aba); Mergear PRs, Fila | Histórico no cabeçalho.
+9. **Movimento.** Abertura com fade, sidebar em escada, cada tela entra
+   deslizando 6px em ~250ms com os cartões escalonados, linha do terminal
+   desliza ao entrar e a de sucesso pisca um halo; todo botão sobe 1px e
+   acende no hover, afunda no clique. Nada passa de 400ms, e
+   `prefers-reduced-motion` desliga tudo.
+10. **Cores fora do sistema** (design.md §5) resolvidas: os dois azuis viram
+    `--border-hi` e `--accent-line`, o `--err` vira `--error`, e o hover do
+    primário vira `--accent-hi`.
+
+**O que saiu dos mockups por não existir:** Daemon PID inventado, "2
+repositórios online", git-bash interativo no rodapé da home, "Safe-Revert" no
+/doutor, "Modelo .xlsx" da Ouvidoria e os checkboxes de parâmetros de
+auditoria são só ilustrativos (marcados e desabilitados: são a regra fixa da
+ADR-111, não opções).
+
+**Consequências.** `renderGrantAccessTool` desenha dentro de `#cfgGrant`, não
+mais no painel; `openSettings(aba)` abre a tela e `closeSettings()` volta
+para a tela anterior. `state.view === 'findproject'` e `'grantaccess'` ainda
+funcionam, roteados para a aba certa. O preview (`tools/preview.js`) ganhou
+as cenas `kanban`, `config-cloudflare` e `config-acesso`, tira os screenshots
+em 1600×1000 e stuba as APIs novas; `npm test` segue 32/32.
+
+**A validar na máquina real:** os nomes das filas de Deploy e os valores do
+`TaskStatus` da org (o diagnóstico do Salesforce nas Configurações lista os
+dois); tarefas cujo dono é uma fila só aparecem se a org permitir fila como
+dono de Tarefa. Sem nenhuma fila, a home mostra "Minhas tarefas".
+
+
+## ADR-116 — /doutor: bloquear é esvaziar os telefones e salvar (não o cadeado)
+
+**Contexto.** O "bloquear contatos" marcava sucesso mas o telefone continuava no
+site. Mapeei ao vivo no /doutor da RENOVARE (renovareengseg.com.br): o cadeado
+da lista (`.j_AlteraStatus` → POST `UpStatus`) que a automação usava só
+ativa/desativa a empresa — **nunca** mexe no contato. Prova: a empresa estava
+"bloqueada" no painel e o telefone ainda aparecia no site.
+
+**Decisão.** O bloqueio de verdade é no **cadastro da empresa**
+(`CMSemp/update&id=<rel>`): esvaziar os campos de telefone/WhatsApp
+(`empresa_fone`..`empresa_fone6`) e **Salvar**. O site regenera sem o contato
+(comprovado: esvaziei e salvei, o telefone/WhatsApp sumiram; restaurei e
+voltaram). Detalhes que a automação respeita:
+
+1. **Backup criptografado** (`doutor-contatos.enc`, safeStorage) dos números
+   antes de apagar, chaveado pelo domínio — é o que o **desbloquear** repõe.
+2. **504 é esperado.** O Salvar responde `504 Gateway Timeout` e conclui mesmo
+   assim; o Hub não trata a falha de carregamento como erro e **confirma
+   relendo o cadastro** (telefones vazios = bloqueado; preenchidos = no ar), com
+   algumas tentativas pela lentidão.
+3. **Máscara (jmask).** Os campos têm máscara que apaga valor posto por script
+   no blur; para restaurar, a automação **clona o input** (tira os listeners) e
+   repõe o número, senão salvava vazio.
+4. **Estado real** = telefones cheios/vazios, não o cadeado da lista.
+
+**Fecho da tarefa.** Novo input opcional "Link da tarefa no Salesforce" na
+ferramenta: ao concluir o bloqueio, o Hub conclui a tarefa e comenta
+**"Contatos removidos"** ao autor (reaproveita `salesforce:fecharTarefa`).
+
+**A validar na máquina real:** o /doutor tem versões diferentes por site; o
+fluxo foi confirmado nesta (SIG). Em versão que use outro cadastro de contato,
+me avise para mapear.
+
+
+## ADR-117 — Ouvidoria: coluna cliente e busca da conta por confiança graduada
+
+**Contexto.** A Ouvidoria achava a conta só pela **tarefa de "Publicação"** que
+citasse o domínio — poucos dos 133 sites antigos têm essa tarefa, então sobrava
+muita revisão. Validei ao vivo no Salesforce com 3 domínios que falharam:
+`cirurgiaplastica-cnacional.com.br` (0 contas, 0 casos; as tarefas eram e-mail
+solto de OUTRA conta — "KS Uniformes"), `topoag.com.br` (só um contato de
+prospecção "cold"), `abcsatelite.com.br` (não existe no CRM). Ou seja: para
+muitos domínios antigos o vínculo domínio→conta **não existe** de forma
+confiável, e afrouxar a busca para "qualquer tarefa" traz **conta errada**.
+
+**Decisão — busca por confiança graduada.** Uma SOSL só trazendo Conta, Caso,
+Contato e Tarefa; resolve com o **sinal mais forte** e **uma única conta**,
+senão marca revisar (não chuta). Do mais forte ao mais fraco:
+
+0. **Razão social** exata, quando a planilha traz o nome (o mais confiável).
+1. **Website da conta** contém o domínio.
+2. **Caso** cujo assunto cita o domínio → a conta dele.
+3. **Contato** com e-mail @domínio, fora prospecção (cold/lead) → a conta dele.
+4. **Tarefa "Publicação…"** ligada a um caso que cita o domínio → a conta.
+
+Isso sobe o acerto dos domínios bem cadastrados sem regredir nem trazer conta
+errada (o e-mail solto da "KS Uniformes" não é tarefa de publicação, então não
+vira conta).
+
+**Coluna "cliente".** A planilha ganhou a coluna cliente. O Hub confere só
+**Busca Cliente** e **MPI Solutions**; **Soluções Industriais**, **Doutores da
+Web** e o resto (inclusive em branco) ficam de fora e saem na aba **"Outros
+clientes"** do .xlsx final (aba "Resultado" + aba "Outros clientes"). Sem coluna
+cliente (domínios colados), confere todos, como antes.
+
+
+## ADR-118 — Backup dos contatos: apagado depois do desbloqueio confirmado
+
+**Contexto.** O bloqueio no /doutor (ADR-116) guarda os contatos originais
+(criptografado, por domínio) para o desbloqueio restaurar. O pedido: "após o
+site ser desbloqueado ele pode apagar esse backup para liberar memória".
+
+**Decisão.** O backup vive **até o desbloqueio ser confirmado** relendo o
+cadastro; só então é apagado (`apagarDoutorContatos`). Sobrevive a reinícios do
+PC no mesmo usuário/máquina (é o `safeStorage` do Electron); reinstalar, trocar
+de usuário ou de máquina perde o backup — aí o desbloqueio avisa e pede reposição
+à mão.
+
+
+## ADR-119 — Triagem das tarefas da fila (publicação MPI+ e bloqueio) por regras validadas
+
+**Contexto.** Para a automação decidir o que fazer com cada tarefa da fila do
+Salesforce, os padrões foram validados em tarefas **reais**: assunto de
+publicação `Publicação (Troca de DNS) [MPI+] - {domínio}`; temporário MPI+ é
+`<cliente>.mpitemporario.com.br` (Busca One usa `producao.mpitemporario.com.br`,
+`deploy.buscacliente.com.br` ou "Apontado via registro." — é manual, fase 2);
+bloqueio é `BLOQUEIO DE CONTATOS - {domínio}` ou `RETIRAR CONTATOS, E-MAILS E
+ENDEREÇO - {domínio}`.
+
+**Decisão.** `lib/triagem.js` (puro, testado contra os casos reais) classifica
+cada tarefa em publicação MPI+ (elegível), publicação Busca One (não elegível,
+fase 2), bloqueio, ou ignorar. A **marca** de um bloqueio vem do **IP** para
+onde o domínio aponta: `149.18.103.138` MPI Solutions, `149.18.102.39` MPI+,
+`149.18.103.98–106` Busca Cliente. IP desconhecido não chuta: pula e avisa.
+
+
+## ADR-120 — Monitor da fila em 2º plano (motor puro + painel flutuante)
+
+**Decisão.** `lib/automacao.js` é o motor (puro, injetável, testado sem
+Electron): varre a fila a cada 5 min, triagem, executa uma tarefa por vez,
+respeita "parar" e o que já foi processado, e fecha a tarefa no Salesforce ao
+concluir. `renderer/automacao-ui.js` injeta um painel flutuante com os
+interruptores (**começam sempre desligados** — um automatizador não religa
+sozinho ao abrir o app), "Rodar agora" e o freio de emergência. Bloqueio Busca
+Cliente/MPI Solutions vai pelo /doutor (ADR-116). Cada tarefa tem o desfecho
+logado (feito / pulei — motivo / erro), não só o resumo.
+
+
+## ADR-121 — Bloqueio de contatos MPI+: no painel idealplus, pelas funções de salvar do próprio painel
+
+**Contexto.** MPI+ **não tem /doutor**: os contatos ficam no painel central
+(`idealplus.idealtrends.io`, Alpine.js + Livewire), em duas seções com
+"Sincronizar" próprio: Configurações → Endereços da empresa (`addresses[]`:
+endereço, redes, telefones, e-mails) e Integrações → WhatsApp
+(`config.integrations.whatsapp.numbers[]`). Inspecionado ao vivo.
+
+**Decisão.** O Hub abre o hub do cliente numa janela oculta (a mesma sessão da
+publicação), **edita o estado Alpine e chama `saveSection('settings')` e
+`saveBlock('integrations','whatsapp')`** — idêntico a clicar Sincronizar, sem
+simular digitação. A censura fica em `lib/painel-mpiplus.js` (puro, testado
+contra o modelo real da página e contra réplicas das validações do painel):
+
+- Telefones e WhatsApp → `(00) 00000-0000`. O painel **recusa `##` em
+  telefone** (exige dígitos: ≥1 no endereço, ≥10 no WhatsApp).
+- E-mail → `contato@idealtrends.com.br` (é a marca do MPI+).
+- Redes sociais e endereço → `##`. CEP/cidade/UF entram no `##` (modo A; o
+  servidor aceitou ao vivo); há fallback B mantendo CEP/cidade/UF.
+- Nome (label) do endereço e do número de WhatsApp não são contato: ficam.
+
+**Ordem dos saves.** `saveSection` re-hidrata a config **inteira** com a
+resposta do servidor (`applyLoadedConfig`), o que apagava um WhatsApp censurado
+só em memória. Então o **WhatsApp é salvo primeiro** e cada estado é
+re-aplicado logo antes do seu save. "Bloqueado" exige **os dois** blocos; um
+bloqueio parcial é completado, e o backup (JSON fiel de `{addresses, whatsapp}`,
+criptografado) **não é sobrescrito** quando os endereços já estão censurados.
+
+**Achar o cliente.** A busca do painel (`/clientes?busca=`) é por nome/CNPJ, não
+por domínio. O Hub usa a **razão social = nome da conta no Salesforce**
+(`acharContaPorDominio`), com CNPJ de reserva, pega `/clientes/{id}` e o link
+`hub?projeto={pid}`.
+
+**Lição.** Os scripts injetados são strings: `node --check main.js` não vê um
+`SyntaxError` dentro delas (redeclarar `const dados` que o `JS_HELPERS` já
+declara derrubou o script inteiro com o genérico "Script failed to execute").
+`tools/test-painel-scripts.js` monta cada script como o `rodarNoPainel` monta e
+valida a sintaxe com `new Function`.
+
+
+## ADR-122 — Publicação MPI+ automática: a mesma máquina de etapas, sem perguntar
+
+**Contexto.** "Toda vez que detectar uma tarefa de publicação, se for MPI+ ele
+já faz toda a publicação sozinho e fecha a tarefa." O "Publicar MPI+" manual já
+faz tudo em 11 etapas (contato → DNS → Cloudflare → Registro.br → aprovar →
+publicar → propagação → SSL → tags → planilha → Salesforce), com paradas e
+perguntas no terminal que, em modo automático, ninguém responde.
+
+**Decisão.** O driver (`window.hubPublicarTarefaAuto`, em `automacao-ui.js`)
+**reaproveita a máquina de etapas do app.js** (script clássico: `pub`,
+`pubNovo`, `pubRodarEtapa`, `PUB_ETAPAS` são globais), rodando **etapa por
+etapa** em vez do `pubRodarTudo`, para que nada pergunte:
+
+- razão social pelo Salesforce (`salesforce:contaPorDominio`) e link do painel
+  por `acharContratoNoPainel` (razão + temporário) — sem achar, desiste;
+- a parada "confirmar e aplicar o DNS" vira **backup obrigatório** do DNS atual
+  do cliente em `Música/backup dns/{domínio}.txt` (registros + JSON completo) e
+  segue; sem backup, **não aplica**;
+- quando o Registro.br não diz a empresa (fora do .br, DNS do cliente ou
+  consulta falhou), a **fila da tarefa** decide: "Deploy Busca Cliente" → Busca
+  Cliente, "Deploy MPI Solutions" → MPI Solutions (`empresaDaFila`, do
+  `salesforce:tarefas`). Nos `.br` o Registro.br continua mandando (é ele que
+  diz de qual conta é o DNS), por isso a empresa fica `auto` na etapa do
+  contato e a fila entra só como reserva depois. Assim o fluxo segue 100%
+  (aprovar, publicar, tags, planilha, fechar); o DNS fica com o cliente e o
+  SSL sai depois do apontamento — igual ao manual. Só desiste se a tarefa não
+  estiver numa fila de marca;
+- falha de etapa: não pergunta tentar/pular; o motor tenta de novo até
+  `MAX_TENTATIVAS` (3) e aí desiste; `desistir: true` desiste de primeira.
+
+Quem fecha a tarefa é a própria etapa "salesforce" (`pub.sfTarefa` = link da
+tarefa). SSL adiado (Registro.br demora) entra na lista de espera do app, cujo
+vigia termina SSL + tarefa. Nada no `app.js` foi alterado.
+
+
+## ADR-123 — Conta e empresa pela tarefa → caso, não pelo domínio
+
+**Contexto.** A publicação automática buscava a razão social por **domínio**
+(SOSL) e falhou num caso real: a triagem leu `furryambulanciavet.com.br`, o
+cadastro é `.com`, e a busca não achou nada — enquanto a **tarefa já estava
+pendurada no caso 00087159**, que tem a conta (FURRY AMBULANCIA VETERINARIA
+LTDA) **e** o campo "Projeto: Busca Cliente". O mesmo valia para o Publicar MPI+
+manual e o em massa, que **perguntavam a empresa no terminal** nos `.com` e nos
+DNS que não são nossos.
+
+**Decisão.** Um resolvedor só, `salesforce:contexto({ tarefa | caso })`:
+tarefa → `WhatId` (caso) → `Account.Name` (razão social) + campo do caso
+"Sel. Projeto"/"Projeto" (descoberto pelo rótulo via describe; lookup vira
+`Relacao__r.Name`) → empresa (`Busca Cliente` → bc, `MPI Solutions` →
+mpisolutions), com a **fila da tarefa** como reserva. Link de caso colado no
+campo da tarefa é aceito. Usado em três lugares:
+
+- **Automático:** razão e empresa pelo contexto da tarefa; busca por domínio
+  só como reserva.
+- **Publicar MPI+ manual:** sem razão social mas com o link da tarefa, pega do
+  caso (e guarda a empresa); na etapa da planilha, lê a empresa do caso/fila
+  **antes** de perguntar — só pergunta se nada disser.
+- **Publicar em massa:** com o "Link do caso" da planilha de entrada, a empresa
+  (e a razão social, se faltar) vêm do caso; só pergunta se o caso não disser.
+
+`tools/test-contexto.js` cobre o roteamento de link (tarefa x caso) e o mapa
+texto → empresa, recortado do `main.js` para não divergir.
+
+
+## ADR-124 — Esperar a previsão do Registro.br antes de conferir (2º plano leve)
+
+**Contexto.** Numa troca de DNS no Registro.br a publicação leva ~2h. A etapa de
+propagação já adiava o SSL e mandava o site para a lista de espera (ADR-103),
+mas o **vigia** dessa lista conferia o DNS de todo site **a cada minuto**, sem
+olhar a previsão — ~120 consultas inúteis por site, e a máquina ficava lenta.
+E, a cada Ctrl+R, a lista de tarefas processadas da automação zerava; como a
+tarefa de publicação segue aberta no Salesforce até o DNS propagar, o monitor
+**rodava a publicação inteira de novo**.
+
+**Decisão.**
+- O vigia só confere quem **já passou da previsão** (`e.ate`, a `transicaoAte`
+  do Registro.br) e **dorme até a previsão mais próxima** (teto de 30 min para
+  reavaliar a lista); com algum site vencido, volta à cadência de 1 min até a
+  folga de 30 min. Sem previsão (`ate` ausente) confere como antes. Avisa uma
+  vez a hora da primeira conferência.
+- O driver automático **não re-publica** um domínio que está na lista de espera
+  (esperando/rodando): devolve "já publicado; esperando a propagação" e a
+  tarefa é marcada como processada.
+- A varredura do monitor **não roda** enquanto há uma publicação em andamento
+  ou o Publicar em massa rodando — só empilharia consultas. Fora isso, o
+  monitor a cada 5 min é leve (duas SOQL e triagem em memória); o custo real
+  sempre foi a conferência de DNS por minuto.
+
+`tools/test-vigia.js` recorta a decisão do vigia e prova as duas contas (0
+conferências antes da previsão; ≤5 despertares em 2h).
+
+
+## ADR-125 — O Hub parado gasta um núcleo: são as animações infinitas, não o DNS
+
+**Status:** aceita (é o diagnóstico medido; a correção, e a medição com prova de que a janela desenhou, estão na ADR-126)
+
+**Contexto.** Depois do redesign v2.4 (ADR-114, ADR-115), o Guilherme
+reclamou que a máquina ficava lenta e travava. Medido em 29/09, só lendo os
+processos: o Hub instalado (1.0.49), parado, gastava de 10 a 12% da máquina, ou
+seja, ~1 núcleo, sendo 62% de um núcleo só no processo da GPU. Era de longe o
+maior consumidor de CPU do Windows (o Firefox, segundo, gastava 1,9%). Em
+25/09, antes do redesign, o mesmo Hub parado gastava 0%. A ADR-124 atribuiu o
+peso à conferência de DNS por minuto do vigia; ela não explica o consumo com o
+app parado, porque uma consulta de DNS por minuto é desprezível.
+
+**Decisão (como medir e o que foi medido).**
+
+1. **Consumo parado só se compara com a janela por cima**, ou com todos os
+   estados no mesmo processo. Encoberta pelas janelas de quem está usando a
+   máquina, a janela de teste desenha menos, e rodadas iguais deram de 1,2% a
+   16%.
+2. O `tools/medir-recursos.js` ganhou o cenário `minimizado` (no padrão) e as
+   opções `--cenarios`, `--throttling` (religa a desaceleração do Chromium sem
+   editar o app) e `--por-cima`.
+3. Experimento controlado, na tela de 2560×1080, janela maximizada, 25 s por
+   estado:
+
+| Hub parado | CPU da máquina |
+| --- | --- |
+| Visível, como está | 10,8% (GPU 8,6) |
+| Atrás de outra janela, como está | 10,5% |
+| Atrás de outra janela, com a desaceleração religada | 10,6% |
+| Visível, sem as animações infinitas | 0,12% |
+| Visível, sem animação nenhuma | 0,66% |
+| Visível, sem o vidro (`backdrop-filter`) mas com as animações | 12,2% |
+| Atrás de outra janela, sem as infinitas | 1,0% |
+| Atrás de outra janela, sem as infinitas e com a desaceleração | 0,28% |
+| Minimizado | 0,32% |
+
+**Consequências.**
+
+- **A causa são os pontos que pulsam para sempre** (`animation: pulse …
+  infinite`): `.tb-sys-dot`, `.sb-dot`, `.nav-dot`, `.stat-title .dot` e
+  `.brand-dot`, sempre na tela, e os de "ocupado" (`.terminal-panel.busy`,
+  `.nav-foot-state.busy`, `.card--status.pending`), que ficam ligados enquanto
+  algo espera. Por menor que seja o ponto, uma animação infinita obriga o
+  Chromium a gerar e apresentar a janela inteira 60 vezes por segundo. O vidro
+  sozinho não pesa. O `backgroundThrottling: false` (ADR-094) mantém a janela
+  desenhando mesmo atrás de outras; sem as animações infinitas, religar a
+  desaceleração tira mais 0,7 ponto quando ela está encoberta.
+- **No uso, as animações de entrada também custam** (medido com `--por-cima`,
+  como está → sem animação): trocar de tela, 69 → 36 ms; cada linha do
+  terminal com 3.000 na tela, 25 → 15 ms; a lista do Publicar em massa, que é
+  redesenhada inteira a cada mudança de status e tem `popIn` em cada `.row`,
+  221 → 62 ms com 32 linhas e 6,6 → 1,0 s com 3.000.
+- **A máquina estava mais lenta, não o código.** Suíte: 38 de 38 arquivos,
+  1.300 verificações, mas em 86 s (19 a 25 s em 25/09). Benchmark: as contas de
+  CPU, com o mesmo código, 1,2 a 1,6× mais lentas; carregar módulo do disco, 2
+  a 5×. Na hora, com o Hub queimando um núcleo, havia 2,6 GB de RAM livre e
+  2,3 GB em paginação (o Firefox sozinho com 4,9 GB).
+- **Em aberto:** o Hub instalado tinha 3 processos de janela oculta vivos
+  (~330 MB), nascidos quando a automação abriu o painel (16:59 e 17:44), ainda
+  vivos uma hora depois. O código devolve a janela ao cache com prazo de 3 min
+  (`painelSoltarJanela`), então falta descobrir se são janelas que escaparam ou
+  processos que o Chromium mantém para o site.
+
+## ADR-126 — O Hub parado não desenha: nada pulsa para sempre, e a janela só deixa de desacelerar enquanto algo roda
+
+**Status:** aceita — a prova de quadros do item 6, que era feita em experimentos à parte, passou para o `npm run medir` na ADR-130
+
+**Contexto.** A ADR-125 achou a causa do Hub lento: com os pontos que pulsam
+para sempre, o Chromium gera e apresenta a janela inteira 60 vezes por
+segundo, visível ou atrás de outras, porque a desaceleração estava desligada
+(ADR-094). Em 30/09 o Guilherme pediu, com fotos, para tirar do Hub as
+pílulas do topo ("Bitbucket ativo", "SFDC conectado", "Graph pronto"), o
+"CLI: v2.4.1 · READY" da barra lateral e o rodapé de status ("Hub Engine",
+"CF API", "REGISTRO.BR", "HESTIA NODE"), e fazer o que tinha sido proposto:
+pontos parados, o pulso de "ocupado" só com a janela em foco, sem animação de
+entrada nas listas grandes, e a desaceleração desligada só durante a rodada e
+a automação.
+
+**Decisão.**
+
+1. Saíram as pílulas do topo, o rodapé de status e o "CLI / READY" (HTML,
+   CSS, o `atualizarStatusbar` e o `tickLento`, que relia as credenciais de
+   minuto em minuto). A auditoria de credenciais das Configurações lê tudo
+   quando a tela abre (`carregarCredenciaisDaAuditoria`).
+2. **Nenhum ponto pulsa para sempre.** Só o "ocupado" (terminal) e o
+   "pendente" (cartão de status) piscam, e só com a janela em foco
+   (`html.sem-foco`, marcada por focus/blur). E piscam **em degraus**
+   (`steps(1, end)`: aceso, meio apagado), não esmaecendo: esmaecendo, eles
+   redesenham a janela 60 vezes por segundo; em degraus, só quando o ponto
+   muda. O Guilherme escolheu o degrau depois de ver os números abaixo.
+3. As linhas do lote (`.row`) e os cartões do kanban (`.kb-card`) entram sem
+   animação: a lista inteira se redesenha a cada mudança de status.
+4. A telemetria do topo (a cada 10 s) não trabalha com a janela escondida e
+   volta na hora em que ela aparece.
+5. A janela principal **desacelera em segundo plano como qualquer página**
+   (saiu o `backgroundThrottling: false` da ADR-094). O
+   `energia:manterAcordado` ganhou motivos: `rodada` (a rodada em massa, a
+   única que também segura o PC acordado pelo `powerSaveBlocker`),
+   `automacao` e `publicacao`. Com qualquer um ligado, a janela não desacelera
+   (`setBackgroundThrottling(false)`); quando o último solta, ela volta a
+   desacelerar. As janelas ocultas do painel, do /doutor e do Registro.br
+   continuam sem desacelerar.
+6. **Consumo "visível" só vale com prova de que a janela desenhou.** Antes dos
+   25 s de CPU de cada estado, o experimento conta os quadros apresentados
+   (`webContents.beginFrameSubscription`, 2 s) e anota se a janela estava
+   minimizada. Sem essa prova, uma janela de teste que quem está usando a
+   máquina minimizou mede ~0,2% em qualquer estado, e foi o que aconteceu em
+   rodadas deste mesmo dia: o Hub de antes deu 6,4% numa e 0,2% na seguinte,
+   no mesmo estado, e o pulso de "ocupado" pareceu custar 0,29%. A janela de
+   teste abre por trás, sem roubar o foco, com a desaceleração desligada
+   (como fica durante uma rodada, e como era na 1.0.49), e assim desenha mesmo
+   encoberta ou com a tela bloqueada.
+7. De passagem, o `test-esperas.js` quebrava desde a ADR-124 (o vigia agora
+   dorme até a previsão); os casos passaram a usar previsões já vencidas.
+
+**Consequências.** Medido em 30/09 (i5-10210U, tela de 1366×720, janela do
+tamanho da área de trabalho, sem desaceleração, 25 s por estado, % da máquina
+inteira):
+
+| Estado | Antes (1.0.49) | Depois |
+| --- | --- | --- |
+| Parado | 3,8% e 3,5% (60 quadros em 2 s) | 0,06% (1 quadro) |
+| Antes, sem os pulsos infinitos | 0,14% (1 quadro) | — |
+| "Ocupado", com foco, esmaecendo | — | 2,2% a 4,1% (60 quadros) |
+| "Ocupado", com foco, em degraus | — | 0,7% (4 quadros) |
+| "Ocupado", sem foco | — | 0,2% (1 quadro) |
+
+- O custo cresce com o tamanho da janela: os 3,8% daqui são os 10,8% da
+  ADR-125 na tela de 2560×1080, que tem 2,8 vezes a área. No monitor grande, o
+  "ocupado" esmaecendo passaria de 6% enquanto algo roda; em degraus, fica
+  abaixo de 1%.
+- No uso (`npm run medir -- --por-cima`, depois das mudanças, com a janela
+  desenhando: a GPU trabalhou 9,8% na navegação): trocar de ferramenta, mediana
+  de 21 a 30 ms (69 ms na ADR-125); a lista do Publicar em massa, 60 ms com 32
+  linhas (221 ms) e 0,8 s com 3.000 (6,6 s); abrir o Hub, 1,35 s; 386 MB
+  somando os processos. Parado por cima, 0,4%; minimizado, 0,1%.
+- A ADR-125 estava certa ao dizer que qualquer animação infinita suave, por
+  menor que seja, faz a janela inteira ser apresentada 60 vezes por segundo: a
+  prova de quadros mostra os 60 quadros com um ponto de 6 px.
+- Continua em aberto o que sobra de janela oculta do painel depois da
+  automação (ADR-125).
+
+## ADR-127 — Tela inicial sem a grade "Automações & scripts"; a busca do topo abre o módulo
+
+**Status:** aceita (substitui, na tela inicial, os cartões da ADR-056)
+
+**Contexto.** Pedido do Guilherme, com foto (30/09): tirar da tela inicial o
+painel "Automações & scripts" (a busca "Pesquisar ferramenta", a contagem "10
+ferramentas", os recentes e os cartões), porque os atalhos estão na barra
+lateral.
+
+**Decisão.**
+
+- Saiu o bloco inteiro (`renderToolGrid`, `#toolGrid`, `#hubSearch`, os chips
+  de "Recentes") e o CSS que só ele usava (`.tool-grid`, `.tool-card*`,
+  `.chip*`, `.home-tools*`). A tela inicial fica com a saudação, as filas do
+  Salesforce, o resumo das tarefas e o WHOIS/DNS.
+- A busca do topo (Ctrl+K) filtrava essa grade: o Enter levava para a tela
+  inicial e preenchia o `#hubSearch`. Agora o Enter abre direto o que bate com
+  o texto, nesta ordem: o nome de um módulo da barra lateral, o nome de uma
+  ferramenta (inclui "Buscar propriedades" e "Conceder acesso", que não têm
+  atalho próprio na lateral: são uma aba de Propriedades Google e uma das
+  Configurações) e as descrições. Sem acento conta igual. Se nada bater e o
+  texto for um domínio, vai para a tela inicial e consulta o WHOIS/DNS; senão,
+  avisa no terminal.
+- O `medir-recursos.js` esperava a grade aparecer para saber que o Hub abriu;
+  passou a esperar o campo do WHOIS.
+
+**Consequências.** "Buscar propriedades" e "Conceder acesso" continuam a um
+clique (a aba) ou pela busca. Os recentes ainda são gravados no hub-state, sem
+uso na tela.
+
+## ADR-128 — Git Bash dentro do Hub, e os dois terminais minimizam e fecham
+
+**Status:** aceita — redimensionar sem duplicar linhas (o ConPTY do node-pty e um aviso de tamanho por arrasto) está na ADR-129
+
+**Contexto.** Pedido do Guilherme (30/09), com foto do terminal do
+Antigravity: pôr o Git Bash dele no Hub igual ao terminal de lá, e dar a opção
+de fechar, ou pelo menos minimizar, os dois terminais: o Git Bash novo e o de
+atividade, que continua à direita.
+
+**Decisão.**
+
+1. **Um bash de verdade.** O processo principal abre o `bash.exe` do Git for
+   Windows (`--login -i`, como o próprio Git Bash) num pseudoterminal do
+   Windows (ConPTY), pelo `node-pty` 1.1.0, que vem com o binário pronto
+   (N-API) para Windows x64: não precisa compilar, e esta máquina não tem o
+   compilador do Visual Studio. A tela é o `xterm.js` 5.5, o mesmo do VS Code e
+   do Antigravity, carregado só na primeira vez que o bash abre (290 KB). O
+   perfil do usuário roda igual: a citação e o prompt `usuário@máquina MINGW64
+   pasta (branch)` saem com as cores de lá (a paleta ANSI do VS Code no tema
+   escuro). Um bash por janela, que morre quando a janela ou o Hub fecham.
+   - Onde está o bash: em `Arquivos de Programas\Git`, em
+     `AppData\Local\Programs\Git` (a instalação desta máquina) e, se não, ao
+     lado do `git` do PATH. Sem Git, a mensagem diz o que instalar.
+   - Abre na pasta do usuário, com `TERM=xterm-256color`, `COLORTERM=truecolor`
+     e `CHERE_INVOKING=1` (o `/etc/profile` do Git fica na pasta em que abriu).
+   - A saída junta por 8 ms antes de ir para a janela. Tecla e tamanho vão por
+     `invoke` e a página não espera a volta. Tudo é `ipcMain.handle`, como o
+     resto do `main.js`: os testes carregam o arquivo com um `ipcMain` que só
+     tem `handle`, e com `ipcMain.on` dez deles quebraram na carga.
+   - Copiar e colar como no VS Code: Ctrl+C copia se houver texto selecionado
+     (sem seleção, vai o ^C para o bash e interrompe); Ctrl+V cola. O cursor
+     não pisca (ADR-126).
+2. **Onde fica e como se mexe.** Embaixo do painel do meio, com a borda de
+   cima arrastável (a altura fica guardada). A cara é a do painel do
+   Antigravity: fundo escuro arroxeado, a aba "Terminal" em roxo e, à direita,
+   `bash`, `+` (outro bash, encerrando o atual), a lixeira (encerra), maximizar
+   (ocupa a coluna do meio inteira), minimizar (fica só a barra; clicar nela
+   devolve) e `×` (esconde; o bash continua vivo, e a barra lateral mostra um
+   ponto roxo). Abre pelo "Git Bash" da barra lateral ou por Ctrl+Shift+' (a
+   tecla à esquerda do 1).
+3. **A Atividade minimiza e fecha.** Minimizada, vira um trilho de 38 px à
+   direita; fechada, a coluna some e o meio ocupa a largura. O que chega
+   enquanto ela está escondida vira um número no trilho e no botão "Atividade"
+   da barra lateral, vermelho se veio erro. Uma pergunta no terminal (ADR-064)
+   traz a Atividade de volta sozinha, e o Ctrl+` também. O estado fica
+   guardado nesta máquina (localStorage). Apertado, o título dela termina em
+   reticências, e o PID ao lado some primeiro.
+4. O CSS do log passou a ser do `#terminal`, não da classe `.terminal`: o
+   xterm.js põe essa classe no elemento dele e herdava o recuo e a rolagem do
+   log (o bash passava da largura, com barra de rolagem para o lado).
+5. **Instalador:** `npmRebuild: false` (o electron-builder não tenta compilar o
+   node-pty) e `asarUnpack` do node-pty (binário nativo não roda de dentro do
+   app.asar), sem os `.pdb`, as outras plataformas e os fontes (~55 MB).
+   Conferido num pacote de teste: o node-pty vai com 4,1 MB, o executável do Hub
+   empacotado abre o bash por ele, e o pacote cresce 5 MB (327,6 MB).
+6. O npm desta máquina não roda os scripts de instalação do node-pty sem
+   aprovação (`allowScripts`). Eles não fazem falta: um confere que o binário
+   pronto existe, o outro copia uma DLL do ConPTY que só é usada com
+   `useConptyDll`.
+
+**Atualização (30/09).** O Guilherme pediu o Git Bash "na mesma paleta de
+cores que o programa usa". A moldura ficou a do Antigravity (aba, botões,
+borda arrastável), mas as cores agora são as do Hub: fundo `#061210` (o
+recuado do app), texto `--text`, aba ativa e ponto de "bash aberto" em
+`--accent`, e as 16 cores ANSI mapeadas para os papéis da paleta (tabela em
+`docs/design.md`, "Git Bash"). O que a paleta não tem (roxo e azul) virou o
+cinza-verde secundário e um ciano mais fechado; o prompt continua com quatro
+cores distintas. O fundo do xterm (`TEMA_BASH`) e o da moldura
+(`--bash-fundo`) são o mesmo valor de propósito.
+
+**Consequências.**
+
+- Testes: `test-git-bash.js` (dublês do node-pty e da janela, e no fim um bash
+  de verdade pelo node-pty desta máquina, sem o perfil) e
+  `test-terminais-browser.js` (a página de verdade num Chromium, com o xterm.js
+  de verdade). O `preview.js` ganhou os métodos do bash no dublê e as cenas dos
+  terminais. Sete defeitos postos de propósito, os sete pegos.
+- No Hub de verdade, o perfil do Guilherme levou de 17 a 44 s para mostrar o
+  prompt: a citação do `.bashrc` busca na internet (zenquotes.io) sem prazo. No
+  Antigravity é igual; não é do Hub.
+- O Git Bash parado não gasta: sem cursor piscando, o xterm.js só desenha
+  quando chega saída.
+- O painel flutuante da automação (ADR-120) fica por cima do canto direito do
+  Git Bash quando a Atividade está minimizada ou fechada; ele se minimiza.
+
+## ADR-129 — Git Bash: redimensionar sem duplicar linhas, e a citação do terminal sem esperar a internet
+
+**Status:** aceita
+
+**Contexto.** O Guilherme (30/09): aumentando e diminuindo o Git Bash, ele
+"sai duplicando as frases e pulando linha"; e que as frases (a citação que o
+perfil dele mostra ao abrir o terminal) apareçam mais rápido, sem travar.
+
+Reproduzido no Hub de verdade, numa pasta descartável: uma frase longa, a borda
+arrastada para cima e para baixo como a mão faz, e a largura mudando. Com o
+ConPTY do Windows e o tamanho avisado ao bash a cada passo (55 avisos num
+arrasto), a frase apareceu 9 vezes (o certo são 2: o comando e a saída), com
+pedaços soltos e a largura final errada (63 colunas em vez de 97). Num teste
+mais duro, com 150 linhas saindo enquanto a borda mexe e a Atividade
+minimiza, fecha e volta, 2 linhas saíram repetidas.
+
+**Decisão.**
+
+1. **O ConPTY do node-pty, não o do Windows** (`useConptyDll: true`: o
+   `conpty.dll` e o `OpenConsole.exe` do Windows Terminal 1.23, que vêm no
+   node-pty). Com ele, os dois testes saíram limpos mesmo com ~100 avisos de
+   tamanho: 150 de 150 linhas, nenhuma repetida nem torta. Ele pergunta ao
+   terminal quem ele é (`ESC [ c`) e espera a resposta por ~3 s; o xterm.js
+   responde na hora, por isso tudo que o xterm manda vai para o bash sempre,
+   mesmo antes de o Hub dá-lo como vivo. Respondido, abre tão rápido quanto o
+   do Windows (~450 ms) e fecha mais rápido (0,6 s contra 1,5 s). Se o dll não
+   carregar (faltando, ou com o caminho até ele passando de 260 caracteres:
+   erro 206; o do Hub instalado tem 152), o bash abre com o ConPTY do Windows e
+   a Atividade avisa o motivo.
+2. **O bash só fica sabendo do tamanho quando ele para de mudar.** O xterm.js
+   se ajusta ao painel a cada quadro, mas o aviso ao bash (cada um faz o ConPTY
+   redesenhar a tela) espera a mão soltar a borda, um aviso por arrasto; nos
+   outros casos (a janela, a Atividade abrindo ou fechando), 150 ms parado. O
+   mesmo tamanho não é avisado duas vezes. O fim do arrasto vale por qualquer
+   caminho: soltar, cancelar, perder a captura, a janela perder o foco (Alt+Tab
+   no meio) ou um movimento já sem o botão. Se ele se perdesse, o bash nunca
+   mais saberia do tamanho, e foi o que um arrasto simulado por
+   `sendInputEvent` mostrou (o "soltar" não chegou).
+3. **Quem via o fim continua vendo o fim.** Depois de mudar a altura, a vista
+   do xterm.js ficava presa umas linhas acima do fim, e a saída nova não rolava
+   mais (o prompt sumia embaixo): o navegador ajusta a rolagem do painel antes
+   de o xterm.js se encaixar, e o xterm.js toma isso como a pessoa rolando. O
+   Hub guarda se a vista está "grudada" no fim e só muda isso quando a pessoa
+   rola de verdade: a roda do mouse e a barra de rolagem (que nem disparam o
+   `onScroll` do xterm.js) e o teclado. Grudada, depois de cada ajuste ela volta
+   ao fim; quem subiu para ler o histórico fica onde estava.
+4. **A citação**, fora do repositório do Hub: no `citacoes.py` (repositório
+   `guizao/python`) e no `.bashrc` do Guilherme. O script buscava no
+   zenquotes.io e traduzia no MyMemory, sem prazo, antes do prompt; daqui, só
+   conectar no zenquotes leva 15 s, e às vezes não conecta (de 4 a 21 s por
+   terminal, ou travado). Agora a frase sai na hora, de uma reserva já
+   traduzida (`~/.cache/citacoes/citacoes.json`). Quando ela fica abaixo de 8,
+   o próprio terminal pega uma trava e abre um processo solto dele, que busca
+   50 frases no zenquotes (ou, se ele não responder, na dummyjson.com, que
+   responde em 0,2 s) e traduz 10 por vez no MyMemory, com prazo em cada
+   chamada. O aviso de limite do zenquotes e o do limite do dia do MyMemory não
+   viram frase; sem rede, repete uma já vista. No `.bashrc`, as 6 linhas da
+   citação (subshell, ativar e desativar o venv) viraram uma chamada direta ao
+   Python do venv com `-S` (a frase não precisa de pacote nenhum).
+
+**Consequências.**
+
+- No Hub de verdade, com o perfil do Guilherme, 9 arrastos de verdade (a 520,
+  220 e 300 px, três vezes) e a Atividade minimizando, fechando e voltando: a
+  citação aparece 1 vez, 60 de 60 linhas, nenhuma repetida ou torta, 97×14 no
+  fim, e a vista no fim, mostrando o prompt (antes das mudanças, ela parava 16
+  linhas acima); chegaram ao bash 10 avisos de tamanho (antes, ~100).
+- O prompt com o perfil dele caiu de 10 a 44 s para 4,4 a 5,2 s. A citação
+  leva ~0,3 a 0,5 s (o Python sozinho já leva ~0,25 s para abrir nesta
+  máquina); o resto é do próprio Git (o `/etc/profile`, ~2,2 s) e do
+  `ssh-agent` + `ssh-add` do `.bashrc` (~1,1 s).
+- Testes: `test-git-bash.js` (o ConPTY do node-pty; a queda para o do Windows,
+  com o motivo; um bash de verdade pelo conpty.dll desta máquina, respondendo
+  à pergunta) e `test-terminais-browser.js` (nenhum aviso de tamanho no meio
+  do arrasto e um no fim; o arrasto que termina com a janela perdendo o foco ou
+  sem botão; a resposta à pergunta com a abertura pendente; nenhum aviso
+  repetido ao abrir; a vista no fim depois de aumentar e diminuir, e parada no
+  histórico para quem rolou com a roda do mouse). Dez defeitos postos de
+  propósito, os dez pegos. O
+  `citacoes.py` foi testado à parte, com a rede de mentira: primeira vez,
+  reserva cheia e vazia, arquivo estragado, os limites dos dois serviços, as
+  aspas que a tradução traz, duas buscas ao mesmo tempo.
+- Pacote de teste: o `conpty.dll` e o `OpenConsole.exe` vão fora do app.asar,
+  e o executável do Hub empacotado abre o bash por eles (0,73 s).
+
+
+**Atualização (30/09): um ssh-agent por conta.** O `.bashrc` abria um
+`ssh-agent` novo em todo terminal (e em cada `busca`, `mpi` e `doutor`) e
+nenhum fechava: eram 28 abertos. E a chave que ele carregava na abertura,
+`~/.ssh/bitbucket`, não existe: o agente ficava vazio, e o ssh usava a
+`~/.ssh/id_rsa`. Agora a função `usar_agente` guarda o endereço do agente de
+cada conta em `~/.ssh/agente-<conta>.env` e o reaproveita; se ele morreu (o
+PC reiniciou), abre outro e carrega a chave. Cada conta segue com o seu
+agente, só com a chave dela, que é o que faz `mpi` e `doutor` trocarem a
+conta do Bitbucket no terminal; `busca` volta para o agente sem chave (a
+`id_rsa`). Com o agente vivo, a abertura do terminal só usa comandos do
+próprio bash (antes, ~1,1 s). Três terminais seguidos usaram o mesmo agente;
+dos 29 abertos, os 22 que nenhum processo usava foram fechados, e ficaram 7,
+todos de terminais abertos. Testado antes com uma chave descartável (o segundo
+terminal usa o mesmo agente, a chave não é carregada duas vezes, cada conta
+tem o seu, agente morto é reaberto).
+
+## ADR-130 — O `npm run medir` só mostra o parado como consumo com prova de que a janela desenhou
+
+**Status:** aceita
+
+**Contexto.** A ADR-126 (item 6) mostrou que o consumo "visível" engana sem
+prova de que a janela desenhou: minimizada por quem está usando a máquina, a
+janela de teste mede ~0,2% com qualquer animação. A prova, contar os quadros
+apresentados antes de cada janela de CPU (~60 em 2 s com uma animação infinita
+suave, ~4 em degraus, 1 com a janela parada), foi feita em experimentos à
+parte, e o `npm run medir` continuava sem ela: estava nas pendências.
+
+**Decisão.**
+
+1. **Prova de quadros antes do parado e do minimizado.** O
+   `tools/medir-recursos.js` conta os quadros que a janela apresenta em 2 s
+   (`webContents.beginFrameSubscription`, como nos experimentos) antes da
+   janela de CPU do `ocioso` e do `minimizado`, nunca durante: a captura custa
+   CPU, e cada quadro chega ao processo principal como uma imagem da janela
+   inteira, por isso depois dela vêm um GC e meio segundo de folga. Anota
+   também `isMinimized()`, `isVisible()`, `isFocused()`, o tamanho da janela e
+   a tela em que ela está (`screen.getDisplayMatching`: tamanho, escala e
+   `displayFrequency`). O relatório mostra tudo numa linha ("quadros em 2 s
+   (antes da medida): 1 · minimizada: não · …").
+2. **O minimizado minimiza antes da prova e só volta depois da janela de
+   CPU.** Antes, minimizar, restaurar e o redesenho da volta entravam nos 60 s.
+   Os nomes dos cenários e o método das outras medidas não mudaram.
+3. **O que tira o valor** (`validadeDoCenario`, no relatório):
+   - no parado, a janela minimizada ou escondida na hora da prova, com
+     qualquer contagem. Minimizada, a janela entregou 1 quadro à captura nas
+     duas rodadas de 30/09 (com a desaceleração ligada, o padrão desde a
+     ADR-126), o mesmo da janela parada na tela: só a contagem não separa as
+     duas;
+   - no minimizado, a janela que não minimizou;
+   - em qualquer cenário, a janela minimizada, restaurada, escondida ou
+     mostrada, ou a tela bloqueada ou desbloqueada, entre o começo da prova e
+     o fim da medida. A prova é só do começo; os eventos da janela e do
+     `powerMonitor` cobrem o resto e não custam nada.
+
+   O cenário sem valor sai como **INVÁLIDO**, com o motivo, e os números numa
+   linha só ("o que se mediu assim"), não na tabela. Sem motivo conhecido, 0
+   quadros com a janela na tela sai como **SEM PROVA** (outra janela por cima,
+   ou a tela bloqueada antes), com o número e a sugestão de `--por-cima`. A
+   tabela "CPU por cenário" marca os dois casos, e a "Segurança da medição" diz
+   se mexeram na janela no meio de algum cenário, inclusive naquele em que a
+   medição parou.
+4. **Minimizada por fora no meio da navegação, do terminal ou da planilha, a
+   medição para na hora** e diz por quê, como já fazia com a janela fechada.
+   Esses três cenários esperam `requestAnimationFrame`, que não roda com a
+   janela minimizada; o que começaria com ela minimizada também para. O
+   `terminar()` grava uma vez só.
+5. **JSON (`--json`):** cada cenário guarda a `prova`; o resultado bruto, os
+   eventos (`janelaMudou`); o resumo do parado e do minimizado, `prova`,
+   `valido`, `invalido` e `semProva`.
+
+**Consequências.** Medido em 30/09 com `npm run medir -- --por-cima`
+(i5-10210U, tela de 1366×768 a 60 Hz, janela de 1240×720; % da máquina
+inteira):
+
+| Rodada | Parado na tela | Minimizado |
+| --- | --- | --- |
+| 12:29, a janela de teste minimizada por fora aos 59 s do parado e no meio do terminal | 1 quadro, na tela, em foco; **inválido** ("minimizada aos 59 s"; mediu 0,5%) | 1 quadro, minimizada; 0,0% |
+| 13:07, sem mexer | 1 quadro, na tela, em foco; 0,3% | 1 quadro, minimizada; 0,0% |
+
+- A rodada das 12:29 foi o caso da pendência ao vivo: o parado saiu inválido,
+  e não como consumo. Minimizada no terminal, ela ficou 17 min esperando um
+  quadro até o prazo de 20 min, e o relatório ainda não dizia em que cenário;
+  daí vieram o cenário que não terminou, no item 3, e o item 4. Numa rodada
+  curta às 13:00, minimizada por fora no meio da navegação, a medição parou na
+  hora, com o motivo.
+- A das 13:07 terminou inteira (3,5 min), sem erro e sem nenhuma tentativa de
+  rede; a GPU trabalhou 9,9% na navegação, com a janela desenhando.
+- A rodada fica uns 6 s mais longa: a prova duas vezes, e minimizar antes da
+  prova do minimizado.
+- Testes: `test-medir-recursos.js` monta o relatório com resultados feitos à
+  mão (na tela; minimizada antes, com 0 e com 1 quadro; escondida; 0 quadros
+  sem motivo; 60 quadros; minimizada e tela bloqueada no meio; o minimizado
+  que não minimizou; o cenário que não terminou) e confere no código do motor
+  que a prova fica fora de todas as janelas de CPU e que a medição para.
+  Quinze defeitos postos de propósito, os quinze pegos. Suíte: 43 arquivos,
+  1.488 verificações, 0 falha.
+- Continua sem evento outra janela cobrindo a de teste no meio da medida,
+  quando ela não está `--por-cima`: a prova do começo só pega a janela que já
+  estava coberta (0 quadros, "sem prova"). A medida limpa continua sendo com
+  `--por-cima`.
+
+## ADR-131 — Busca no Analytics: cache dos data streams, contas novas primeiro, para ao achar
+
+**Status:** aceita — gravada em 30/09 como ADR-125, número que já era do diagnóstico do Hub lento; renumerada para 131
+
+**Contexto.** As propriedades GA4 têm nome genérico ("Busca Cliente 01, 02…");
+o domínio só está no `defaultUri` do data stream, que custa **uma chamada de
+API por propriedade**. Com 4844 propriedades no escopo, a busca cortava em 600
+e parava **em silêncio** — `polimentoalleanza.com.br`, na conta "Busca Cliente
+18", nunca era achado ("0 propriedades correspondem"), embora existisse. A
+conferência antes de criar propriedade (ADR-046) tinha o mesmo teto: podia
+criar duplicada de quem estivesse depois da 600ª.
+
+**Decisão.** Uma varredura só (`varrerDataStreams`), usada na busca e na
+conferência de criação:
+- **cache em disco** (`analytics-streams-cache.json`, userData) do que cada
+  propriedade tem nos streams; propriedade já lida não gasta API (validade
+  30 dias); o cache é gravado a cada 200 leituras para não perder o índice se
+  a busca cair;
+- as não lidas são varridas em **ordem inversa** — as contas de número maior
+  são as mais novas e recebem os clientes novos, então o que se procura
+  costuma estar no fim;
+- **para no primeiro casamento** (`mapLimit` ganhou `parar()`): quem procura um
+  domínio quer um cliente. Na criação também: uma existente já basta para não
+  criar outra; duplicatas entre as já cacheadas aparecem de graça na passada
+  do cache, e o cache só cresce;
+- teto sobe para 6000 (o escopo inteiro), com aviso claro quando não achou.
+
+`tools/test-analytics-scan.js` recorta a função real, monta 83 contas × 58
+propriedades com API falsa e prova: acha o cliente da conta 18; lê ~ (total −
+posição) e não o total; 2ª busca sem chamada; cache completa ao não achar.
+
+**Atualização (30/09): o `test-gtm-template.js` (ADR-016) com o cache.** Com a
+busca nova, 9 verificações da seção "Busca por domínio no Analytics" falhavam,
+e não por defeito da busca: todos os casos do arquivo usam a mesma pasta de
+dados, e o cache que um caso anterior deixou (as propriedades 1 e 2 lidas com
+streams vazios) respondia pela busca seguinte, que então não achava nada e nem
+chegava à API (o caso do 403 nunca era exercitado). O teste agora limpa o cache
+antes da seção e antes dos casos que precisam da API (a busca sem o TLD e o
+403), e confere o comportamento novo: o que foi lido fica no cache, e a mesma
+busca de novo acha pelo cache sem chamar a API. As verificações antigas
+(domínio pelo stream, escopo por marca, sem TLD, 403 com aviso) continuam
+iguais. Quatro defeitos postos de propósito numa cópia (ignorar o cache, o 403
+derrubar a busca, casar só pelo nome, não gravar o cache), os quatro pegos.
+
 ## Pendências conhecidas (não são decisões — são dívidas)
+
+- **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30
+  dias e, se ele acha, a busca nem vai à API. Quando um slot é reaproveitado
+  para um cliente novo (ADR-016), por até 30 dias a busca pelo cliente novo
+  acha 0 propriedades sem nenhuma chamada, e a do cliente antigo ainda devolve
+  o slot com o domínio velho (reproduzido com a API falsa do
+  `test-gtm-template.js`). A conferência antes de criar propriedade (ADR-046)
+  usa a mesma varredura: pode deixar criar duplicada. Proposta: confirmar na
+  API o que o cache achou (uma chamada) e, quando nada casar, reler também as
+  do cache antes de dizer que não existe.
 
 - `package.json` ainda se identifica como `pr-merge-tool` / `"PR Merge Tool"` /
   `com.castrotech.prmergetool`. O instalador sai com o nome antigo.
@@ -3977,3 +5703,8 @@ agora também nos subdomínios.
 - A **Search Console API** precisa ser habilitada no projeto do Google Cloud
   para o sitemap e o `sites.add` funcionarem (ADR-038). O escopo já está na
   lista da service account; habilitar a API é passo manual no console.
+- **Janelas ocultas do painel que sobram depois da automação** (ADR-125): no
+  Hub instalado, 3 processos (~330 MB), nascidos quando a automação abriu o
+  painel, seguiam vivos uma hora depois, embora o código devolva a janela com
+  prazo de 3 min (`painelSoltarJanela`). Falta descobrir se são janelas que
+  escaparam do cache ou processos que o Chromium mantém para o site.

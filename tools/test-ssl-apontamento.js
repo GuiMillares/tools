@@ -9,7 +9,9 @@ const Module = require('module');
 const fs = require('fs');
 
 const handlers = {};
-const DIR = '/tmp/hub-ssl';
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-ssl-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const electronStub = {
   app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
   BrowserWindow: Object.assign(function () { throw new Error('não deveria abrir janela'); }, { getAllWindows: () => [] }),
@@ -39,12 +41,9 @@ const dnsStub = {
 const orig = Module._load;
 Module._load = (r, p, i) =>
   r === 'electron' ? electronStub
-  : r === 'googleapis' ? { google: { auth: { GoogleAuth: function () {}, OAuth2: function () {} }, options() {} } }
+  : /[\\/]lib[\\/]google$/.test(r) ? { google: { auth: { GoogleAuth: function () {}, OAuth2: function () {} }, options() {} } }
   : r === 'dns' ? dnsStub
   : orig(r, p, i);
-
-fs.rmSync(DIR, { recursive: true, force: true });
-fs.mkdirSync(DIR, { recursive: true });
 
 const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'main.js'), 'utf-8');
@@ -63,7 +62,7 @@ const recorte = (a, b) => {
 const trecho = recorte('// Dá para pedir o SSL agora?', '// ---------- Ferramenta: Publicar MPI+');
 
 const linhas = [];
-const R = new Function('window', 'log', 'withBusy', 'normalizePainelUrl', 'bulkSslPendentes', 'bulkSslAtivados',
+const R = new Function('window', 'log', 'withBusy', 'normalizePainelUrl', 'bulkSslPendentes', 'bulkSslAtivados', 'conferirTemporario',
   trecho + '\nreturn { conferirApontamentoDeProducao, publicarSeNecessario };');
 
 let falhas = 0;
@@ -79,7 +78,7 @@ function montar({ painel }) {
     conferirApontamento: async (payload) => handlers['dns:apontando'](null, payload),
     publicarPainel: async ({ etapa }) => { chamadas.push(etapa); return painel(etapa); },
   };
-  const r = R({ api }, (m) => linhas.push(m), (rotulo, fn) => fn(), (u) => u, pendentes, ativados);
+  const r = R({ api }, (m) => linhas.push(m), (rotulo, fn) => fn(), (u) => u, pendentes, ativados, () => {});
   return { ...r, pendentes, ativados, chamadas };
 }
 

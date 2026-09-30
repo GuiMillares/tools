@@ -93,7 +93,9 @@ const googleFake = {
   }),
 };
 
-const DIR = '/tmp/hub-etapas';
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-etapas-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const electronStub = {
   app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
   BrowserWindow: Object.assign(function () {}, { getAllWindows: () => [] }),
@@ -105,7 +107,7 @@ const electronStub = {
 const orig = Module._load;
 Module._load = (r, p, i) =>
   r === 'electron' ? electronStub
-  : r === 'googleapis' ? { google: googleFake }
+  : /[\\/]lib[\\/]google$/.test(r) ? { google: googleFake }
   : orig(r, p, i);
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
@@ -118,7 +120,6 @@ const M = mod.exports;
 let falhas = 0;
 const check = (n, c, d = '') => { if (!c) falhas++; console.log(`${c ? '  ok  ' : ' FALHA'} ${n}${!c && d ? ' → ' + d : ''}`); };
 
-fs.mkdirSync(DIR, { recursive: true });
 const SA = path.join(DIR, 'sa.json');
 fs.writeFileSync(SA, JSON.stringify({ project_id: 'proj-teste', client_email: 'bot@proj.iam.gserviceaccount.com' }));
 const escreveConfig = (cfg) => fs.writeFileSync(path.join(DIR, 'google-config.json'), JSON.stringify(cfg));

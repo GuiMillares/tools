@@ -2,8 +2,11 @@ const { app, BrowserWindow, ipcMain, safeStorage, clipboard, session } = require
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const tls = require('tls');
 const crypto = require('crypto');
-const { google } = require('googleapis');
+// Só as 6 APIs do Google que o Hub usa, cada uma no primeiro uso, em vez das
+// 335 do googleapis na abertura (ADR-107). Mesma cara e mesmo google.options().
+const { google } = require(path.join(__dirname, 'lib', 'google'));
 
 const credsPath = () => path.join(app.getPath('userData'), 'credentials.enc');
 const hubStatePath = () => path.join(app.getPath('userData'), 'hub-state.json');
@@ -64,6 +67,11 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // A janela desacelera em segundo plano como qualquer página, e só deixa
+      // de desacelerar enquanto algo roda sozinho (rodada em massa, automação,
+      // publicação): o energia:manterAcordado liga e desliga (ADR-126). Com a
+      // desaceleração desligada o tempo todo (ADR-094), ela desenhava mesmo
+      // escondida atrás de outras janelas.
     },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -590,7 +598,9 @@ function describeOauthError(e) {
 async function buildGoogleAuthClient(keyFile) {
   const auth = new google.auth.GoogleAuth({ keyFile, scopes: GOOGLE_SCOPES });
   const client = await auth.getClient();
-  google.options({ auth: client });
+  // Sem prazo, uma requisição que o Google não responde prende a rodada para
+  // sempre. 60s por chamada sobra para qualquer uma delas (ADR-094).
+  google.options({ auth: client, timeout: 60000 });
   return client;
 }
 
@@ -621,7 +631,47 @@ const GTM_QUOTA_BACKOFF_MS = [20000, 40000, 60000, 60000];
 const MAIL_MIN_INTERVAL_MS = 2200;
 const MAIL_BACKOFF_MS = [20000, 40000, 60000];
 
-const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+// ----- Parar no meio (ADR-102) -----
+//
+// O botão "Parar" pede a parada: toda espera em andamento (dormir, script na
+// janela oculta do painel) é interrompida com "parado por você", e as novas
+// também, até a tela dizer que terminou de parar (processo:liberar). O que é
+// uma escrita só (um registro na Cloudflare, o PATCH de um campo) termina: não
+// se corta uma requisição no meio, corta-se o passo seguinte.
+let paradaPedida = false;
+const aoParar = new Set();
+class ParadaPedida extends Error {
+  constructor() { super('parado por você'); this.parado = true; }
+}
+// Uma promessa que é rejeitada quando pedirem a parada. Devolve { promessa, soltar }.
+function promessaDeParada() {
+  let rej = null;
+  const promessa = new Promise((_, r) => { rej = r; });
+  promessa.catch(() => {});
+  if (paradaPedida) rej(new ParadaPedida());
+  else aoParar.add(rej);
+  return { promessa, soltar: () => aoParar.delete(rej) };
+}
+const dormir = (ms) => {
+  if (paradaPedida) return Promise.reject(new ParadaPedida());
+  return new Promise((resolve, reject) => {
+    const parar = (e) => { clearTimeout(t); reject(e); };
+    const t = setTimeout(() => { aoParar.delete(parar); resolve(); }, ms);
+    aoParar.add(parar);
+  });
+};
+ipcMain.handle('processo:parar', () => {
+  paradaPedida = true;
+  const erro = new ParadaPedida();
+  for (const rej of [...aoParar]) { try { rej(erro); } catch (e) {} }
+  aoParar.clear();
+  return { ok: true };
+});
+ipcMain.handle('processo:liberar', () => {
+  paradaPedida = false;
+  aoParar.clear();
+  return { ok: true };
+});
 
 function isQuotaError(e) {
   const status = e?.code || e?.response?.status;
@@ -1123,22 +1173,15 @@ ipcMain.handle('google:createProject', async (event, { domain: dominioBruto, saP
       // caro (uma chamada por propriedade), mas é o único jeito de achar quem
       // foi batizado fora de qualquer padrão, e foi o que deixou o
       // servicos2ems.com.br ser criado duas vezes (ADR-046).
-      if (!gaExistentes.length) {
-        const paraVarrer = gaTodasAsProps.slice(0, ANALYTICS_SCAN_LIMIT);
-        if (paraVarrer.length) {
-          push(`Nenhuma propriedade com o nome "${domain}", varrendo o domínio de ${paraVarrer.length} data stream(s)`, 'cmd');
-          await mapLimit(paraVarrer, ANALYTICS_SCAN_CONCURRENCY, async (item) => {
-            try {
-              const r = await analyticsadmin.properties.dataStreams.list({ parent: item.property });
-              const achou = (r.data.dataStreams || []).some((st) => dominioDoStream(st) === domain);
-              if (achou) gaExistentes.push(item);
-            } catch (e) {
-              // propriedade sem permissão não derruba a varredura
-            }
-          });
-          if (gaExistentes.length) {
-            push(`Achei pelo domínio do data stream: ${gaExistentes.map((p) => p.property).join(', ')}`, 'success');
-          }
+      if (!gaExistentes.length && gaTodasAsProps.length) {
+        push(`Nenhuma propriedade com o nome "${domain}"; procurando pelo domínio dos data streams (cache + contas mais novas primeiro, ADR-131)`, 'cmd');
+        // Para no primeiro casamento: uma existente já basta para não criar
+        // outra (o que importa). Duplicatas entre as que já estão no cache são
+        // vistas de graça na passada do cache, e o cache só cresce.
+        const v = await varrerDataStreams(analyticsadmin, gaTodasAsProps, (item, web) => web.some((w) => dominioDeUri(w.uri) === domain), push);
+        for (const p of v.achadas) gaExistentes.push({ property: p.property, displayName: p.displayName, conta: p.conta, contaName: p.contaName });
+        if (gaExistentes.length) {
+          push(`Achei pelo domínio do data stream: ${gaExistentes.map((p) => p.property).join(', ')}`, 'success');
         }
       }
 
@@ -1596,10 +1639,50 @@ ipcMain.handle('google:createProject', async (event, { domain: dominioBruto, saP
       },
     };
   } catch (e) {
+    const sa = diagnosticoChaveSa(e);
+    if (sa) {
+      push(sa, 'error');
+      return { ok: false, error: sa, saInvalida: true, log };
+    }
     push(`Erro: ${e.message}`, 'error');
     return { ok: false, error: e.message, log };
   }
 });
+
+// O Google recusou a chave da service account? "Invalid JWT Signature" quer
+// dizer que a chave do arquivo configurado não existe mais no Google Cloud
+// (revogada ou apagada, como na troca de credenciais). Outro "Invalid JWT" é
+// relógio fora de hora. Nos dois casos não adianta tentar site a site: a
+// rodada em massa para de chamar o Google e segue o resto (ADR-092). Erro de
+// login OAuth (token revogado) não tem "JWT" e não cai aqui.
+function diagnosticoChaveSa(e) {
+  const dados = e?.response?.data || {};
+  const texto = `${e?.message || ''} ${dados.error || ''} ${dados.error_description || ''}`;
+  if (!/invalid_grant/i.test(texto)) return null;
+  if (/Invalid JWT Signature/i.test(texto)) {
+    return 'O Google recusou a chave da service account (invalid_grant: Invalid JWT Signature). A chave do arquivo configurado foi revogada ou apagada no Google Cloud — foi o que aconteceu na troca das credenciais. Gere uma chave nova para a service account, salve o JSON FORA da pasta do projeto e aponte o caminho em Configurações > "Caminho do arquivo da Service Account".';
+  }
+  if (/Invalid JWT/i.test(texto)) {
+    return 'O Google recusou o token da service account por causa do horário (invalid_grant: Invalid JWT). Confira se o relógio do Windows está certo: Configurações > Hora e idioma > Sincronizar agora.';
+  }
+  return null;
+}
+
+// invalid_grant numa sessão OAuth (conta da marca): o Google não aceita mais o
+// refresh token guardado. Revogado, senha trocada, ou o app OAuth está em modo
+// "Teste" no Google Cloud, que derruba o token a cada 7 dias (ADR-099). Não
+// tem nada a ver com API desabilitada, que é outro erro (SERVICE_DISABLED).
+function ehSessaoOauthRecusada(e) {
+  const dados = e?.response?.data || {};
+  const texto = `${e?.message || ''} ${dados.error || ''} ${dados.error_description || ''}`;
+  return /invalid_grant/i.test(texto) && !/JWT/i.test(texto);
+}
+
+function ehApiDesabilitada(e) {
+  const dados = e?.response?.data?.error || {};
+  const texto = `${e?.message || ''} ${dados.status || ''} ${JSON.stringify(dados.details || '')}`;
+  return /SERVICE_DISABLED|has not been used in project|is disabled|accessNotConfigured/i.test(texto);
+}
 
 // "cliente.com.br", "cliente.com.br - GA4", "cliente.com.br | GA4", o mesmo
 // site. O que NÃO pode casar é "cliente.com.br.old" ou "cliente.com.brasil":
@@ -1802,6 +1885,26 @@ ipcMain.handle('google:verifySearchConsole', async (event, { siteUrl, saPath, br
 // nasce "fail" porque a propriedade nunca foi validada.
 
 const SC_ESPERAS_MS = [0, 5000, 10000, 20000, 30000];
+
+// O HTTPS do domínio responde com o certificado de outro nome (o do servidor,
+// srv-wp-02…) ou sem certificado válido: o SSL de produção ainda não foi
+// ativado. Esperar segundos não resolve, e o Google não verifica sem ele
+// (ADR-100).
+function ehErroDeCertificado(msg) {
+  return /altnames|certificate|CERT_|self[- ]signed|unable to verify|SSL routines|ERR_TLS/i.test(String(msg || ''));
+}
+
+function erroSslPendente(siteUrl, msg) {
+  let host = siteUrl;
+  try { host = new URL(siteUrl).hostname; } catch (e) {}
+  const doServidor = (String(msg || '').match(/DNS:([^\s,]+)/) || [])[1];
+  const e = new Error(
+    `o HTTPS de ${host} ainda não tem o certificado do domínio${doServidor ? ` (o servidor responde com o de ${doServidor.replace(/\.$/, '')})` : ''}: ` +
+      'o SSL de produção não está ativo. O Google não verifica a propriedade sem ele. Ative o SSL e verifique de novo'
+  );
+  e.sslPendente = true;
+  return e;
+}
 const SC_HTML_MAX = 60000; // o head vem no começo; baixar o site inteiro é desperdício
 
 // Baixa o começo do HTML da página. Serve para uma pergunta só: a meta tag de
@@ -1906,6 +2009,7 @@ ipcMain.handle('searchconsole:prepare', async (event, payload) => {
         }
         push(`GET ${siteUrl}`, 'cmd');
         const r = await buscarInicioDaPagina(siteUrl);
+        if (r.erro && ehErroDeCertificado(r.erro)) throw erroSslPendente(siteUrl, r.erro);
         if (r.erro && r.status !== 200) { ultimo = r.erro; continue; }
         if (r.status !== 200) { ultimo = `o site respondeu ${r.status || r.erro}`; continue; }
         adotarDestino(r);
@@ -1933,6 +2037,7 @@ ipcMain.handle('searchconsole:prepare', async (event, payload) => {
         }
         push(`GET ${siteUrl}`, 'cmd');
         const r = await buscarInicioDaPagina(siteUrl);
+        if (r.erro && ehErroDeCertificado(r.erro)) throw erroSslPendente(siteUrl, r.erro);
         if (r.erro && r.status !== 200) { ultimo = r.erro; continue; }
         if (r.status !== 200) { ultimo = `o site respondeu ${r.status || r.erro}`; continue; }
         adotarDestino(r);
@@ -2013,16 +2118,42 @@ ipcMain.handle('searchconsole:prepare', async (event, payload) => {
       );
     }
 
-    const comoMarca = authMarca ? { auth: authMarca } : {};
-    const quemRegistra = authMarca ? contaMarca : 'a service account';
+    const comoMarca = () => (authMarca ? { auth: authMarca } : {});
+    const quem = () => (authMarca ? contaMarca : 'a service account');
+    let sessaoMarcaRecusada = false;
+    // A sessão da marca caiu (invalid_grant): avisa uma vez, apaga o token
+    // morto (a tela passa a mostrar "desconectado") e o resto desta etapa vai
+    // pela service account, que já é dona do site (ADR-099).
+    const sessaoCaiu = (e) => {
+      if (!authMarca || !ehSessaoOauthRecusada(e)) return false;
+      sessaoMarcaRecusada = true;
+      authMarca = null;
+      clearOauthToken(brand);
+      const motivo = e?.response?.data?.error_description || 'Token has been expired or revoked';
+      push(
+        `O Google não aceita mais a sessão de ${contaMarca} (invalid_grant: ${motivo}). Não é a API: é o login dessa conta no Hub, ` +
+          `que foi revogado ou expirou. Reconecte ${contaMarca} em Configurações. Se isso volta a cada 7 dias, o app OAuth está em modo ` +
+          '"Teste" no Google Cloud (Tela de consentimento OAuth): publicado ("Em produção"), o login para de expirar. ' +
+          'Desta vez sigo pela service account.',
+        'warn'
+      );
+      return true;
+    };
 
+    const registrar = async () => {
+      push(`PUT registrar a propriedade ${siteUrl} no Search Console de ${quem()}`, 'cmd');
+      await searchconsole.sites.add({ siteUrl, ...comoMarca() });
+      registradaPor = quem();
+      push(`Propriedade registrada na conta de ${quem()}.`, 'success');
+    };
     try {
-      push(`PUT registrar a propriedade ${siteUrl} no Search Console de ${quemRegistra}`, 'cmd');
-      await searchconsole.sites.add({ siteUrl, ...comoMarca });
-      registradaPor = quemRegistra;
-      push(`Propriedade registrada na conta de ${quemRegistra}.`, 'success');
+      await registrar();
     } catch (e) {
-      push(`Não consegui registrar a propriedade: ${e.message}. Seguindo para o sitemap mesmo assim.`, 'warn');
+      let erro = e;
+      if (sessaoCaiu(e)) {
+        try { await registrar(); erro = null; } catch (e2) { erro = e2; }
+      }
+      if (erro) push(`Não consegui registrar a propriedade: ${erro.message}. Seguindo para o sitemap mesmo assim.`, 'warn');
     }
 
     // Conferência: o que a lista da conta REALMENTE tem. É barato, e é a
@@ -2043,28 +2174,37 @@ ipcMain.handle('searchconsole:prepare', async (event, payload) => {
           );
         }
       } catch (e) {
-        push(`Não consegui conferir a lista de propriedades de ${contaMarca}: ${e.message}`, 'warn');
+        if (!sessaoCaiu(e)) push(`Não consegui conferir a lista de propriedades de ${contaMarca}: ${e.message}`, 'warn');
       }
     }
 
     const sitemap = sitemapUrl || new URL('sitemap.xml', siteUrl).toString();
-    try {
-      push(`PUT enviar sitemap ${sitemap}`, 'cmd');
-      await searchconsole.sitemaps.submit({ siteUrl, feedpath: sitemap, ...comoMarca });
+    const enviarSitemap = async () => {
+      push(`PUT enviar sitemap ${sitemap}${authMarca ? '' : ' (pela service account)'}`, 'cmd');
+      await searchconsole.sitemaps.submit({ siteUrl, feedpath: sitemap, ...comoMarca() });
       sitemapOk = true;
       push('Sitemap enviado.', 'success');
+    };
+    try {
+      await enviarSitemap();
     } catch (e) {
-      push(
-        `Falha ao enviar o sitemap: ${e.message}. ` +
-          'Se a mensagem fala em API desabilitada, habilite a "Google Search Console API" no projeto do Google Cloud.',
-        'warn'
-      );
+      let erro = e;
+      if (sessaoCaiu(e)) {
+        try { await enviarSitemap(); erro = null; } catch (e2) { erro = e2; }
+      }
+      if (erro) {
+        push(
+          `Falha ao enviar o sitemap: ${erro.message}.` +
+            (ehApiDesabilitada(erro) ? ' A "Google Search Console API" está desabilitada no projeto do Google Cloud: habilite e rode de novo.' : ''),
+          'warn'
+        );
+      }
     }
 
-    return { ok: true, log, ownerAdded, sitemapOk, sitemap, registradaPor, siteUrl, siteUrlPedido, redirecionou: siteUrl !== siteUrlPedido };
+    return { ok: true, log, ownerAdded, sitemapOk, sitemap, registradaPor, siteUrl, siteUrlPedido, redirecionou: siteUrl !== siteUrlPedido, sessaoMarcaRecusada, contaMarca: sessaoMarcaRecusada ? contaMarca : undefined };
   } catch (e) {
-    push(`Erro: ${e.message}`, 'error');
-    return { ok: false, error: e.message, log };
+    push(`${e.sslPendente ? 'Search Console: ' : 'Erro: '}${e.message}`, e.sslPendente ? 'warn' : 'error');
+    return { ok: false, error: e.message, sslPendente: !!e.sslPendente, log };
   }
 });
 
@@ -2145,19 +2285,39 @@ ipcMain.handle('planilha:ler', async (event, { nome, base64, texto }) => {
 // Gera um .xlsx com cabeçalho e linhas e pergunta onde salvar (ADR-072). É o
 // caminho para o que sai do Hub e vai para outra equipe: a lista dos domínios
 // cujo DNS não é nosso, por exemplo, que o atendimento leva ao cliente.
-function montarXlsx(colunas, linhas, aba) {
+function anexarAba(wb, colunas, linhas, aba) {
   const XLSX = require('xlsx');
   const ws = XLSX.utils.aoa_to_sheet([colunas, ...linhas]);
-  ws['!cols'] = colunas.map((c, i) => ({ wch: Math.min(60, Math.max(String(c).length, ...linhas.map((l) => String(l[i] ?? '').length)) + 2) }));
-  const wb = XLSX.utils.book_new();
+  ws['!cols'] = colunas.map((c, i) => ({ wch: Math.min(60, Math.max(String(c).length, ...linhas.map((l) => String(l[i] ?? '').length), 0) + 2) }));
   XLSX.utils.book_append_sheet(wb, ws, String(aba || 'Planilha').slice(0, 31));
+}
+
+function montarXlsx(colunas, linhas, aba) {
+  const XLSX = require('xlsx');
+  const wb = XLSX.utils.book_new();
+  anexarAba(wb, colunas, linhas, aba);
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
 
-ipcMain.handle('planilha:exportar', async (event, { nomeSugerido, colunas, linhas, aba, pasta }) => {
+// Várias abas num arquivo só: [{ aba, colunas, linhas }]. Abas sem linhas são
+// puladas (não crio "Outros clientes" vazia, por exemplo).
+function montarXlsxAbas(abas) {
+  const XLSX = require('xlsx');
+  const wb = XLSX.utils.book_new();
+  for (const a of abas || []) if (a && Array.isArray(a.colunas) && a.colunas.length && (a.linhas || []).length) anexarAba(wb, a.colunas, a.linhas, a.aba);
+  if (!wb.SheetNames.length) throw new Error('Sem dados para exportar.');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+ipcMain.handle('planilha:exportar', async (event, { nomeSugerido, colunas, linhas, aba, abas, pasta }) => {
   try {
-    if (!Array.isArray(colunas) || !colunas.length) throw new Error('Sem colunas para exportar.');
-    if (!Array.isArray(linhas) || !linhas.length) throw new Error('Sem linhas para exportar.');
+    const multi = Array.isArray(abas) && abas.length;
+    if (!multi) {
+      if (!Array.isArray(colunas) || !colunas.length) throw new Error('Sem colunas para exportar.');
+      if (!Array.isArray(linhas) || !linhas.length) throw new Error('Sem linhas para exportar.');
+    }
+    const montar = () => (multi ? montarXlsxAbas(abas) : montarXlsx(colunas, linhas, aba));
+    const totalLinhas = multi ? abas.reduce((s, a) => s + ((a.linhas || []).length), 0) : linhas.length;
 
     // Pasta fixa (ADR-082): sem diálogo, o arquivo vai para Músicas\<pasta>,
     // que é onde a equipe combinou guardar os apontamentos. Nome já existente
@@ -2168,8 +2328,8 @@ ipcMain.handle('planilha:exportar', async (event, { nomeSugerido, colunas, linha
       const base = String(nomeSugerido || 'planilha.xlsx').replace(/\.xlsx$/i, '');
       let destino = path.join(dir, `${base}.xlsx`);
       for (let n = 2; fs.existsSync(destino); n++) destino = path.join(dir, `${base} (${n}).xlsx`);
-      fs.writeFileSync(destino, montarXlsx(colunas, linhas, aba));
-      return { ok: true, caminho: destino, linhas: linhas.length };
+      fs.writeFileSync(destino, montar());
+      return { ok: true, caminho: destino, linhas: totalLinhas };
     }
 
     const { dialog } = require('electron');
@@ -2181,8 +2341,8 @@ ipcMain.handle('planilha:exportar', async (event, { nomeSugerido, colunas, linha
     });
     if (escolha.canceled || !escolha.filePath) return { ok: true, cancelado: true };
     const destino = /\.xlsx$/i.test(escolha.filePath) ? escolha.filePath : `${escolha.filePath}.xlsx`;
-    fs.writeFileSync(destino, montarXlsx(colunas, linhas, aba));
-    return { ok: true, caminho: destino, linhas: linhas.length };
+    fs.writeFileSync(destino, montar());
+    return { ok: true, caminho: destino, linhas: totalLinhas };
   } catch (e) {
     return { ok: false, error: `Não consegui salvar a planilha: ${e.message}` };
   }
@@ -2703,6 +2863,21 @@ function readPainelCreds() {
   }
 }
 
+// Uma chamada ao painel por vez (ADR-103). A janela oculta é uma só e é
+// reaproveitada por URL: um segundo site abrindo o painel no meio do primeiro
+// fechava a janela que o primeiro estava usando. Com a espera da propagação
+// rodando em segundo plano enquanto outro site é publicado, isso passa a
+// acontecer, então as chamadas entram numa fila e rodam na ordem.
+let filaDoPainel = Promise.resolve();
+function naFilaDoPainel(fn) {
+  const vez = filaDoPainel.then(fn, fn);
+  filaDoPainel = vez.catch(() => {});
+  return vez;
+}
+function handleNoPainel(canal, fn) {
+  ipcMain.handle(canal, (event, payload) => naFilaDoPainel(() => fn(event, payload)));
+}
+
 ipcMain.handle('painel:setCreds', (event, { email, senha }) => {
   try {
     const e = String(email || '').trim();
@@ -2726,6 +2901,409 @@ ipcMain.handle('painel:setCreds', (event, { email, senha }) => {
 ipcMain.handle('painel:status', () => {
   const c = readPainelCreds();
   return { ok: true, configured: !!c, email: c?.email || null };
+});
+
+// ----- Painel /doutor: bloquear contatos (ADR-105) -----
+//
+// Automação do MESMO tipo que a do painel MPI+: uma credencial guardada
+// (safeStorage), login direto, sem tentar senha nenhuma. O e-mail é escolhido
+// pela marca (MPI Solutions ou Busca Cliente); a senha é a mesma para as duas.
+// Depois do login, acha a empresa do cliente na listagem e clica no cadeado se
+// ele estiver desbloqueado (verde); já bloqueado (laranja) não faz nada.
+const doutorCredsPath = () => path.join(app.getPath('userData'), 'doutor-creds.enc');
+const DOUTOR_PARTITION = 'persist:doutor';
+
+function readDoutorCreds() {
+  try {
+    if (!fs.existsSync(doutorCredsPath())) return null;
+    return JSON.parse(safeStorage.decryptString(fs.readFileSync(doutorCredsPath())));
+  } catch (e) {
+    return null;
+  }
+}
+
+// A senha é uma só; muda só o e-mail, pela marca. Sem adivinhar domínio: os
+// dois e-mails vêm da configuração, exatamente como a equipe os digitou.
+function doutorEmailDaMarca(creds, marca) {
+  if (!creds) return '';
+  return marca === 'bc' ? (creds.emailBusca || '') : (creds.emailMpi || '');
+}
+
+// Backup criptografado dos telefones/WhatsApp de cada empresa. O bloqueio
+// apaga esses campos no /doutor (é isso que tira o contato do site); para o
+// desbloquear conseguir restaurar, guardo os números aqui antes de apagar,
+// chaveados pelo domínio. safeStorage, nunca em texto puro (ADR-116).
+const doutorContatosPath = () => path.join(app.getPath('userData'), 'doutor-contatos.enc');
+
+function readDoutorContatos() {
+  try {
+    if (!fs.existsSync(doutorContatosPath())) return {};
+    return JSON.parse(safeStorage.decryptString(fs.readFileSync(doutorContatosPath()))) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function salvarDoutorContatos(dominio, campos) {
+  if (!safeStorage.isEncryptionAvailable()) return false;
+  const todos = readDoutorContatos();
+  todos[dominio] = { campos, salvoEm: new Date().toISOString() };
+  fs.writeFileSync(doutorContatosPath(), safeStorage.encryptString(JSON.stringify(todos)));
+  return true;
+}
+
+// Apaga o backup de um domínio (depois do desbloqueio, para liberar memória).
+// Se ficou sem nenhum, remove o arquivo inteiro.
+function apagarDoutorContatos(dominio) {
+  const todos = readDoutorContatos();
+  if (!(dominio in todos)) return false;
+  delete todos[dominio];
+  try {
+    if (!Object.keys(todos).length) { if (fs.existsSync(doutorContatosPath())) fs.unlinkSync(doutorContatosPath()); }
+    else if (safeStorage.isEncryptionAvailable()) fs.writeFileSync(doutorContatosPath(), safeStorage.encryptString(JSON.stringify(todos)));
+  } catch (e) { return false; }
+  return true;
+}
+
+ipcMain.handle('doutor:setCreds', (event, { senha, emailMpi, emailBusca } = {}) => {
+  try {
+    const dados = { senha: String(senha || ''), emailMpi: String(emailMpi || '').trim(), emailBusca: String(emailBusca || '').trim() };
+    if (!dados.senha && !dados.emailMpi && !dados.emailBusca) {
+      if (fs.existsSync(doutorCredsPath())) fs.unlinkSync(doutorCredsPath());
+      return { ok: true, configured: false };
+    }
+    if (!dados.senha || (!dados.emailMpi && !dados.emailBusca)) {
+      return { ok: false, error: 'Informe a senha e ao menos um e-mail (MPI e/ou Busca), ou deixe tudo vazio para remover.' };
+    }
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { ok: false, error: 'Criptografia do sistema indisponível, não vou gravar a senha em texto puro.' };
+    }
+    fs.writeFileSync(doutorCredsPath(), safeStorage.encryptString(JSON.stringify(dados)));
+    return { ok: true, configured: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Devolve os e-mails (para a tela mostrar o que está configurado) e se há
+// senha gravada, NUNCA a senha.
+ipcMain.handle('doutor:status', () => {
+  const c = readDoutorCreds();
+  return { ok: true, configured: !!(c && c.senha), emailMpi: c?.emailMpi || '', emailBusca: c?.emailBusca || '', temSenha: !!(c && c.senha) };
+});
+
+// O script que roda na página do /doutor: acha a empresa do cliente (a que não
+// é "Doutores da Web") e devolve o estado do cadeado. Bloquear é clicar quando
+// está verde e confirmar o modal (SweetAlert2 nesta versão; a v1 fica de
+// reserva). Ler o estado e agir sobre ele é mais seguro que clicar no escuro.
+// Lê a listagem de empresas: nome, id (rel), status atual (val) e se o cadeado
+// está fechado. val="2" é desbloqueado (btn-success/fa-unlock); "1" é
+// bloqueado (btn-warning/fa-lock). O bloqueio é feito pela MESMA chamada AJAX
+// que o botão dispara (UpStatus), então não depende de clique nem da versão do
+// SweetAlert (ADR-110).
+const JS_DOUTOR_LISTAR = `
+  const linhas = Array.from(document.querySelectorAll('table tbody tr'));
+  const rows = [];
+  const vistos = new Set();
+  for (const tr of linhas) {
+    const b = tr.querySelector('.j_AlteraStatus');
+    if (!b) continue;
+    const rel = b.getAttribute('rel') || tr.getAttribute('id') || '';
+    if (vistos.has(rel)) continue;   // FixedHeader/responsive pode duplicar a linha
+    vistos.add(rel);
+    // O nome vem do alt/title do avatar (ou do botão "ver"), que é confiável;
+    // a coluna de texto varia de posição entre versões e pegava o id (ADR-112).
+    let nome = '';
+    const img = tr.querySelector('img[alt], img[title]');
+    if (img) nome = (img.getAttribute('alt') || img.getAttribute('title') || '').trim();
+    if (!nome) { const vb = tr.querySelector('.j_view[alt]'); if (vb) nome = (vb.getAttribute('alt') || '').trim(); }
+    if (!nome) nome = Array.from(tr.querySelectorAll('td')).map(td => (td.textContent || '').replace(/\s+/g, ' ').trim()).find(t => t && !/^\d+$/.test(t)) || '';
+    const cls = b.getAttribute('class') || '';
+    rows.push({ nome, rel, val: b.value, bloqueado: /btn-warning/.test(cls) || !!b.querySelector('.fa-lock') });
+  }
+  return { rows };
+`;
+
+// Clica no "Voltar" (button.j_view no topo, action setEmpresa para o SIG) e
+// confirma o aviso, seja SweetAlert v1 (.sweet-alert button.confirm) ou v2
+// (.swal2-confirm). Depois disso a página recarrega no contexto do SIG, que é
+// quem lista todas as empresas.
+const JS_DOUTOR_VOLTAR = `
+  const espera = (ms) => new Promise(r => setTimeout(r, ms));
+  const ate = async (cond, ms = 8000) => { const fim = Date.now() + ms; while (Date.now() < fim) { const v = cond(); if (v) return v; await espera(80); } return null; };
+  const v = document.querySelector('button.j_view, a.j_view');
+  if (!v) return { semVoltar: true };
+  v.click();
+  const conf = await ate(() => document.querySelector('.swal2-confirm, .sweet-alert.visible button.confirm, .sweet-alert.showSweetAlert button.confirm'), 8000);
+  if (!conf) return { semModal: true };
+  conf.click();
+  return { confirmou: true };
+`;
+
+// Acha o link "Listar" de Empresa (…exe=CMSemp/index ou parecido), para as
+// versões em que o endereço não é exatamente esse.
+const JS_DOUTOR_LINK_EMPRESAS = `
+  const a = Array.from(document.querySelectorAll('a')).find(x => /exe=CMS?emp\w*\/index/i.test(x.getAttribute('href') || ''));
+  return { href: a ? a.getAttribute('href') : null };
+`;
+
+function jsDoutorBloquearFetch(id, status) {
+  return `
+    const dados = new URLSearchParams({ action: 'UpStatus', empresa_id: ${JSON.stringify(String(id))}, empresa_status: ${JSON.stringify(String(status))} });
+    const r = await fetch('_cdn/ajax/functions.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' }, body: dados.toString(), credentials: 'same-origin' });
+    const txt = await r.text();
+    let j = null; try { j = JSON.parse(txt); } catch (e) {}
+    return { http: r.status, j, txt: txt.slice(0, 200) };
+  `;
+}
+
+// O bloqueio de verdade (ADR-116): abrir o formulário da empresa e CENSURAR os
+// contatos com "##" (o e-mail principal vira o da marca), guardando os valores
+// originais no backup, e Salvar. O UpStatus da lista só ativa/desativa a
+// empresa, nunca tira o contato do site. Grupos de campos censurados (ADR-118):
+const DOUTOR_FONE_CAMPOS = ['empresa_fone', 'empresa_fone2', 'empresa_fone3', 'empresa_fone4', 'empresa_fone5', 'empresa_fone6'];
+const DOUTOR_EMAIL_CAMPOS = ['empresa_email', 'empresa_email2', 'empresa_email3'];
+const DOUTOR_REDES_CAMPOS = ['empresa_facebook', 'empresa_instagram', 'empresa_twitter', 'empresa_linkedin', 'empresa_youtube', 'empresa_threads', 'empresa_tiktok', 'empresa_pinterest'];
+const DOUTOR_ENDERECO_CAMPOS = ['empresa_endereco', 'empresa_bairro', 'empresa_cep'];
+const DOUTOR_CENSURA = '##';
+
+// O e-mail que entra no lugar do contato do cliente ao bloquear, pela marca.
+function doutorEmailContato(marca) {
+  return marca === 'bc' ? 'contato@buscacliente.com.br' : 'contato@mpisolutions.com.br';
+}
+
+// Lê os contatos do formulário de edição da empresa (o maior form). temForm
+// falso quando não é o formulário (ex.: a página veio 504). "bloqueado" = o
+// telefone principal já está censurado (##).
+const JS_DOUTOR_LER_CONTATOS = `
+  const alvos = ${JSON.stringify([...DOUTOR_FONE_CAMPOS, ...DOUTOR_EMAIL_CAMPOS, ...DOUTOR_REDES_CAMPOS, ...DOUTOR_ENDERECO_CAMPOS])};
+  const censura = ${JSON.stringify(DOUTOR_CENSURA)};
+  const form = Array.from(document.querySelectorAll('form')).find(f => f.querySelectorAll('input,select,textarea').length > 5);
+  if (!form) return { temForm: false };
+  const campos = {};
+  for (const n of alvos) { const el = form.querySelector('[name="' + n + '"]'); if (el) campos[n] = el.value; }
+  const bloqueado = String(campos['empresa_fone'] || '').trim() === censura;
+  return { temForm: true, campos, bloqueado };
+`;
+
+// Censura os contatos com "##" (telefones/WhatsApp, e-mails extras, redes
+// sociais e endereço), põe o e-mail da marca no e-mail principal, e Salva
+// (UpdateEmp). Guarda os valores originais em "antes" (para o backup e o
+// desbloqueio). Clona cada input para driblar máscara/validação (jmask nos
+// telefones apaga valor posto por script no blur). O painel costuma dar 504 e
+// completar mesmo assim.
+function jsDoutorBloquearSalvar(emailContato) {
+  return `
+    const fone = ${JSON.stringify(DOUTOR_FONE_CAMPOS)};
+    const redes = ${JSON.stringify(DOUTOR_REDES_CAMPOS)};
+    const endereco = ${JSON.stringify(DOUTOR_ENDERECO_CAMPOS)};
+    const censura = ${JSON.stringify(DOUTOR_CENSURA)};
+    const form = Array.from(document.querySelectorAll('form')).find(f => f.querySelectorAll('input,select,textarea').length > 5);
+    if (!form) return { erro: 'não achei o formulário da empresa' };
+    // O que censurar e com o quê: tudo vira ##, menos o e-mail principal (marca).
+    const plano = {};
+    for (const n of [...fone, ...redes, ...endereco, 'empresa_email2', 'empresa_email3']) plano[n] = censura;
+    plano['empresa_email'] = ${JSON.stringify(emailContato)};
+    // Endereços extras de texto (rua/bairro/CEP) também, quando existirem.
+    for (const el of form.querySelectorAll('input[name]')) {
+      if (/empresa_enderecos_extras\\[[0-9]+\\]\\[empresa_(endereco|bairro|cep)\\]/.test(el.name)) plano[el.name] = censura;
+    }
+    const antes = {};
+    const setCampo = (n, v) => { const el = form.querySelector('[name="' + n + '"]'); if (!el) return; antes[n] = el.value; const c = el.cloneNode(true); c.value = v; c.setAttribute('value', v); el.parentNode.replaceChild(c, el); };
+    for (const [n, v] of Object.entries(plano)) setCampo(n, v);
+    const btn = form.querySelector('button[name="UpdateEmp"], input[name="UpdateEmp"]') || document.querySelector('button[name="UpdateEmp"], input[name="UpdateEmp"], button[type=submit]');
+    if (!btn) return { erro: 'não achei o botão Salvar da empresa' };
+    let hidden = form.querySelector('input[type=hidden][name="UpdateEmp"]');
+    if (!hidden) { hidden = document.createElement('input'); hidden.type = 'hidden'; hidden.name = 'UpdateEmp'; hidden.value = ''; form.appendChild(hidden); }
+    btn.click();
+    return { submetido: true, antes };
+  `;
+}
+
+// Restaura os campos salvos (telefones e e-mails) e Salva. Os telefones têm
+// máscara (jmask) que apaga valor posto por script no blur; clonar o input tira
+// os listeners e o valor sobrevive ao submit.
+function jsDoutorRestaurarSalvar(campos) {
+  return `
+    const dados = ${JSON.stringify(campos || {})};
+    const form = Array.from(document.querySelectorAll('form')).find(f => f.querySelectorAll('input,select,textarea').length > 5);
+    if (!form) return { erro: 'não achei o formulário da empresa' };
+    for (const [n, v] of Object.entries(dados)) {
+      const el = form.querySelector('[name="' + n + '"]');
+      if (!el) continue;
+      const clone = el.cloneNode(true);
+      clone.value = v; clone.setAttribute('value', v);
+      el.parentNode.replaceChild(clone, el);
+    }
+    const btn = form.querySelector('button[name="UpdateEmp"], input[name="UpdateEmp"]') || document.querySelector('button[name="UpdateEmp"], input[name="UpdateEmp"], button[type=submit]');
+    if (!btn) return { erro: 'não achei o botão Salvar da empresa' };
+    let hidden = form.querySelector('input[type=hidden][name="UpdateEmp"]');
+    if (!hidden) { hidden = document.createElement('input'); hidden.type = 'hidden'; hidden.name = 'UpdateEmp'; hidden.value = ''; form.appendChild(hidden); }
+    btn.click();
+    return { submetido: true };
+  `;
+}
+
+// A agência (a própria conta que loga) não é alvo: nas versões novas o nome é
+// "SIG - Busca Cliente"/"SIG - MPI Solutions"; nas antigas, "Doutores da Web".
+function doutorEhAgencia(nome) {
+  return /^\s*sig\b/i.test(nome || '') || /doutores da web/i.test(nome || '');
+}
+
+function doutorNormalizarNome(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Entre as empresas que não são a agência, escolhe a do cliente. Uma só: ela.
+// Várias: a que casa com o domínio; sem casar, devolve a lista para a pessoa
+// decidir, em vez de chutar.
+function doutorEscolherEmpresa(rows, dominio) {
+  const candidatas = (rows || []).filter((r) => r.nome && !doutorEhAgencia(r.nome));
+  if (!candidatas.length) return { erro: 'a listagem só tem a agência; não achei a empresa do cliente' };
+  if (candidatas.length === 1) return { alvo: candidatas[0] };
+  const base = doutorNormalizarNome(String(dominio).replace(/\.(com|net|org|gov|edu)?\.?(br)?$/i, '').replace(/^www\./, ''));
+  const casa = candidatas.find((r) => { const n = doutorNormalizarNome(r.nome); return n && (base.includes(n) || n.includes(base)); });
+  if (casa) return { alvo: casa };
+  return { erro: `mais de uma empresa na listagem e nenhuma casou com o domínio: ${candidatas.map((r) => '"' + r.nome + '"').join(', ')}` };
+}
+
+handleNoPainel('doutor:bloquear', async (event, { dominio: bruto, marca, acao = 'bloquear' } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  const desbloquear = acao === 'desbloquear';
+  const verbo = desbloquear ? 'desbloquear' : 'bloquear';
+  const dominio = normalizeDomain(bruto);
+  if (!dominio) return { ok: false, error: 'Informe o domínio do cliente.', log };
+  const creds = readDoutorCreds();
+  const email = doutorEmailDaMarca(creds, marca);
+  if (!creds || !creds.senha) return { ok: false, error: 'Configure a senha do /doutor nas configurações.', log };
+  if (!email) return { ok: false, error: `Sem e-mail do /doutor para ${marca === 'bc' ? 'Busca Cliente' : 'MPI Solutions'} nas configurações.`, log };
+
+  const base = `https://${dominio}/doutor/`;
+  const urlListagem = `${base}painel.php?exe=CMSemp/index`;
+  let win = null;
+  try {
+    win = new BrowserWindow({
+      show: false,
+      webPreferences: { partition: DOUTOR_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+    });
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    const irPara = async (u) => { const c = aguardarCarregar(win); win.loadURL(u); await c; };
+
+    push(`Abrindo ${base}`, 'cmd');
+    await irPara(base);
+
+    // Login, se a página pedir. Uma credencial só, escolhida pela marca.
+    const precisaLogin = await rodarNoPainel(win, `return { form: !!document.querySelector('input[name="pass"]') };`);
+    if (precisaLogin.form) {
+      push(`Entrando no /doutor como ${email}`, 'cmd');
+      const r = await rodarNoPainel(win, `
+        const u = document.querySelector('input[name="user"]');
+        const p = document.querySelector('input[name="pass"]');
+        if (!u || !p) return { erro: 'não achei os campos de login do /doutor' };
+        u.value = ${JSON.stringify(email)}; p.value = ${JSON.stringify(creds.senha)};
+        const btn = document.querySelector('input[name="AdminLogin"], input[type=submit][value="Acessar"], button[name="AdminLogin"]');
+        if (!btn) return { erro: 'não achei o botão Acessar do /doutor' };
+        btn.click();
+        return { enviou: true };
+      `);
+      if (r.erro) throw new Error(r.erro);
+      const c = aguardarCarregar(win); await c;
+      const depois = await rodarNoPainel(win, `return { temForm: !!document.querySelector('input[name="pass"]') };`);
+      if (depois.temForm) throw new Error(`o /doutor não aceitou o login de ${email}. Confira a senha nas configurações.`);
+      push('Login aceito.', 'success');
+    }
+
+    // A listagem de empresas fica no contexto do SIG (admin). Depois do login
+    // o acesso é o da empresa do cliente, então tenta a listagem direto e, se
+    // vier vazia, faz o "Voltar" para o SIG e tenta de novo (ADR-110).
+    await irPara(urlListagem);
+    let { rows } = await rodarNoPainel(win, JS_DOUTOR_LISTAR);
+    if (!rows.length) {
+      push('Listagem vazia no acesso do cliente; voltando para o SIG.', 'info');
+      await irPara(`${base}painel.php`);
+      const v = await rodarNoPainel(win, JS_DOUTOR_VOLTAR);
+      if (v.semVoltar) throw new Error('não achei o botão "Voltar" para chegar na listagem de empresas (versão diferente do /doutor?)');
+      if (v.semModal) throw new Error('cliquei em "Voltar" mas o aviso de confirmação não apareceu');
+      const c = aguardarCarregar(win).catch(() => {}); await c;
+      await irPara(urlListagem);
+      ({ rows } = await rodarNoPainel(win, JS_DOUTOR_LISTAR));
+      if (!rows.length) {
+        // Última tentativa: achar o link de "Listar" empresas nesta versão.
+        const lk = await rodarNoPainel(win, JS_DOUTOR_LINK_EMPRESAS);
+        if (lk.href) { await irPara(new URL(lk.href, `${base}painel.php`).toString()); ({ rows } = await rodarNoPainel(win, JS_DOUTOR_LISTAR)); }
+      }
+    }
+    if (!rows.length) throw new Error('não achei a listagem de empresas depois do login (o /doutor deste site pode ser de uma versão diferente; me avise para eu mapear)');
+
+    const escolha = doutorEscolherEmpresa(rows, dominio);
+    if (escolha.erro) throw new Error(escolha.erro);
+    const alvo = escolha.alvo;
+
+    // O bloqueio de verdade é no CADASTRO da empresa: esvaziar os telefones e
+    // Salvar (o site regenera sem o contato). Abro o formulário pelo id (rel).
+    const urlForm = `${base}painel.php?exe=CMSemp/update&id=${encodeURIComponent(alvo.rel)}`;
+    push(`Abrindo o cadastro de "${alvo.nome}" (empresa ${alvo.rel}).`, 'cmd');
+    await irPara(urlForm);
+    const atual = await rodarNoPainel(win, JS_DOUTOR_LER_CONTATOS);
+    if (!atual.temForm) throw new Error('não achei o formulário de edição da empresa (o /doutor pode estar lento ou ser de uma versão diferente; me avise para eu mapear).');
+
+    // O estado real é se o telefone principal já está censurado (##) — não o
+    // cadeado da lista (aquilo ativa/desativa a empresa, não some o contato).
+    if (desbloquear && !atual.bloqueado) { push(`"${alvo.nome}" já está com os contatos no ar.`, 'info'); return { ok: true, jaEstava: true, empresa: alvo.nome, log }; }
+    if (!desbloquear && atual.bloqueado) { push(`"${alvo.nome}" já estava com os contatos censurados (bloqueada).`, 'info'); return { ok: true, jaEstava: true, empresa: alvo.nome, log }; }
+
+    // Salvar no /doutor devolve 504 e completa mesmo assim; não trato a falha de
+    // carregamento como erro — confirmo depois relendo o cadastro (ADR-116).
+    const salvarEsperar = async () => { await aguardarCarregar(win).catch(() => {}); };
+
+    if (desbloquear) {
+      const bkp = readDoutorContatos()[dominio];
+      const campos = bkp && (bkp.campos || bkp.fones);
+      if (!campos || !Object.values(campos).some((v) => String(v || '').trim())) {
+        throw new Error('não tenho os contatos guardados desta empresa para restaurar (foi bloqueada fora do Hub ou antes desta versão). Reponha os telefones/e-mail à mão no /doutor.');
+      }
+      push(`Restaurando os contatos de "${alvo.nome}".`, 'cmd');
+      const r = await rodarNoPainel(win, jsDoutorRestaurarSalvar(campos));
+      if (r.erro) throw new Error(r.erro);
+      await salvarEsperar();
+    } else {
+      const emailContato = doutorEmailContato(marca);
+      push(`Censurando os contatos de "${alvo.nome}" com "##" (e-mail principal → ${emailContato}).`, 'cmd');
+      const r = await rodarNoPainel(win, jsDoutorBloquearSalvar(emailContato));
+      if (r.erro) throw new Error(r.erro);
+      // Guarda telefones e e-mails originais (criptografado) para o desbloquear reverter.
+      if (r.antes && Object.values(r.antes).some((v) => String(v || '').trim())) {
+        if (!salvarDoutorContatos(dominio, r.antes)) push('Aviso: não consegui guardar os contatos (criptografia indisponível); o desbloquear pelo Hub não terá o que restaurar.', 'warn');
+      }
+      await salvarEsperar();
+    }
+
+    // Confirma relendo o cadastro (o 504 não prova nada). Tolera a lentidão:
+    // tenta algumas vezes até o estado bater com o pedido.
+    let confirmado = null;
+    for (let i = 0; i < 6; i++) {
+      await irPara(urlForm).catch(() => {});
+      const chk = await rodarNoPainel(win, JS_DOUTOR_LER_CONTATOS).catch(() => ({ temForm: false }));
+      if (chk.temForm) { confirmado = chk; if (desbloquear ? !chk.bloqueado : chk.bloqueado) break; }
+      await new Promise((res) => setTimeout(res, 3000));
+    }
+    if (!confirmado) { push('Salvei, mas o painel está lento e não deu para reler o cadastro para confirmar. Confira no /doutor.', 'warn'); return { ok: false, incerto: true, empresa: alvo.nome, log }; }
+    if (!desbloquear && !confirmado.bloqueado) { push(`Atenção: os contatos de "${alvo.nome}" ainda aparecem no cadastro; não confirmei o bloqueio.`, 'warn'); return { ok: false, incerto: true, empresa: alvo.nome, error: 'os contatos continuam sem censura', log }; }
+    if (desbloquear && confirmado.bloqueado) { push(`Atenção: os contatos de "${alvo.nome}" continuam censurados; não confirmei o desbloqueio.`, 'warn'); return { ok: false, incerto: true, empresa: alvo.nome, error: 'os contatos continuam censurados', log }; }
+
+    // Desbloqueio confirmado: o backup não é mais necessário, apaga para liberar
+    // memória (ADR-118).
+    if (desbloquear) { try { apagarDoutorContatos(dominio); push('Backup dos contatos apagado (não é mais necessário).', 'info'); } catch (e) {} }
+
+    push(`Contatos de "${alvo.nome}" ${desbloquear ? 'restaurados' : 'censurados com ##'}. O site regenera em seguida (o painel pode ter mostrado 504).`, 'success');
+    return { ok: true, empresa: alvo.nome, desbloqueou: desbloquear, log };
+  } catch (e) {
+    push(`/doutor: ${e.message}`, 'error');
+    return { ok: false, error: e.message, log };
+  } finally {
+    if (win && !win.isDestroyed()) win.destroy();
+  }
 });
 
 ipcMain.handle('painel:clearSession', async () => {
@@ -2769,8 +3347,39 @@ function aguardarCarregar(win) {
   });
 }
 
-async function rodarNoPainel(win, script) {
-  const bruto = await win.webContents.executeJavaScript(`(async () => { try { ${script} } catch (e) { return { erro: String(e && e.message || e) }; } })()`, true);
+// Nenhum script das janelas ocultas espera mais que 90s de propósito. Passou
+// disso, a página congelou (o Windows pausa janela oculta com a tela
+// bloqueada, por exemplo) e a promessa nunca voltaria: a rodada inteira ficava
+// parada para sempre. Com prazo, a etapa falha com motivo e a rodada segue
+// para o próximo site (ADR-094).
+const JANELA_OCULTA_PRAZO_MS = 3 * 60 * 1000;
+
+async function rodarNoPainel(win, script, { prazoMs = JANELA_OCULTA_PRAZO_MS } = {}) {
+  let timer = null;
+  const prazo = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const e = new Error(`a janela oculta não respondeu em ${Math.round(prazoMs / 1000)}s e foi fechada (a página travou; costuma acontecer com a tela bloqueada). A rodada segue para o próximo.`);
+      e.detalhe = { travou: true };
+      if (win && !win.isDestroyed()) win.destroy();
+      reject(e);
+    }, prazoMs);
+  });
+  let bruto;
+  const parada = promessaDeParada();
+  try {
+    bruto = await Promise.race([
+      win.webContents.executeJavaScript(`(async () => { try { ${script} } catch (e) { return { erro: String(e && e.message || e) }; } })()`, true),
+      prazo,
+      parada.promessa,
+    ]);
+  } catch (e) {
+    // Parou no meio de um script: a janela fica num estado desconhecido.
+    if (e && e.parado && win && !win.isDestroyed()) win.destroy();
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    parada.soltar();
+  }
   if (bruto && bruto.erro) {
     // O que o script viu junto do erro (o config do formulário, por exemplo)
     // vale mais que a frase, e vinha se perdendo aqui (ADR-048).
@@ -3149,7 +3758,7 @@ async function painelSincronizarRelatorio(win, { contaEmail, gaAccountKey, gaPro
   return r;
 }
 
-ipcMain.handle('painel:sync', async (event, payload) => {
+handleNoPainel('painel:sync', async (event, payload) => {
   const { url, recaptcha, analyticsKey, tagmanagerKey, searchConsoleKey, contaEmail, gaAccountKey, gaPropertyId, gscSiteUrl, leadsExternalId } = payload || {};
   // Na MPI+ as duas telas acontecem em momentos diferentes: entre elas o app
   // precisa verificar o Search Console e mandar o sitemap (ADR-038). Sem essa
@@ -3307,7 +3916,7 @@ async function abrirPainelLogado(url, push) {
 
   const win = new BrowserWindow({
     show: false,
-    webPreferences: { partition: PAINEL_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { partition: PAINEL_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   win.webContents.on('will-navigate', (e, destino) => { if (!painelUrlValida(destino)) e.preventDefault(); });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -3336,10 +3945,284 @@ async function abrirPainelLogado(url, push) {
   return win;
 }
 
+// ----- Painel MPI+ (idealplus): bloquear/desbloquear contatos (ADR-121) -----
+//
+// O MPI+ não tem /doutor: os contatos ficam no painel central (idealplus), num
+// componente Alpine com `addresses[]` (endereço, redes, telefones, e-mails) e
+// `config.integrations.whatsapp`. Salvar é chamar as PRÓPRIAS funções do painel,
+// saveSection('settings') e saveBlock('integrations','whatsapp') — idêntico a
+// clicar "Sincronizar". A censura (## + e-mail da marca + placeholder de
+// telefone) é montada pelo módulo puro e testado lib/painel-mpiplus.
+const painelMpiplus = require(path.join(__dirname, 'lib', 'painel-mpiplus'));
+// E-mail que entra no lugar do e-mail real quando é MPI+ (as marcas Busca
+// Cliente/MPI Solutions usam os delas no /doutor; MPI+ usa este).
+const PAINEL_EMAIL_BLOQUEIO = 'contato@idealtrends.com.br';
+
+// Backup criptografado do {addresses, whatsapp} original, chaveado pelo domínio.
+// É o que o desbloqueio reescreve verbatim. safeStorage, nunca em texto puro.
+const painelContatosPath = () => path.join(app.getPath('userData'), 'painel-contatos.enc');
+function readPainelContatos() {
+  try {
+    if (!fs.existsSync(painelContatosPath())) return {};
+    return JSON.parse(safeStorage.decryptString(fs.readFileSync(painelContatosPath()))) || {};
+  } catch (e) { return {}; }
+}
+function salvarPainelContatos(dominio, dados) {
+  if (!safeStorage.isEncryptionAvailable()) return false;
+  const todos = readPainelContatos();
+  todos[dominio] = { dados, salvoEm: new Date().toISOString() };
+  fs.writeFileSync(painelContatosPath(), safeStorage.encryptString(JSON.stringify(todos)));
+  return true;
+}
+function apagarPainelContatos(dominio) {
+  const todos = readPainelContatos();
+  if (!(dominio in todos)) return false;
+  delete todos[dominio];
+  try {
+    if (!Object.keys(todos).length) { if (fs.existsSync(painelContatosPath())) fs.unlinkSync(painelContatosPath()); }
+    else if (safeStorage.isEncryptionAvailable()) fs.writeFileSync(painelContatosPath(), safeStorage.encryptString(JSON.stringify(todos)));
+  } catch (e) { return false; }
+  return true;
+}
+
+// Acha o componente Alpine mestre do hub (o que tem saveSection/saveBlock e
+// addresses). Reusado nos scripts de leitura e de escrita.
+const JS_ACHAR_MESTRE_PAINEL = `
+  const acharMestre = () => { for (const c of document.querySelectorAll('[x-data]')) { try { const d = window.Alpine && window.Alpine.$data(c); if (d && typeof d.saveSection === 'function' && typeof d.saveBlock === 'function' && ('addresses' in d)) return d; } catch (e) {} } return null; };
+`;
+
+// Lê o estado atual dos contatos (para backup e para confirmar).
+const JS_PAINEL_LER_CONTATOS = `
+  ${JS_HELPERS}
+  ${JS_ACHAR_MESTRE_PAINEL}
+  const m = await ate(acharMestre, 40000);
+  if (!m) return { erro: 'não achei o componente do painel (o Alpine não subiu ou a aba de publicação não abriu)' };
+  const addresses = JSON.parse(JSON.stringify(m.addresses || []));
+  const whatsapp = JSON.parse(JSON.stringify((m.config && m.config.integrations && m.config.integrations.whatsapp) || { numbers: [] }));
+  let canSync = null; try { canSync = typeof m.canSyncInEditor === 'function' ? !!m.canSyncInEditor() : null; } catch (e) {}
+  return { ok: true, addresses, whatsapp, enabled: !!m.enabled, canSync };
+`;
+
+// Escreve o estado dado ({addresses, whatsapp}) e chama os salvamentos do painel.
+// Serve tanto para bloquear (plano censurado) quanto para restaurar (backup).
+function jsPainelEscreverSalvar(dados) {
+  return `
+    ${JS_HELPERS}
+    ${JS_ACHAR_MESTRE_PAINEL}
+    const m = await ate(acharMestre, 40000);
+    if (!m) return { erro: 'não achei o componente do painel para salvar' };
+    if (typeof m.canSyncInEditor === 'function' && !m.canSyncInEditor()) return { erro: 'o painel não permite sincronizar agora (canSyncInEditor=false)' };
+    if (!m.config) return { erro: 'o painel não expôs a config do cliente' };
+    // "novoEstado", não "dados": JS_HELPERS já declara "const dados" neste
+    // mesmo escopo, e redeclarar dava SyntaxError no script inteiro (ADR-121).
+    const novoEstado = ${JSON.stringify(dados)};
+    const erros = [];
+    // ORDEM IMPORTA: salvar os endereços (saveSection) re-hidrata a config
+    // INTEIRA com a resposta do servidor (applyLoadedConfig), o que apagaria um
+    // WhatsApp censurado só em memória. Então: WhatsApp primeiro, e cada estado
+    // é re-aplicado logo antes do seu próprio save.
+    // 1) WhatsApp (Integrações)
+    if (!m.config.integrations) m.config.integrations = {};
+    m.config.integrations.whatsapp = novoEstado.whatsapp;
+    await espera(80);
+    let key = ''; try { key = m.blockKey('integrations', 'whatsapp'); } catch (e) {}
+    try { await m.saveBlock('integrations', 'whatsapp'); } catch (e) { erros.push('whatsapp: ' + (e && e.message || e)); }
+    if (key) await ate(() => (m.blockSaving && (key in m.blockSaving)) ? (m.blockSaving[key] === false) : true, 40000);
+    const fbB = (m.blockFeedback && key && m.blockFeedback[key]) || {};
+    if (fbB.error) erros.push('whatsapp: ' + fbB.error);
+    // 2) Endereços / redes / telefones / e-mails (re-aplica antes de salvar)
+    m.addresses = novoEstado.addresses;
+    await espera(80);
+    try { await m.saveSection('settings'); } catch (e) { erros.push('endereços: ' + (e && e.message || e)); }
+    await ate(() => (m.sectionSaving && ('settings' in m.sectionSaving)) ? (m.sectionSaving.settings === false) : true, 40000);
+    const fbS = (m.sectionFeedback && m.sectionFeedback.settings) || {};
+    if (fbS.error) erros.push('endereços: ' + fbS.error);
+    // IMPORTANTE: retornar só TEXTO PURO. fbS/fbB são objetos reativos do Alpine
+    // (Proxy); devolver o proxy pelo executeJavaScript falha na serialização
+    // ("Script failed to execute").
+    return {
+      ok: erros.length === 0,
+      erros: erros.map((x) => String(x)),
+      feedback: {
+        settings: { ok: String(fbS.ok || ''), error: String(fbS.error || '') },
+        whatsapp: { ok: String(fbB.ok || ''), error: String(fbB.error || '') },
+      },
+    };
+  `;
+}
+
+// Resolve a URL do hub do cliente. A busca do painel (/clientes?busca=) é por
+// NOME (razão social) ou CNPJ. Prefere a razão social (= nome da conta no
+// Salesforce); cai para o CNPJ se não achar 1 único. Pega /clientes/{id} e
+// extrai o link hub?projeto={pid}. Roda na sessão logada do painel.
+async function resolverPainelUrl(win, termo) {
+  const razao = String((termo && termo.razao) || '').trim();
+  const cnpj8 = String((termo && termo.cnpj) || '').replace(/\D/g, '').slice(0, 8);
+  const termos = [];
+  if (razao) {
+    termos.push(razao);
+    const enxuto = razao.replace(/\b(ltda|me|epp|eireli|mei|s\.?a\.?)\b\.?/gi, '').replace(/[.\-\/]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (enxuto && enxuto.toLowerCase() !== razao.toLowerCase()) termos.push(enxuto);
+  }
+  if (cnpj8.length >= 8) termos.push(cnpj8);
+  if (!termos.length) throw new Error('sem razão social nem CNPJ para achar o cliente no painel');
+
+  const r = await rodarNoPainel(win, `
+    const termos = ${JSON.stringify(termos)};
+    const buscar = async (t) => {
+      const resp = await fetch('/clientes?busca=' + encodeURIComponent(t), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!resp.ok) return { erro: 'HTTP ' + resp.status };
+      const doc = new DOMParser().parseFromString(await resp.text(), 'text/html');
+      const hrefs = [...new Set([...doc.querySelectorAll('a[href*="/clientes/"]')].map((a) => a.getAttribute('href')).filter((h) => /\\/clientes\\/\\d+(?:$|[\\/?])/.test(h || '')))];
+      return { hrefs };
+    };
+    let escolhido = null; const motivos = [];
+    for (const t of termos) {
+      const b = await buscar(t);
+      if (b.erro) { motivos.push(t + ': ' + b.erro); continue; }
+      if (b.hrefs.length === 1) { escolhido = b.hrefs[0]; break; }
+      motivos.push(t + ': ' + b.hrefs.length + ' resultado(s)');
+    }
+    if (!escolhido) return { erro: 'não achei 1 cliente único no painel (' + motivos.join('; ') + ')' };
+    const id = (escolhido.match(/\\/clientes\\/(\\d+)/) || [])[1];
+    const resp2 = await fetch('/clientes/' + id, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const hub = ((await resp2.text()).match(/\\/clientes\\/\\d+\\/hub\\?projeto=\\d+/) || [])[0];
+    return { id, hub: hub ? ('https://${PAINEL_HOST}' + hub) : null };
+  `);
+  if (r.erro) throw new Error(r.erro);
+  if (!r.hub) throw new Error(`achei o cliente ${r.id} no painel, mas não o link do projeto/hub`);
+  return r.hub + (r.hub.includes('?') ? '&' : '?') + 'tab=publicacao';
+}
+
+// Handler: bloquear/desbloquear contatos no painel MPI+. Aceita url direta do
+// hub OU cnpj (para resolver sozinho). Faz backup antes de bloquear, tenta o
+// endereço todo censurado (modo A) e cai para B (mantém CEP/cidade/UF) se o
+// servidor recusar; confirma relendo.
+const executarPainelBloqueio = async (event, { dominio: bruto, cnpj, url, razao: razaoParam, marca, acao = 'bloquear' } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  const desbloquear = acao === 'desbloquear';
+  const dominio = normalizeDomain(bruto) || String(bruto || '').trim();
+  if (!dominio && !url && !cnpj) return { ok: false, error: 'Informe o domínio (ou o link/CNPJ do cliente no painel).', log };
+  if (!dominio) return { ok: false, error: 'Preciso do domínio do cliente para chavear o backup.', log };
+
+  const opts = { emailMarca: PAINEL_EMAIL_BLOQUEIO, tel: painelMpiplus.TEL_PLACEHOLDER, censura: painelMpiplus.CENSURA };
+  let win = null;
+  let alvoUrl = String(url || '').trim();
+  let erroFatal = false;
+  try {
+    if (alvoUrl && !painelUrlValida(alvoUrl)) throw new Error(`o link do painel precisa ser do ${PAINEL_HOST}. Recebi: ${alvoUrl}`);
+    if (!alvoUrl) {
+      // Sem link pronto: acha a razão social (nome da conta no Salesforce) pelo
+      // domínio, se não veio, e busca o cliente no painel por ela (CNPJ reserva).
+      let razao = String(razaoParam || '').trim();
+      if (!razao && !cnpj) {
+        push('Descobrindo a razão social do cliente no Salesforce…', 'cmd');
+        const rc = await sfComSessao((sf) => acharContaPorDominio(sf, dominio, push)).catch((e) => ({ erro: e.message }));
+        if (rc && rc.conta && rc.conta.Name) { razao = rc.conta.Name; push(`Razão social: ${razao}${rc.via ? ' (por ' + rc.via + ')' : ''}.`, 'info'); }
+        else throw new Error('não consegui a razão social no Salesforce para achar o cliente no painel' + ((rc && (rc.motivo || rc.erro)) ? `: ${rc.motivo || rc.erro}` : ''));
+      }
+      push('Procurando o cliente no painel (razão social / CNPJ)…', 'cmd');
+      win = await abrirPainelLogado(`https://${PAINEL_HOST}/clientes`, push);
+      alvoUrl = await resolverPainelUrl(win, { razao, cnpj });
+      push(`Cliente encontrado no painel: ${alvoUrl}`, 'info');
+      const c = aguardarCarregar(win); win.loadURL(alvoUrl); await c;
+    } else {
+      win = await abrirPainelLogado(alvoUrl, push);
+    }
+
+    push('Lendo os contatos do cliente no painel.', 'cmd');
+    const antes = await rodarNoPainel(win, JS_PAINEL_LER_CONTATOS);
+    if (antes.erro) throw new Error(antes.erro);
+    const estadoAtual = { addresses: antes.addresses, whatsapp: antes.whatsapp };
+    // Dois blocos independentes: endereços/contatos e WhatsApp (Integrações).
+    // "Bloqueado" de verdade só com os dois; um bloqueio parcial (ex.: uma
+    // execução antiga que só pegou os endereços) segue para completar.
+    const enderecosCensurados = painelMpiplus.estaBloqueado(estadoAtual, opts);
+    const whatsCensurado = painelMpiplus.whatsappBloqueado(estadoAtual, opts);
+    const bloqueadoAgora = enderecosCensurados && whatsCensurado;
+
+    if (!desbloquear && bloqueadoAgora) { push('Os contatos deste cliente já estão censurados no painel (endereços e WhatsApp).', 'info'); return { ok: true, jaEstava: true, dominio, log }; }
+    if (desbloquear && !enderecosCensurados && !whatsCensurado) { push('Os contatos deste cliente já estão no ar (não estava bloqueado).', 'info'); return { ok: true, jaEstava: true, dominio, log }; }
+
+    if (desbloquear) {
+      const bkp = readPainelContatos()[dominio];
+      if (!bkp || !bkp.dados || !((bkp.dados.addresses || []).length)) {
+        throw new Error('não tenho o backup dos contatos deste cliente para restaurar (foi bloqueado fora do Hub?). Reponha à mão no painel.');
+      }
+      push('Restaurando os contatos originais no painel…', 'cmd');
+      const r = await rodarNoPainel(win, jsPainelEscreverSalvar(bkp.dados));
+      if (r.erro) throw new Error(r.erro);
+      if (!r.ok) throw new Error('o painel recusou a restauração: ' + (r.erros || []).join(' | '));
+    } else {
+      // Backup: só quando o estado atual ainda é o ORIGINAL. Se os endereços já
+      // estão censurados (bloqueio parcial), o backup bom já existe e NÃO pode
+      // ser sobrescrito com dados censurados — senão o desbloqueio perderia os
+      // contatos de verdade.
+      const jaTemBackup = !!readPainelContatos()[dominio];
+      if (!enderecosCensurados) {
+        if (!salvarPainelContatos(dominio, estadoAtual)) {
+          throw new Error('não consegui guardar o backup dos contatos (criptografia do sistema indisponível). Abortei para não bloquear sem ter como reverter.');
+        }
+        push('Backup dos contatos guardado (criptografado) para o desbloqueio.', 'info');
+      } else if (jaTemBackup) {
+        push(`Endereços já censurados; mantendo o backup original guardado e completando o WhatsApp${whatsCensurado ? '' : ' (Integrações)'}.`, 'info');
+      } else {
+        push('Atenção: os endereços já estão censurados e não tenho backup deles (bloqueado fora do Hub?). Vou completar o bloqueio, mas o desbloqueio não terá os endereços originais.', 'warn');
+      }
+
+      const tentar = async (modo) => {
+        const plano = painelMpiplus.planoCensura(estadoAtual, Object.assign({}, opts, { modoEndereco: modo }));
+        push(`Censurando os contatos (## + e-mail ${opts.emailMarca}; telefone/WhatsApp → ${opts.tel}; endereço modo ${modo})…`, 'cmd');
+        return rodarNoPainel(win, jsPainelEscreverSalvar(plano));
+      };
+      let r = await tentar('A');
+      if (r.erro) throw new Error(r.erro);
+      if (!r.ok && /(cep|endere|cidade|\buf\b|geo|logrador|bairro)/i.test((r.erros || []).join(' '))) {
+        push('O servidor recusou o endereço todo censurado; tentando manter CEP/cidade/UF (modo B).', 'warn');
+        r = await tentar('B');
+        if (r.erro) throw new Error(r.erro);
+      }
+      if (!r.ok) throw new Error('o painel recusou o bloqueio: ' + (r.erros || []).join(' | '));
+    }
+
+    // Confirma relendo do SERVIDOR: recarrega a página do hub (não confio só no
+    // estado local pós-save, que pode não ter re-hidratado da resposta).
+    try { const cc = aguardarCarregar(win); win.loadURL(alvoUrl); await cc; } catch (e) {}
+    const depois = await rodarNoPainel(win, JS_PAINEL_LER_CONTATOS).catch(() => null);
+    if (!depois || depois.erro) { push('Salvei, mas não consegui reler para confirmar. Confira no painel.', 'warn'); return { ok: false, incerto: true, dominio, log }; }
+    const estadoDepois = { addresses: depois.addresses, whatsapp: depois.whatsapp };
+    const endDepois = painelMpiplus.estaBloqueado(estadoDepois, opts);
+    const waDepois = painelMpiplus.whatsappBloqueado(estadoDepois, opts);
+    if (!desbloquear && !(endDepois && waDepois)) {
+      push(`Atenção: reli e ${!endDepois ? 'os endereços/contatos' : 'o WhatsApp (Integrações)'} ainda aparece(m); não confirmei o bloqueio.`, 'warn');
+      return { ok: false, incerto: true, dominio, log };
+    }
+    if (desbloquear && (endDepois || waDepois)) {
+      push(`Atenção: reli e ${endDepois ? 'os endereços/contatos' : 'o WhatsApp (Integrações)'} continua(m) censurado(s); não confirmei o desbloqueio.`, 'warn');
+      return { ok: false, incerto: true, dominio, log };
+    }
+
+    if (desbloquear) { try { apagarPainelContatos(dominio); push('Backup dos contatos apagado (não é mais necessário).', 'info'); } catch (e) {} }
+    push(`Contatos ${desbloquear ? 'restaurados' : 'censurados'} no painel MPI+. O site regenera em seguida.`, 'success');
+    return { ok: true, dominio, via: 'painel', desbloqueou: desbloquear, log };
+  } catch (e) {
+    erroFatal = true;
+    push(`Painel MPI+: ${e.message}`, 'error');
+    return { ok: false, error: e.message, log };
+  } finally {
+    painelSoltarJanela(win, alvoUrl || null, { descartar: erroFatal });
+  }
+};
+handleNoPainel('painel:bloquear', executarPainelBloqueio);
+
 const JS_PUBLICACAO = `
   ${JS_HELPERS}
-  const P = window.__mpiHubPubPublication;
-  if (!P) return { erro: 'o painel não expôs window.__mpiHubPubPublication; a aba Publicação mudou?' };
+  // O painel define o gancho depois que os scripts da página sobem. Olhar uma
+  // vez só, logo no load, falhava quando a página demorava um pouco (ADR-092):
+  // espera como já espera o botão, até 20s.
+  const P = await ate(() => window.__mpiHubPubPublication, 20000);
+  if (!P) return { erro: 'a aba Publicação não carregou em 20s (o painel não expôs window.__mpiHubPubPublication)', abaNaoCarregou: true };
   const botaoRaiz = await ate(() => Array.from(document.querySelectorAll('button')).find(b => (b.getAttribute('@click')||'').includes('openSiteAprovarDlg')), 20000);
   if (!botaoRaiz) return { erro: 'não achei a aba Publicação (o botão Aprovar) em 20s' };
   const root = window.Alpine.$data(botaoRaiz.closest('[x-data]'));
@@ -3357,6 +4240,7 @@ const JS_PUBLICACAO = `
     urlProducao: root.wordpressProductionUrl || null,
     sslAtivo: !!root.wpProductionSslActive,
     sslErro: root.wpProductionSslError || null,
+    urlTemporaria: root.wordpressTemporaryUrl || null,
     servidores: JSON.parse(JSON.stringify(root.servidores || [])),
     alertas,
   });
@@ -3453,24 +4337,116 @@ function passoLabel(step) {
   }[step] || `passo ${step}`;
 }
 
-async function painelAtivarSsl(win, push) {
-  push('Painel: ativando o SSL de produção', 'cmd');
-  const r = await rodarNoPainel(win, `${JS_PUBLICACAO}
-    const antes = estado();
-    if (antes.sslAtivo) return { ok: true, jaEstava: true, estado: antes };
-    root.wpProductionSslError = null;
-    await P.activateProductionSsl(root);
-    const depois = await ate(() => (root.wpProductionSslActive || root.wpProductionSslError) ? estado() : null, 90000);
-    if (!depois) return { erro: 'pedi o SSL e o painel não respondeu em 90s', estado: estado() };
-    if (!depois.sslAtivo) return { erro: 'o painel não ativou o SSL: ' + (depois.sslErro || 'sem mensagem'), estado: depois };
-    return { ok: true, estado: depois };
-  `);
-  if (r.jaEstava) push('Painel: SSL de produção já estava ativo.', 'info');
-  else push('Painel: SSL de produção ativo.', 'success');
-  return r.estado;
+// O certificado que o domínio entrega de verdade, na porta 443. É a prova de
+// que o SSL de produção está ativo: a resposta do painel não é (ADR-101).
+// rejectUnauthorized:false só para poder LER o certificado errado e dizer de
+// quem ele é; nada é enviado nessa conexão.
+function certificadoDoDominio(host, { timeoutMs = 15000 } = {}) {
+  return new Promise((resolve) => {
+    let feito = false;
+    let sock = null;
+    const fim = (r) => {
+      if (feito) return;
+      feito = true;
+      try { if (sock) sock.destroy(); } catch (e) {}
+      resolve(r);
+    };
+    try {
+      sock = tls.connect({ host, port: 443, servername: host, rejectUnauthorized: false }, () => {
+        const cert = sock.getPeerCertificate() || {};
+        const erroNome = cert.subject ? tls.checkServerIdentity(host, cert) : new Error('sem certificado');
+        const ok = !!sock.authorized && !erroNome;
+        const nomes = String(cert.subjectaltname || '').replace(/DNS:/g, '').split(/,\s*/).filter(Boolean);
+        fim({
+          ok,
+          nomes,
+          emissor: (cert.issuer && (cert.issuer.O || cert.issuer.CN)) || '',
+          ate: cert.valid_to || '',
+          erro: ok ? '' : erroNome ? `o certificado é de ${nomes.join(', ') || 'outro nome'}` : `certificado não confiável (${sock.authorizationError || 'sem motivo'})`,
+        });
+      });
+      sock.setTimeout(timeoutMs, () => fim({ ok: false, erro: 'a porta 443 não respondeu' }));
+      sock.on('error', (e) => fim({ ok: false, erro: e.message }));
+    } catch (e) {
+      fim({ ok: false, erro: e.message });
+    }
+  });
 }
 
-ipcMain.handle('painel:publicar', async (event, payload) => {
+// Confere o certificado a cada passoMs, por até maxMs (em número de
+// tentativas, para não depender do relógio). Devolve o último resultado.
+async function esperarCertificado(host, push, { maxMs = 5 * 60 * 1000, passoMs = 15000 } = {}) {
+  const tentativas = Math.max(1, Math.ceil(maxMs / passoMs) + 1);
+  let ultimo = null;
+  for (let i = 0; i < tentativas; i++) {
+    ultimo = await certificadoDoDominio(host);
+    if (ultimo.ok || i === tentativas - 1) return ultimo;
+    if (i % 4 === 0) push(`${host} ainda entrega ${ultimo.erro}; confiro de novo a cada ${Math.round(passoMs / 1000)}s (até ${Math.round(maxMs / 60000)} min).`, 'info');
+    await dormir(passoMs);
+  }
+  return ultimo;
+}
+
+// Texto de erro do painel, que às vezes é a página HTML inteira do 504.
+function limparErroDoPainel(t) {
+  const s = String(t || '');
+  const titulo = (s.match(/<title>([^<]*)<\/title>/i) || [])[1];
+  const limpo = (titulo || s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return limpo.slice(0, 200);
+}
+
+// Ativar o SSL de produção. O painel costuma responder erro (504 Gateway
+// Timeout e outros) e ativar mesmo assim; então a resposta dele não decide.
+// Decide o certificado do domínio: antes (já estava?), e depois do pedido, por
+// alguns minutos, com ou sem erro do painel (ADR-101).
+async function painelAtivarSsl(win, push, dominio) {
+  if (dominio) {
+    const antes = await certificadoDoDominio(dominio);
+    if (antes.ok) {
+      push(`SSL de produção já ativo: ${dominio} entrega o próprio certificado (${antes.emissor || 'emissor ?'}, válido até ${antes.ate || '?'}).`, 'info');
+      return { sslAtivo: true, jaEstava: true, certificado: antes };
+    }
+  }
+  push('Painel: ativando o SSL de produção', 'cmd');
+  let r = null;
+  let painelErro = null;
+  try {
+    r = await rodarNoPainel(win, `${JS_PUBLICACAO}
+      const antes = estado();
+      if (antes.sslAtivo) return { ok: true, jaEstava: true, estado: antes };
+      root.wpProductionSslError = null;
+      let excecao = null;
+      try { await P.activateProductionSsl(root); } catch (e) { excecao = String(e && e.message || e); }
+      const depois = await ate(() => (root.wpProductionSslActive || root.wpProductionSslError) ? estado() : null, 90000) || estado();
+      const aviso = excecao || (depois.alertas && depois.alertas.length ? depois.alertas.join(' | ') : null) || (depois.sslAtivo ? null : (depois.sslErro || 'o painel não confirmou em 90s'));
+      return { ok: true, estado: depois, painelErro: aviso };
+    `);
+    painelErro = r.painelErro || null;
+  } catch (e) {
+    painelErro = e.message;
+  }
+  if (r && r.jaEstava && !dominio) { push('Painel: SSL de produção já estava ativo.', 'info'); return r.estado; }
+  if (!dominio) {
+    if (painelErro) throw new Error(`o painel não ativou o SSL: ${limparErroDoPainel(painelErro)}`);
+    push('Painel: SSL de produção ativo.', 'success');
+    return r.estado;
+  }
+  if (painelErro) {
+    push(`O painel respondeu erro ao ativar o SSL (${limparErroDoPainel(painelErro)}). Ele costuma ativar mesmo assim: vou conferir o certificado de ${dominio}.`, 'warn');
+  } else {
+    push(`Painel: SSL pedido. Conferindo o certificado de ${dominio}.`, 'info');
+  }
+  const cert = await esperarCertificado(dominio, push);
+  if (cert.ok) {
+    push(`SSL de produção ativo: ${dominio} entrega o próprio certificado (${cert.emissor || 'emissor ?'}, válido até ${cert.ate || '?'})${painelErro ? '. O erro do painel foi só na resposta' : ''}.`, 'success');
+    return { ...(r && r.estado ? r.estado : {}), sslAtivo: true, certificado: cert };
+  }
+  const e = new Error(`o SSL não ficou ativo: ${dominio} ainda entrega ${cert.erro} depois de 5 min${painelErro ? `, e o painel respondeu "${limparErroDoPainel(painelErro)}"` : ''}`);
+  e.detalhe = { estado: r && r.estado };
+  throw e;
+}
+
+handleNoPainel('painel:publicar', async (event, payload) => {
   const { url, etapa, dominio: bruto, servidorId } = payload || {};
   const log = [];
   const push = (message, type = 'info') => log.push({ message, type });
@@ -3481,7 +4457,19 @@ ipcMain.handle('painel:publicar', async (event, payload) => {
     win = await abrirPainelLogado(url, push);
 
     if (etapa === 'estado') {
-      const r = await painelEstadoPublicacao(win);
+      let r;
+      try {
+        r = await painelEstadoPublicacao(win);
+      } catch (e) {
+        if (!e.detalhe?.abaNaoCarregou) throw e;
+        // Página lenta: uma segunda chance com a página recarregada do zero,
+        // antes de dar o site como falho (ADR-092).
+        push('Painel: a aba Publicação demorou para carregar; recarregando a página e tentando de novo.', 'warn');
+        painelDescartarJanela();
+        if (win && !win.isDestroyed()) win.destroy();
+        win = await abrirPainelLogado(url, push);
+        r = await painelEstadoPublicacao(win);
+      }
       return { ok: true, log, estado: r.estado };
     }
     if (etapa === 'aprovar') {
@@ -3497,7 +4485,7 @@ ipcMain.handle('painel:publicar', async (event, payload) => {
       return { ok: true, log, estado };
     }
     if (etapa === 'ssl') {
-      const estado = await painelAtivarSsl(win, push);
+      const estado = await painelAtivarSsl(win, push, dominio);
       return { ok: true, log, estado };
     }
     throw new Error(`Etapa desconhecida: ${etapa}`);
@@ -3511,6 +4499,42 @@ ipcMain.handle('painel:publicar', async (event, payload) => {
   }
 });
 
+
+// ----- Achar o link do painel pela razão social (ADR-098) -----
+//
+// Só leitura: busca o cliente, lê os projetos e os contratos, e fica com o
+// contrato cujo site temporário é o da planilha. A janela abre em /clientes
+// (logada como as outras) e cada leitura é uma chamada separada, cada uma com
+// o prazo de sempre: a página do projeto sozinha leva uns 20s.
+const painelAchar = require(path.join(__dirname, 'lib', 'painel-achar'));
+
+handleNoPainel('painel:acharContrato', async (event, payload) => {
+  const { razao, temporario, dominio } = payload || {};
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  const url = `https://${PAINEL_HOST}/clientes`;
+  let win = null;
+  let erroFatal = false;
+  try {
+    win = await abrirPainelLogado(url, push);
+    const rodar = (script) => rodarNoPainel(win, script);
+    const r = await painelAchar.acharContratoNoPainel(rodar, { razao, temporario, dominio: normalizeDomain(dominio) || dominio }, push);
+    if (!r.ok) {
+      push(`Painel: não achei o contrato de ${dominio || razao}: ${r.erro}.`, 'warn');
+      for (const l of r.lista || []) push(`  ${l}`, 'info');
+      return { ok: false, naoAchou: true, error: r.erro, lista: r.lista || [], log };
+    }
+    const c = r.contrato;
+    push(`Painel: ${dominio || razao} → ${c.empresa} / ${c.projetoNome || c.projeto} / contrato ${c.contrato}${r.conferidoPeloTemporario ? `, temporário ${painelAchar.normalizarTemporario(c.temporario)} confere` : ', o único do cliente (sem temporário na planilha para conferir)'}.`, r.conferidoPeloTemporario ? 'success' : 'warn');
+    return { ok: true, url: r.url, contrato: c, conferidoPeloTemporario: r.conferidoPeloTemporario, log };
+  } catch (e) {
+    erroFatal = true;
+    push(`Painel: ${e.message}`, 'error');
+    return { ok: false, error: e.message, log };
+  } finally {
+    painelSoltarJanela(win, url, { descartar: erroFatal });
+  }
+});
 
 // ----- Registro.br: trocar os servidores DNS (ADR-059) -----
 //
@@ -3538,7 +4562,7 @@ async function registrobrAbrir(empresa, dominio, push) {
     show: false,
     width: 1100,
     height: 800,
-    webPreferences: { partition: registrobrPartition(empresa), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { partition: registrobrPartition(empresa), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   win.webContents.on('will-navigate', (e, destino) => { if (!registrobrUrlValida(destino)) e.preventDefault(); });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -4330,11 +5354,14 @@ function matchesQuery(candidateNames, terms) {
 
 // Roda `fn` sobre os itens com no máximo `limit` chamadas em voo. A varredura
 // de data streams é 1 request por propriedade, em série levaria minutos.
-async function mapLimit(items, limit, fn) {
+// `parar()` verdadeiro faz os trabalhadores não pegarem mais itens (o que já
+// está em voo termina): é a saída antecipada de quem procura UM cliente.
+async function mapLimit(items, limit, fn, parar = () => false) {
   const out = new Array(items.length);
   let cursor = 0;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     for (;;) {
+      if (parar()) return;
       const i = cursor++;
       if (i >= items.length) return;
       out[i] = await fn(items[i], i);
@@ -4344,10 +5371,85 @@ async function mapLimit(items, limit, fn) {
   return out;
 }
 
-// Teto da varredura de data streams. Acima disso a busca avisa e para, é
-// sinal de termo curto demais, não de trabalho legítimo.
-const ANALYTICS_SCAN_LIMIT = 600;
+// Varredura de data streams (ADR-131). Antes: teto de 600 propriedades e
+// parava em silêncio — com 4844 no escopo, um cliente na "Busca Cliente 18"
+// nunca era achado. Agora:
+//   - cache em disco do domínio de cada data stream (uma leitura por
+//     propriedade, uma vez; propriedade já lida não gasta API de novo);
+//   - as não lidas são varridas em ordem INVERSA (as contas mais novas, de
+//     número maior, recebem os clientes novos) e a busca PARA no primeiro
+//     casamento — quem procura um domínio quer um cliente;
+//   - o teto sobe para o escopo inteiro, com aviso claro quando não achou.
+const ANALYTICS_SCAN_LIMIT = 6000;
 const ANALYTICS_SCAN_CONCURRENCY = 8;
+const analyticsStreamsCachePath = () => path.join(app.getPath('userData'), 'analytics-streams-cache.json');
+function readAnalyticsStreamsCache() {
+  try { return JSON.parse(fs.readFileSync(analyticsStreamsCachePath(), 'utf-8')) || {}; } catch (e) { return {}; }
+}
+function saveAnalyticsStreamsCache(cache) {
+  try { fs.writeFileSync(analyticsStreamsCachePath(), JSON.stringify(cache)); } catch (e) { /* cache é conveniência */ }
+}
+const ANALYTICS_CACHE_VALIDO_MS = 30 * 24 * 60 * 60 * 1000; // relê o que tem mais de 30 dias
+
+// A varredura de data streams, compartilhada pela busca (findExisting) e pela
+// conferência antes de criar propriedade (ADR-046). `casa(item, web)` decide o
+// casamento; `web` é [{ measurementId, uri, displayName }] por propriedade.
+// Devolve { achadas: [{...item, measurementIds: web}], lidas, doCache, erros, teto }.
+async function varrerDataStreams(analyticsadmin, candidatas, casa, push, { pararAoAchar = true } = {}) {
+  const cache = readAnalyticsStreamsCache();
+  const achadas = [];
+  const naoLidas = [];
+  let doCache = 0;
+  for (const item of candidatas) {
+    const c = cache[item.property];
+    if (c && Array.isArray(c.web) && Date.now() - (c.at || 0) < ANALYTICS_CACHE_VALIDO_MS) {
+      doCache++;
+      if (casa(item, c.web)) achadas.push({ ...item, measurementIds: c.web });
+    } else {
+      naoLidas.push(item);
+    }
+  }
+  if (doCache) push(`${doCache} propriedade(s) conferidas pelo cache local (sem chamada à API)${achadas.length ? `: ${achadas.length} casa(m)` : ''}.`, 'info');
+
+  // Só vai à API se o cache não achou. Ordem inversa: as contas mais novas (de
+  // número maior) recebem os clientes novos, então o que se procura costuma
+  // estar no fim. E para no primeiro casamento.
+  let aVarrer = achadas.length ? [] : naoLidas.slice().reverse();
+  let teto = false;
+  if (aVarrer.length > ANALYTICS_SCAN_LIMIT) { teto = true; aVarrer = aVarrer.slice(0, ANALYTICS_SCAN_LIMIT); }
+  if (aVarrer.length) push(`${candidatas.length} propriedade(s) no escopo, ${naoLidas.length} sem cache: lendo o domínio de cada data stream, das contas mais novas para as mais antigas${pararAoAchar ? ', e paro ao achar' : ''}`, 'cmd');
+
+  let erros = 0, lidas = 0, achou = false, novas = 0;
+  await mapLimit(aVarrer, ANALYTICS_SCAN_CONCURRENCY, async (item) => {
+    let streams = [];
+    try {
+      const res = await analyticsadmin.properties.dataStreams.list({ parent: item.property });
+      streams = res.data.dataStreams || [];
+    } catch (e) { erros++; return; } // sem permissão não derruba a varredura
+    lidas++;
+    const web = streams.filter((s) => s.webStreamData?.measurementId).map((s) => ({
+      measurementId: s.webStreamData.measurementId, uri: s.webStreamData.defaultUri || '', displayName: s.displayName || '',
+    }));
+    cache[item.property] = { web, account: item.account, displayName: item.displayName, at: Date.now() };
+    novas++;
+    if (novas % 200 === 0) saveAnalyticsStreamsCache(cache); // não perde o índice se cair no meio
+    if (!casa(item, web)) return;
+    achadas.push({ ...item, measurementIds: web });
+    if (pararAoAchar) achou = true;
+  }, () => achou);
+  if (novas) saveAnalyticsStreamsCache(cache);
+
+  if (lidas) push(`${lidas} propriedade(s) lidas na API nesta busca${achou ? ' (parei ao achar)' : ''}; ficam no cache para as próximas.`, 'info');
+  if (erros) push(`${erros} propriedade(s) não puderam ser lidas (sem permissão) e ficaram de fora.`, 'warn');
+  if (teto && !achadas.length) push(`Varri ${ANALYTICS_SCAN_LIMIT} propriedades sem achar e parei no teto.`, 'warn');
+  return { achadas, lidas, doCache, erros, teto };
+}
+
+// O domínio (sem www) de um uri de data stream, como o dominioDoStream faz.
+function dominioDeUri(uri) {
+  if (!uri) return '';
+  try { return new URL(String(uri).includes('://') ? uri : `https://${uri}`).hostname.replace(/^www\./, '').toLowerCase(); } catch (e) { return ''; }
+}
 
 ipcMain.handle('google:findExisting', async (event, { query, saPath, brand }) => {
   const log = [];
@@ -4418,50 +5520,15 @@ ipcMain.handle('google:findExisting', async (event, { query, saPath, brand }) =>
         push(describeVisibleAccounts(todasAsContas, identidadeBusca), 'warn');
       }
 
-      let aVarrer = candidatas;
-      if (candidatas.length > ANALYTICS_SCAN_LIMIT) {
-        push(
-          `${candidatas.length} propriedades no escopo, varrendo só as ${ANALYTICS_SCAN_LIMIT} primeiras. Refine a busca ou escolha o projeto certo.`,
-          'warn'
-        );
-        aVarrer = candidatas.slice(0, ANALYTICS_SCAN_LIMIT);
-      }
+      // Casa pelo nome da propriedade OU pelo domínio configurado no stream.
+      // Na prática o segundo é que resolve, o primeiro só serve pros casos
+      // antigos, em que alguém nomeou a propriedade com o domínio.
+      const casa = (item, web) => matchesQuery([item.displayName, ...web.map((w) => w.uri), ...web.map((w) => w.displayName)], terms);
 
-      push(
-        `${accountsSeen} conta(s) no escopo, ${aVarrer.length} propriedades, lendo o domínio de cada data stream`,
-        'cmd'
-      );
-
-      let erros = 0;
-      await mapLimit(aVarrer, ANALYTICS_SCAN_CONCURRENCY, async (item) => {
-        let streams = [];
-        try {
-          const res = await analyticsadmin.properties.dataStreams.list({ parent: item.property });
-          streams = res.data.dataStreams || [];
-        } catch (e) {
-          // Propriedade sem permissão de leitura não pode derrubar a busca toda.
-          erros++;
-          return;
-        }
-
-        const web = streams
-          .filter((s) => s.webStreamData?.measurementId)
-          .map((s) => ({
-            measurementId: s.webStreamData.measurementId,
-            uri: s.webStreamData.defaultUri || '',
-            displayName: s.displayName || '',
-          }));
-
-        // Casa pelo nome da propriedade OU pelo domínio configurado no stream.
-        // Na prática o segundo é que resolve, o primeiro só serve pros casos
-        // antigos, em que alguém nomeou a propriedade com o domínio.
-        const alvos = [item.displayName, ...web.map((w) => w.uri), ...web.map((w) => w.displayName)];
-        if (!matchesQuery(alvos, terms)) return;
-
-        analyticsProperties.push({ ...item, measurementIds: web });
-      });
-
-      if (erros) push(`${erros} propriedade(s) não puderam ser lidas (sem permissão) e ficaram de fora.`, 'warn');
+      push(`${accountsSeen} conta(s) no escopo.`, 'info');
+      const v = await varrerDataStreams(analyticsadmin, candidatas, casa, push);
+      analyticsProperties.push(...v.achadas);
+      if (v.teto && !v.achadas.length) push('Refine a busca ou escolha o projeto certo.', 'warn');
       push(`${analyticsProperties.length} propriedade(s) correspondem à busca.`, 'info');
     } catch (e) {
       push(`Não consegui consultar o Analytics: ${e.message}`, 'warn');
@@ -4849,7 +5916,7 @@ ipcMain.handle('ms:login', async (event) => {
 // O token vai criptografado pelo safeStorage. Ele age EM SEU NOME no CRM da
 // empresa: mesmo cuidado do token de e-mail (ADR-004).
 
-const { criarSalesforce, idDoLink, ehIdDeCaso, escaparSoql, mascararSegredos, SalesforceErro } =
+const { criarSalesforce, idDoLink, ehIdDeCaso, escaparSoql, normalizarTexto, acharCasoDaPublicacao, acharContaPorDominio, acharCampoPorRotulo, avaliarOuvidoria, mascararSegredos, SalesforceErro } =
   require(path.join(__dirname, 'lib', 'salesforce'));
 
 const SF_CLIENT_ID = 'PlatformCLI';
@@ -5013,8 +6080,64 @@ async function sfComSessao(fn) {
 // "concluída". Numa criação em massa de 76 tarefas, perguntar isso a cada
 // linha seriam 150 chamadas à toa. Guardo na memória do processo e limpo ao
 // desconectar (ADR-090).
-let sfSessaoCache = { eu: null, statusFechado: null };
-function limparSfCache() { sfSessaoCache = { eu: null, statusFechado: null }; }
+let sfSessaoCache = { eu: null, statusFechado: null, statusCaso: null, camposOuvidoria: null };
+function limparSfCache() { sfSessaoCache = { eu: null, statusFechado: null, statusCaso: null, camposOuvidoria: null }; }
+
+// O status "Reunião de Nutrição" do caso pode ter outro nome por dentro (o
+// valor da API): lido da configuração do Caso uma vez por sessão (ADR-097).
+const SF_STATUS_CASO_PREFERIDO = 'Reunião de Nutrição';
+async function sfStatusCasoPreferido(sf) {
+  if (!sfSessaoCache.statusCaso) {
+    let achado = null;
+    try {
+      const d = await sf.descrever('Case');
+      const campo = (d.fields || []).find((f) => f.name === 'Status');
+      const alvo = normalizarTexto(SF_STATUS_CASO_PREFERIDO);
+      achado = (campo?.picklistValues || []).find((v) => normalizarTexto(v.label) === alvo || normalizarTexto(v.value) === alvo) || null;
+    } catch (e) {
+      if (e && (e.sessaoInvalida || e.status === 403)) throw e;
+    }
+    sfSessaoCache.statusCaso = achado ? { api: achado.value, rotulo: achado.label } : { api: null, rotulo: SF_STATUS_CASO_PREFERIDO };
+  }
+  return sfSessaoCache.statusCaso;
+}
+// Os nomes internos dos campos "Definição" e "Data de Conclusão" do Caso,
+// descobertos pelo rótulo via describe, uma vez por sessão (ADR-111).
+async function sfCamposOuvidoria(sf) {
+  if (!sfSessaoCache.camposOuvidoria) {
+    const d = await sf.descrever('Case');
+    sfSessaoCache.camposOuvidoria = {
+      campoDef: acharCampoPorRotulo(d, 'Definição'),
+      campoData: acharCampoPorRotulo(d, 'Data de Conclusão'),
+    };
+  }
+  return sfSessaoCache.camposOuvidoria;
+}
+
+// O campo do Caso que diz de qual empresa é o projeto ("Sel. Projeto" = Busca
+// Cliente / MPI Solutions; "Projeto" é o lookup). Descoberto pelo rótulo, uma
+// vez por sessão (ADR-123). Lookup é selecionado como Relacao__r.Name.
+async function sfCampoProjetoCaso(sf) {
+  if (sfSessaoCache.campoProjetoCaso === undefined) {
+    const d = await sf.descrever('Case');
+    const porRotulo = (rot) => (d.fields || []).find((f) => normalizarTexto(f.label) === normalizarTexto(rot)) || null;
+    const f = porRotulo('Sel. Projeto') || porRotulo('Projeto') || null;
+    sfSessaoCache.campoProjetoCaso = f
+      ? (f.type === 'reference' && f.relationshipName
+        ? { nome: f.name, selecao: `${f.relationshipName}.Name`, ler: (c) => (c[f.relationshipName] && c[f.relationshipName].Name) || '' }
+        : { nome: f.name, selecao: f.name, ler: (c) => c[f.name] || '' })
+      : null;
+  }
+  return sfSessaoCache.campoProjetoCaso;
+}
+
+// "Busca Cliente" → bc, "MPI Solutions" → mpisolutions (mesma regra das filas).
+const marcaDeTexto = (s) => (/busca/i.test(String(s || '')) ? 'bc' : /mpi/i.test(String(s || '')) ? 'mpisolutions' : null);
+
+// O token que temos foi recusado (403): só reconectar resolve (ADR-093).
+function sfPrecisaReconectar(e) {
+  return !!e && (e.reauth === true || (e instanceof SalesforceErro && e.status === 403));
+}
 async function sfQuemSouEu(sf) {
   if (!sfSessaoCache.eu) sfSessaoCache.eu = await sf.identidade();
   return sfSessaoCache.eu;
@@ -5027,6 +6150,114 @@ async function sfStatusConcluida(sf) {
   }
   return sfSessaoCache.statusFechado;
 }
+
+// ---------- Log em arquivo e rodada em massa que sobrevive a um reinício (ADR-096) ----------
+//
+// O Windows reinicia ou encerra a sessão de madrugada (atualização, política da
+// TI) e fecha tudo, o Hub junto. O log e o progresso da rodada moravam só na
+// memória: sumiam, e as tarefas do Salesforce, que saem no fim, nunca saíam.
+// Agora o log vai para um arquivo por dia, e o estado da rodada é salvo a cada
+// site, para retomar de onde parou.
+
+const pastaLogs = () => path.join(app.getPath('documents'), 'Hub', 'logs');
+function arquivoLogDoDia(d = new Date()) {
+  const n = (x) => String(x).padStart(2, '0');
+  return path.join(pastaLogs(), `hub-${d.getFullYear()}-${n(d.getMonth() + 1)}-${n(d.getDate())}.txt`);
+}
+
+ipcMain.handle('log:gravar', async (event, { linhas } = {}) => {
+  try {
+    if (!Array.isArray(linhas) || !linhas.length) return { ok: true };
+    fs.mkdirSync(pastaLogs(), { recursive: true });
+    const texto = linhas
+      .map((l) => `${String(l.ts || '')} ${String(l.type || 'info').padEnd(7)} ${String(l.message || '').replace(/\r?\n/g, ' ')}`)
+      .join('\n') + '\n';
+    await fs.promises.appendFile(arquivoLogDoDia(), texto, 'utf-8');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('log:abrirPasta', async () => {
+  try {
+    fs.mkdirSync(pastaLogs(), { recursive: true });
+    const { shell } = require('electron');
+    const erro = await shell.openPath(pastaLogs());
+    return erro ? { ok: false, error: erro } : { ok: true, pasta: pastaLogs() };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+const rodadaPath = () => path.join(app.getPath('userData'), 'rodada-em-massa.json');
+
+// Escrita atômica: grava num temporário e troca. Desligar no meio da gravação
+// deixa o arquivo anterior inteiro, nunca um JSON pela metade.
+ipcMain.handle('rodada:salvar', (event, estado) => {
+  try {
+    const destino = rodadaPath();
+    fs.mkdirSync(path.dirname(destino), { recursive: true });
+    const tmp = `${destino}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ ...(estado || {}), salvoEm: new Date().toISOString() }), 'utf-8');
+    fs.renameSync(tmp, destino);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('rodada:ler', () => {
+  try {
+    if (!fs.existsSync(rodadaPath())) return { ok: true, estado: null };
+    return { ok: true, estado: JSON.parse(fs.readFileSync(rodadaPath(), 'utf-8')) };
+  } catch (e) {
+    // Arquivo estragado não pode travar a abertura da ferramenta.
+    return { ok: true, estado: null, aviso: `não consegui ler a rodada salva (${e.message})` };
+  }
+});
+
+ipcMain.handle('rodada:apagar', () => {
+  try {
+    if (fs.existsSync(rodadaPath())) fs.unlinkSync(rodadaPath());
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Durante uma rodada em massa, o Windows não pode suspender o app (ADR-094).
+// Não impede a tela de bloquear, só que o sistema durma com a rodada no meio.
+//
+// E enquanto qualquer coisa roda sozinha (a rodada, a automação ligada, uma
+// etapa da publicação), a janela não desacelera em segundo plano: com a tela
+// bloqueada, o Chromium segurava os timers e a rodada parava. Parada, ela
+// desacelera como qualquer página (ADR-126). Os motivos são contados à parte
+// para um não soltar o outro: a automação ligada durante uma rodada em massa
+// continua valendo quando a rodada termina.
+let bloqueioEnergia = null;
+const semDesacelerar = new Set();
+ipcMain.handle('energia:manterAcordado', (event, { ligar, motivo = 'rodada' } = {}) => {
+  const { powerSaveBlocker } = require('electron');
+  if (motivo === 'rodada') {
+    if (ligar) {
+      if (bloqueioEnergia === null || !powerSaveBlocker.isStarted(bloqueioEnergia)) {
+        bloqueioEnergia = powerSaveBlocker.start('prevent-app-suspension');
+      }
+    } else if (bloqueioEnergia !== null) {
+      if (powerSaveBlocker.isStarted(bloqueioEnergia)) powerSaveBlocker.stop(bloqueioEnergia);
+      bloqueioEnergia = null;
+    }
+  }
+  if (ligar) semDesacelerar.add(String(motivo));
+  else semDesacelerar.delete(String(motivo));
+  try {
+    if (event && event.sender && !event.sender.isDestroyed()) event.sender.setBackgroundThrottling(semDesacelerar.size === 0);
+  } catch (e) {
+    // a janela pode ter fechado no meio; o próximo pedido acerta
+  }
+  return { ok: true, ativo: bloqueioEnergia !== null, semDesacelerar: [...semDesacelerar] };
+});
 
 ipcMain.handle('salesforce:getConfig', () => {
   const cfg = readSfConfig();
@@ -5370,6 +6601,12 @@ ipcMain.handle('salesforce:fecharTarefa', async (event, opcoes = {}) => {
     });
     return { ok: true, log, ...saida };
   } catch (e) {
+    if (sfPrecisaReconectar(e)) {
+      limparSfCache();
+      const msg = 'O Salesforce recusou o acesso (403). Reconecte o Salesforce nas configurações (Desconectar e Conectar de novo) e tente outra vez.';
+      push(msg, 'error');
+      return { ok: false, error: msg, precisaReconectar: true, log };
+    }
     push(`Salesforce: ${e.message}`, 'error');
     return { ok: false, error: e.message, reauth: !!e.reauth, log };
   }
@@ -5381,27 +6618,45 @@ ipcMain.handle('salesforce:fecharTarefa', async (event, opcoes = {}) => {
 // nome, com o domínio nos comentários, e SEM marcar ninguém no feed — a
 // marcação é só no fechamento pelo Publicar MPI+ (ADR-090).
 ipcMain.handle('salesforce:criarTarefaNoCaso', async (event, opcoes = {}) => {
-  const { casoLink, dominio, assunto, comentario } = opcoes || {};
+  const { casoLink, dominio, razao, assunto, comentario, apenasConferir = false } = opcoes || {};
   const log = [];
   const push = (message, type = 'info') => log.push({ message, type });
 
-  const casoId = idDoLink(casoLink);
-  if (!casoId) {
-    push('Não achei o Id do caso no link. Confira a coluna "Link do caso".', 'error');
-    return { ok: false, error: 'Link do caso inválido.', log };
-  }
-  if (!ehIdDeCaso(casoId)) {
-    push(`Esse link não é de um Caso (o Id ${casoId} não começa com 500). Na coluna "Link do caso" tem que ir o link do caso, não da tarefa nem da conta.`, 'error');
-    return { ok: false, error: 'O link não é de um caso.', log };
-  }
   const dom = String(dominio || '').trim();
   if (!dom) {
     push('Sem domínio para essa linha.', 'error');
-    return { ok: false, error: 'Sem domínio.', log };
+    return { ok: false, error: 'Sem domínio.', linkInvalido: true, log };
+  }
+  // Com "Link do caso" na planilha, ele manda. Sem, o Hub procura o caso
+  // sozinho pelo padrão (ADR-097).
+  let casoDoLink = null;
+  if (String(casoLink || '').trim()) {
+    casoDoLink = idDoLink(casoLink);
+    if (!casoDoLink) {
+      push('Não achei o Id do caso no link. Confira a coluna "Link do caso".', 'error');
+      return { ok: false, error: 'Link do caso inválido.', linkInvalido: true, log };
+    }
+    if (!ehIdDeCaso(casoDoLink)) {
+      push(`Esse link não é de um Caso (o Id ${casoDoLink} não começa com 500). Na coluna "Link do caso" tem que ir o link do caso, não da tarefa nem da conta.`, 'error');
+      return { ok: false, error: 'O link não é de um caso.', linkInvalido: true, log };
+    }
   }
 
   try {
     const saida = await sfComSessao(async (sf) => {
+      let casoId = casoDoLink;
+      let como = 'pelo Link do caso da planilha';
+      if (!casoId) {
+        const status = await sfStatusCasoPreferido(sf);
+        const achado = await acharCasoDaPublicacao(sf, { dominio: dom, razao, statusCasoApi: status.api, statusCasoRotulo: status.rotulo }, push);
+        if (!achado.casoId) {
+          const e = new Error(`não achei o caso: ${achado.motivo}. Preencha o "Link do caso" dessa linha na planilha.`);
+          e.casoNaoEncontrado = true;
+          throw e;
+        }
+        casoId = achado.casoId;
+        como = achado.como;
+      }
       const eu = await sfQuemSouEu(sf);
       const cfg = readSfConfig();
       const assuntoFinal = String(assunto || cfg.assuntoMigracao || 'Publicação V1 -> V2 - {dominio}').replace(/\{dominio\}/gi, dom);
@@ -5410,13 +6665,13 @@ ipcMain.handle('salesforce:criarTarefaNoCaso', async (event, opcoes = {}) => {
       // Confere que o caso existe e é acessível antes de criar, para a tarefa
       // não nascer órfã num Id que não abre.
       push(`GET caso ${casoId}`, 'cmd');
-      const casos = await sf.consultar(`SELECT Id, CaseNumber, Subject FROM Case WHERE Id = '${escaparSoql(casoId)}' LIMIT 1`);
+      const casos = await sf.consultar(`SELECT Id, CaseNumber, Subject, Status, Account.Name FROM Case WHERE Id = '${escaparSoql(casoId)}' LIMIT 1`);
       const caso = casos[0];
       if (!caso) {
         push('Não consegui ler esse caso (confira se o link é de um caso que você acessa).', 'error');
         throw new Error('Caso não encontrado.');
       }
-      push(`Caso ${caso.CaseNumber}${caso.Subject ? ' — ' + caso.Subject : ''}`, 'info');
+      push(`Caso ${caso.CaseNumber}${caso.Subject ? ' — ' + caso.Subject : ''}${caso.Status ? ` (${caso.Status})` : ''}, achado ${como}.`, 'info');
 
       // Não cria duas vezes a mesma tarefa no mesmo caso: se já existe uma com
       // esse assunto ali, pula. Deixa o botão "todos da planilha" e a criação
@@ -5424,9 +6679,14 @@ ipcMain.handle('salesforce:criarTarefaNoCaso', async (event, opcoes = {}) => {
       const jaTem = await sf.consultar(
         `SELECT Id FROM Task WHERE WhatId = '${escaparSoql(casoId)}' AND Subject = '${escaparSoql(assuntoFinal)}' LIMIT 1`
       );
+      const infoCaso = { casoId, casoNumero: caso.CaseNumber, casoAssunto: caso.Subject || '', casoStatus: caso.Status || '', conta: caso.Account?.Name || '', como, assunto: assuntoFinal };
+      if (apenasConferir) {
+        // Só leitura: diz qual caso usaria e se a tarefa já está lá (ADR-097).
+        return { ...infoCaso, conferido: true, jaExistia: !!jaTem[0] };
+      }
       if (jaTem[0]) {
         push(`Já existe uma tarefa "${assuntoFinal}" nesse caso (${jaTem[0].Id}); não criei outra.`, 'warn');
-        return { taskId: jaTem[0].id || jaTem[0].Id, casoNumero: caso.CaseNumber, assunto: assuntoFinal, jaExistia: true };
+        return { ...infoCaso, taskId: jaTem[0].id || jaTem[0].Id, jaExistia: true };
       }
 
       const statusConcluida = await sfStatusConcluida(sf);
@@ -5442,13 +6702,242 @@ ipcMain.handle('salesforce:criarTarefaNoCaso', async (event, opcoes = {}) => {
         ActivityDate: dataHoje,
       });
       push(`Tarefa criada: ${criada.id} — "${assuntoFinal}"`, 'success');
-      return { taskId: criada.id, casoNumero: caso.CaseNumber, assunto: assuntoFinal };
+      return { ...infoCaso, taskId: criada.id };
     });
     return { ok: true, log, ...saida };
   } catch (e) {
+    // 403 é o Salesforce recusando o token que temos: não é sessão expirada
+    // (essa é 401 e renova sozinha). Reconectar gera um token novo. Quem chama
+    // para na primeira, em vez de repetir o mesmo erro linha a linha (ADR-093).
+    if (e.casoNaoEncontrado) {
+      push(`${dom}: ${e.message}`, 'warn');
+      return { ok: false, error: e.message, casoNaoEncontrado: true, log };
+    }
+    if (sfPrecisaReconectar(e)) {
+      limparSfCache();
+      const msg = 'O Salesforce recusou o acesso (403). Reconecte o Salesforce nas configurações (Desconectar e Conectar de novo) e tente outra vez.';
+      push(msg, 'error');
+      return { ok: false, error: msg, precisaReconectar: true, log };
+    }
     push(`Salesforce: ${e.message}`, 'error');
-    return { ok: false, error: e.message, reauth: !!e.reauth, log };
+    return { ok: false, error: e.message, reauth: !!e.reauth, precisaReconectar: !!e.reauth, log };
   }
+});
+
+// A conta (razão social = Account.Name) de um domínio, para a automação achar
+// o cliente no painel MPI+ sem ninguém digitar (ADR-122). Mesma busca por
+// confiança do acharContaPorDominio; sem conta, devolve o motivo.
+ipcMain.handle('salesforce:contaPorDominio', async (event, { dominio } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  const dom = normalizeDomain(dominio) || String(dominio || '').trim();
+  if (!dom) return { ok: false, error: 'Sem domínio.', log };
+  try {
+    return await sfComSessao(async (sf) => {
+      const r = await acharContaPorDominio(sf, dom, push);
+      if (!r.conta) { push(`${dom}: ${r.motivo}.`, 'warn'); return { ok: true, achou: false, motivo: r.motivo, ambiguo: !!r.ambiguo, log }; }
+      push(`${dom} → conta ${r.conta.Name}${r.via ? ' (por ' + r.via + ')' : ''}.`, 'info');
+      return { ok: true, achou: true, razao: r.conta.Name, contaId: r.conta.Id, via: r.via || '', log };
+    });
+  } catch (e) {
+    push(`Salesforce: ${e.message}`, 'error');
+    return { ok: false, error: e.message, reauth: !!e.reauth, precisaReconectar: !!e.reauth, log };
+  }
+});
+
+// O contexto de uma tarefa OU de um caso (ADR-123): tarefa → caso → conta
+// (razão social) + projeto (empresa: Busca Cliente / MPI Solutions), com a fila
+// da tarefa como reserva da empresa. É o caminho direto e confiável — a tarefa
+// já está pendurada no caso; não precisa procurar por domínio.
+ipcMain.handle('salesforce:contexto', async (event, { tarefa, caso } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  let idTarefa = idDoLink(tarefa);
+  let idCaso = idDoLink(caso);
+  if (idTarefa && ehIdDeCaso(idTarefa)) { idCaso = idCaso || idTarefa; idTarefa = null; } // link de caso no lugar da tarefa
+  if (idCaso && !ehIdDeCaso(idCaso)) { push('O link informado como caso não é de um caso (id não começa com 500).', 'warn'); idCaso = null; }
+  if (!idTarefa && !idCaso) return { ok: false, error: 'Sem link de tarefa nem de caso.', log };
+  try {
+    return await sfComSessao(async (sf) => {
+      let filaNome = '';
+      if (idTarefa) {
+        push(`SOQL tarefa ${idTarefa} (caso e dono)`, 'cmd');
+        const t = (await sf.consultar(`SELECT Id, Subject, WhatId, What.Type, OwnerId, Owner.Name, Owner.Type FROM Task WHERE Id = '${escaparSoql(idTarefa)}'`))[0];
+        if (!t) return { ok: false, error: 'tarefa não encontrada no Salesforce', log };
+        if (t.Owner && t.Owner.Type === 'Queue') filaNome = t.Owner.Name || '';
+        if (!idCaso) {
+          if (t.WhatId && ehIdDeCaso(t.WhatId)) idCaso = t.WhatId;
+          else push('A tarefa não está ligada a um caso.', 'warn');
+        }
+      }
+      let razao = '', contaId = null, casoNumero = '', projeto = '', empresa = null, via = '';
+      if (idCaso) {
+        const campo = await sfCampoProjetoCaso(sf);
+        push(`SOQL caso ${idCaso} (conta${campo ? ' e ' + campo.nome : ''})`, 'cmd');
+        const c = (await sf.consultar(`SELECT Id, CaseNumber, AccountId, Account.Name${campo ? ', ' + campo.selecao : ''} FROM Case WHERE Id = '${escaparSoql(idCaso)}'`))[0];
+        if (!c) return { ok: false, error: 'caso não encontrado no Salesforce', log };
+        casoNumero = c.CaseNumber || '';
+        contaId = c.AccountId || null;
+        razao = (c.Account && c.Account.Name) || '';
+        projeto = campo ? String(campo.ler(c) || '') : '';
+        empresa = marcaDeTexto(projeto);
+        if (empresa) via = `projeto do caso (${projeto})`;
+        push(`Caso ${casoNumero} → conta ${razao || '(sem conta)'}${projeto ? `, projeto ${projeto}` : ' (sem projeto no caso)'}.`, razao ? 'info' : 'warn');
+      }
+      if (!empresa && filaNome) { empresa = marcaDeTexto(filaNome); if (empresa) { via = `fila da tarefa (${filaNome})`; push(`Empresa pela fila da tarefa: ${filaNome}.`, 'info'); } }
+      return { ok: true, razao, contaId, casoId: idCaso, casoNumero, projeto, empresa, fila: filaNome, via, log };
+    });
+  } catch (e) {
+    push(`Salesforce: ${e.message}`, 'error');
+    return { ok: false, error: e.message, reauth: !!e.reauth, precisaReconectar: !!e.reauth, log };
+  }
+});
+
+// Checa a Ouvidoria de um domínio (ADR-111): acha a conta pelo domínio, lê os
+// casos de Ouvidoria e devolve a Situação (Definição + data) e o Ativar SSL.
+ipcMain.handle('salesforce:ouvidoria', async (event, { dominio, razao } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  const dom = String(dominio || '').trim();
+  if (!dom) return { ok: false, error: 'Sem domínio.', log };
+  try {
+    return await sfComSessao(async (sf) => {
+      const r = await acharContaPorDominio(sf, dom, push, { razao: razao || '' });
+      if (!r.conta) {
+        push(`${dom}: ${r.motivo}.`, 'warn');
+        return { ok: true, achou: false, motivo: r.motivo, ambiguo: !!r.ambiguo, log };
+      }
+      push(`${dom} → conta ${r.conta.Name}${r.via ? ' (por ' + r.via + ')' : ''}.`, 'info');
+      const campos = await sfCamposOuvidoria(sf);
+      if (!campos.campoDef) push('Aviso: não achei o campo "Definição" no Caso; a situação pode sair vazia.', 'warn');
+      const selDef = campos.campoDef ? `, ${campos.campoDef}` : '';
+      const selData = campos.campoData ? `, ${campos.campoData}` : '';
+      push(`SOQL casos da conta ${r.conta.Name}`, 'cmd');
+      const casos = await sf.consultar(`SELECT Id, CaseNumber, RecordType.Name, RecordType.DeveloperName${selDef}${selData} FROM Case WHERE AccountId = '${escaparSoql(r.conta.Id)}' ORDER BY CreatedDate DESC LIMIT 200`);
+      const av = avaliarOuvidoria(casos, campos);
+      push(`${dom}: ${av.situacao} → Ativar SSL: ${av.ativarSsl}.`, av.temOuvidoria ? 'info' : 'info');
+      return { ok: true, achou: true, razao: r.conta.Name, via: r.via || '', situacao: av.situacao, ativarSsl: av.ativarSsl, temOuvidoria: av.temOuvidoria, log };
+    });
+  } catch (e) {
+    if (sfPrecisaReconectar(e)) {
+      limparSfCache();
+      const msg = 'O Salesforce recusou o acesso (403). Reconecte o Salesforce nas configurações e tente de novo.';
+      push(msg, 'error');
+      return { ok: false, error: msg, precisaReconectar: true, log };
+    }
+    push(`Salesforce: ${e.message}`, 'error');
+    return { ok: false, error: e.message, log };
+  }
+});
+
+// ---------- WHOIS + DNS da tela inicial (ADR-113) ----------
+//
+// WHOIS é uma consulta de texto na porta 43. Para .br vai direto no
+// whois.registro.br; para o resto, pergunta ao whois.iana.org quem responde
+// pelo TLD (linha "refer:") e consulta lá. DNS: nameservers, A e MX, pelo
+// resolvedor da máquina.
+function whoisBruto(host, consulta, { timeoutMs = 8000 } = {}) {
+  const net = require('net');
+  return new Promise((resolve, reject) => {
+    let dados = '';
+    let feito = false;
+    const fim = (fn, arg) => { if (feito) return; feito = true; try { s.destroy(); } catch (e) {} fn(arg); };
+    const s = net.connect(43, host, () => s.write(consulta + '\r\n'));
+    s.setTimeout(timeoutMs, () => fim(reject, new Error(`o WHOIS ${host} não respondeu em ${Math.round(timeoutMs / 1000)}s`)));
+    s.on('data', (d) => { dados += d.toString('utf8'); });
+    s.on('end', () => fim(resolve, dados));
+    s.on('error', (e) => fim(reject, e));
+  });
+}
+
+// Puxa alguns campos conhecidos do texto do WHOIS (.br e genérico). Devolve o
+// que achar; o texto cru vai junto para quem quiser ver tudo.
+function parseWhois(texto) {
+  const linhas = String(texto || '').split(/\r?\n/);
+  const primeiro = (rotulos) => {
+    for (const l of linhas) {
+      const m = l.match(/^\s*([\w .\/-]+?):\s*(.+?)\s*$/);
+      if (m && rotulos.some((r) => r.toLowerCase() === m[1].trim().toLowerCase())) return m[2];
+    }
+    return '';
+  };
+  const todos = (rotulos) => linhas
+    .map((l) => l.match(/^\s*([\w .\/-]+?):\s*(.+?)\s*$/))
+    .filter((m) => m && rotulos.some((r) => r.toLowerCase() === m[1].trim().toLowerCase()))
+    .map((m) => m[2]);
+  return {
+    titular: primeiro(['owner', 'Registrant Name', 'Registrant Organization', 'org']),
+    registrador: primeiro(['Registrar', 'registrar']),
+    criado: primeiro(['created', 'Creation Date', 'Registered On']),
+    expira: primeiro(['expires', 'Registry Expiry Date', 'Expiration Date', 'expiration date', 'Expiry Date']),
+    status: [...new Set(todos(['status', 'Domain Status', 'domain status']))].join(', '),
+    nameservers: [...new Set(todos(['nserver', 'Name Server', 'name server']).map((n) => n.split(/\s+/)[0].toLowerCase().replace(/\.$/, '')))],
+  };
+}
+
+async function whoisConsulta(dominio) {
+  if (/\.br$/i.test(dominio)) {
+    const texto = await whoisBruto('whois.registro.br', dominio);
+    return { host: 'whois.registro.br', texto: String(texto).slice(0, 10000), campos: parseWhois(texto) };
+  }
+  const iana = await whoisBruto('whois.iana.org', dominio);
+  const refer = (iana.match(/refer:\s*(\S+)/i) || [])[1];
+  if (refer) {
+    try {
+      const texto = await whoisBruto(refer, dominio);
+      return { host: refer, texto: String(texto).slice(0, 10000), campos: parseWhois(texto) };
+    } catch (e) {
+      return { host: refer, texto: String(iana).slice(0, 10000), campos: parseWhois(iana), aviso: `não consegui consultar ${refer} (${e.message}); mostrando o que o IANA respondeu` };
+    }
+  }
+  return { host: 'whois.iana.org', texto: String(iana).slice(0, 10000), campos: parseWhois(iana) };
+}
+
+ipcMain.handle('dns:whois', async (event, { dominio: bruto } = {}) => {
+  const dominio = normalizeDomain(bruto);
+  if (!dominio) return { ok: false, error: 'Informe um domínio válido.' };
+  const dnsp = require('dns').promises;
+  const safe = async (fn) => { try { return await fn(); } catch (e) { return null; } };
+  const [ns, a, mxBruto] = await Promise.all([
+    safe(() => dnsp.resolveNs(dominio)),
+    safe(() => dnsp.resolve4(dominio)),
+    safe(() => dnsp.resolveMx(dominio)),
+  ]);
+  const dns = {
+    ns: (ns || []).map((x) => x.toLowerCase().replace(/\.$/, '')).sort(),
+    a: a || [],
+    mx: (mxBruto || []).sort((x, y) => x.priority - y.priority).map((m) => `${m.priority} ${m.exchange}`),
+    resolveu: !!(ns && ns.length),
+  };
+  let whois = null;
+  try { whois = await whoisConsulta(dominio); } catch (e) { whois = { erro: e.message }; }
+  return { ok: true, dominio, dns, whois };
+});
+
+// Nome do usuário logado, para a saudação da tela inicial (ADR-113). Preferência:
+// o nome do Salesforce (nome e sobrenome de verdade); senão, derivado do e-mail
+// do Bitbucket/painel; senão, o usuário do sistema.
+ipcMain.handle('sistema:recursos', () => {
+  const mem = process.memoryUsage();
+  return { ok: true, memMb: Math.round((mem.rss || mem.heapUsed) / (1024 * 1024)) };
+});
+
+ipcMain.handle('sistema:usuario', async () => {
+  const tituloCase = (s) => String(s || '').split(/[._-]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  // Salesforce, se conectado (não força login).
+  try {
+    const token = readSfToken();
+    if (token && token.access_token && token.instance_url) {
+      const sf = criarSalesforce(token.instance_url, token.access_token);
+      const eu = await sf.identidade();
+      if (eu && eu.nome) return { ok: true, nome: eu.nome, fonte: 'salesforce' };
+    }
+  } catch (e) { /* sem SF, cai para o e-mail */ }
+  const creds = readPainelCreds();
+  const emails = [creds && creds.email].filter(Boolean);
+  for (const e of emails) { const n = tituloCase(String(e).split('@')[0]); if (n) return { ok: true, nome: n, fonte: 'email' }; }
+  try { return { ok: true, nome: tituloCase(require('os').userInfo().username), fonte: 'sistema' }; } catch (e) {}
+  return { ok: true, nome: '' };
 });
 
 // ---------- Apontamento de DNS (ferramenta "Suspender sites") ----------
@@ -5500,6 +6989,37 @@ function resolveA(host) {
   return resolver.resolve4(host);
 }
 
+// Resolvedores públicos, para enxergar o que o mundo já vê, e não o que o
+// cache do Windows ainda guarda (ADR-104). A troca de DNS propaga nos públicos
+// (Google, Cloudflare, Quad9, OpenDNS) horas antes de o resolvedor da máquina
+// soltar o valor antigo, então a espera do SSL não pode depender só do local.
+const DNS_PUBLICOS = [['8.8.8.8', '8.8.4.4'], ['1.1.1.1', '1.0.0.1'], ['9.9.9.9'], ['208.67.222.222']];
+
+async function resolveAEm(servidores, host) {
+  const { Resolver } = require('dns').promises;
+  const resolver = new Resolver({ timeout: DNS_TIMEOUT_MS, tries: 1 });
+  resolver.setServers(servidores);
+  return resolver.resolve4(host);
+}
+
+// Junta o resolvedor da máquina com os públicos. Devolve os IPs vistos e de
+// onde. Um público que responde já basta; o local entra junto por educação.
+async function resolveATodos(host) {
+  const fontes = [['local', null], ...DNS_PUBLICOS.map((srv) => [srv[0], srv])];
+  const ips = new Set();
+  const vistos = [];
+  const resultados = await Promise.all(fontes.map(async ([nome, srv]) => {
+    try {
+      const r = srv ? await resolveAEm(srv, host) : await resolveA(host);
+      return { nome, ips: r || [] };
+    } catch (e) {
+      return { nome, ips: [], erro: e.code || e.message };
+    }
+  }));
+  for (const r of resultados) { for (const ip of r.ips) ips.add(ip); if (r.ips.length) vistos.push(r.nome); }
+  return { ips: [...ips], vistos, resultados };
+}
+
 // O domínio já aponta para o servidor de produção? É a pergunta que o SSL
 // precisa responder antes de existir: o painel só emite o certificado depois
 // que a raiz resolve para cá, e antes disso ele devolve apenas "Não foi
@@ -5515,15 +7035,10 @@ ipcMain.handle('dns:apontando', async (event, { dominio: bruto, ip }) => {
     const alvo = String(ip || '').trim();
     if (!alvo) return { ok: false, error: 'Sem IP de produção para comparar.' };
 
-    const pegar = async (host) => {
-      try {
-        return { ips: await resolveA(host), erro: null };
-      } catch (e) {
-        return { ips: [], erro: e.code || e.message };
-      }
-    };
-    const raiz = await pegar(dominio);
-    const www = await pegar(`www.${dominio}`);
+    // Local + públicos: o certificado só sai quando o servidor de produção
+    // recebe o tráfego, e isso segue o DNS público, não o cache da máquina.
+    const raiz = await resolveATodos(dominio);
+    const www = await resolveATodos(`www.${dominio}`);
 
     return {
       ok: true,
@@ -5533,10 +7048,11 @@ ipcMain.handle('dns:apontando', async (event, { dominio: bruto, ip }) => {
       wwwApontando: www.ips.includes(alvo),
       raiz: raiz.ips,
       www: www.ips,
+      // Quem já vê o IP NOVO (o que importa para o log), não quem respondeu.
+      vistoEm: (raiz.resultados || []).filter((x) => x.ips.includes(alvo)).map((x) => x.nome),
       // Sem resposta nenhuma é diferente de resposta errada: uma é espera, a
       // outra é DNS que ninguém trocou.
       resolveu: raiz.ips.length > 0,
-      erro: raiz.erro,
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -5572,6 +7088,42 @@ async function resolveDomain(dominio) {
     detail: String(ultimoErro || 'falha desconhecida'),
   };
 }
+
+// A marca do cliente pelo IP do apontamento (ADR-119): resolve a raiz (e o www
+// se a raiz não resolver) e casa com as faixas conhecidas. 149.18.103.138 = MPI
+// Solutions; .98–.106 = Busca Cliente; 149.18.102.39 = MPI+.
+ipcMain.handle('dns:marca', async (event, { dominio: bruto } = {}) => {
+  try {
+    const { marcaPorIps } = require(path.join(__dirname, 'lib', 'triagem'));
+    const dominio = normalizeDomain(bruto);
+    if (!dominio) return { ok: false, error: 'Domínio vazio.' };
+    const raiz = await resolveATodos(dominio);
+    const www = raiz.ips.length ? { ips: [] } : await resolveATodos(`www.${dominio}`);
+    const ips = [...new Set([...(raiz.ips || []), ...(www.ips || [])])];
+    return { ok: true, dominio, ips, marca: marcaPorIps(ips), resolveu: ips.length > 0 };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Backup do DNS antes de trocar o apontamento (ADR-119): grava o conteúdo num
+// .txt em Música\backup dns\{dominio}.txt. Sem esse backup, a automação NÃO
+// troca o DNS. Nome já existente é sobrescrito (o backup mais novo vale).
+ipcMain.handle('dns:backup', async (event, { dominio: bruto, conteudo } = {}) => {
+  try {
+    const dominio = normalizeDomain(bruto);
+    if (!dominio) return { ok: false, error: 'Domínio vazio.' };
+    const dir = path.join(app.getPath('music'), 'backup dns');
+    fs.mkdirSync(dir, { recursive: true });
+    const seguro = dominio.replace(/[^a-z0-9.\-]/gi, '_');
+    const destino = path.join(dir, `${seguro}.txt`);
+    const cabecalho = `Backup DNS de ${dominio}\nGerado pelo Hub em ${new Date().toLocaleString('pt-BR')}\n\n`;
+    fs.writeFileSync(destino, cabecalho + String(conteudo || ''), 'utf-8');
+    return { ok: true, caminho: destino };
+  } catch (e) {
+    return { ok: false, error: `Não consegui gravar o backup do DNS: ${e.message}` };
+  }
+});
 
 ipcMain.handle('dns:checkBatch', async (event, { domains }) => {
   const log = [];
@@ -5972,6 +7524,57 @@ function colunaLetra(n) {
   while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
   return s;
 }
+
+// Procura o domínio nas duas abas (MPI e Busca Cliente) de uma vez. Serve para
+// o Publicar em massa não parar perguntando "de qual empresa é?" quando o site
+// já está registrado numa delas — a resposta já está na planilha (ADR-095).
+// Só leitura: não escreve nada.
+ipcMain.handle('planilha:procurar', async (event, { dominio } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  try {
+    const alvo = normalizeDomain(String(dominio || ''));
+    if (!alvo) return { ok: false, error: 'Sem domínio para procurar.', log };
+    const cfg = readPublicacaoConfig();
+    const link = String(cfg.planilhaUrl || '').trim();
+    if (!link) return { ok: false, error: 'Link da planilha de publicações não configurado.', log };
+
+    const token = await msAccessToken();
+    const graph = (metodo, caminho) =>
+      msRequest(metodo, `https://graph.microsoft.com/v1.0${caminho}`, { headers: { Authorization: `Bearer ${token}` } });
+
+    const item = await graph('GET', `/shares/${shareIdDoLink(link)}/driveItem?$select=id,name,parentReference`);
+    if (item.status !== 200) throw new Error(`Não achei a planilha pelo link (${item.status}): ${msError(item)}`);
+    const driveId = item.body?.parentReference?.driveId;
+    const itemId = item.body?.id;
+    if (!driveId || !itemId) throw new Error('O Graph devolveu o item sem driveId/id.');
+
+    const abas = await graph('GET', `/drives/${driveId}/items/${itemId}/workbook/worksheets?$select=name`);
+    if (abas.status !== 200) throw new Error(`Não consegui listar as abas (${abas.status}): ${msError(abas)}`);
+    const nomes = (abas.body?.value || []).map((w) => w.name).filter(Boolean);
+
+    push(`Procurando ${alvo} nas abas ${PLANILHA_ABAS.join(' e ')} antes de perguntar a empresa`, 'cmd');
+    for (const abaPedida of PLANILHA_ABAS) {
+      const aba = escolherAba(abaPedida, nomes);
+      if (!aba) continue;
+      const base = `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(aba)}')`;
+      const usado = await graph('GET', `${base}/usedRange(valuesOnly=true)?$select=values,address`);
+      if (usado.status !== 200) throw new Error(`Não consegui ler a aba ${aba} (${usado.status}): ${msError(usado)}`);
+      const valores = usado.body?.values || [];
+      const faixa = linhasDoEndereco(usado.body?.address) || { primeiraLinha: 1 };
+      const i = valores.findIndex((l) => normalizeDomain(String(l?.[1] || '')) === alvo);
+      if (i >= 0) {
+        const numero = faixa.primeiraLinha + i;
+        push(`${alvo} já está na aba ${aba}, linha ${numero}.`, 'info');
+        return { ok: true, log, achado: { aba, abaPedida, linha: numero, onde: `${aba}!${numero}` } };
+      }
+    }
+    push(`${alvo} não está em nenhuma das duas abas.`, 'info');
+    return { ok: true, log, achado: null };
+  } catch (e) {
+    return { ok: false, error: e.message, reauth: !!e.reauth, log };
+  }
+});
 
 ipcMain.handle('planilha:registrar', async (event, { aba, linha, pularSeExistir }) => {
   const log = [];
@@ -6659,4 +8262,373 @@ ipcMain.handle('analytics:grantAccessBulk', async (event, { accountIds, role, cl
     push(`Erro: ${e.message}`, 'error');
     return { ok: false, error: e.message, log };
   }
+});
+
+// ---------- Redesign v2.4 (ADR-115): telemetria, terminal, filas e auditoria ----------
+
+// Memória e CPU de verdade, somando todos os processos do Electron (janela,
+// GPU, utilitários). A CPU é a diferença desde a última leitura, como o
+// Gerenciador de Tarefas faz; por isso a primeira leitura sai zero.
+ipcMain.handle('sistema:telemetria', () => {
+  try {
+    const metricas = typeof app.getAppMetrics === 'function' ? app.getAppMetrics() : [];
+    let memKb = 0;
+    let cpu = 0;
+    for (const m of metricas) {
+      memKb += (m.memory && m.memory.workingSetSize) || 0;
+      cpu += (m.cpu && m.cpu.percentCPUUsage) || 0;
+    }
+    if (!memKb) memKb = Math.round(process.memoryUsage().rss / 1024);
+    const nucleos = Math.max(1, require('os').cpus().length);
+    // percentCPUUsage é por núcleo (100 = um núcleo inteiro); normalizo para o
+    // total da máquina, que é o número que a pessoa compara com o Windows.
+    const cpuPct = Math.round((cpu / nucleos) * 10) / 10;
+    return { ok: true, memMb: Math.round(memKb / 1024), cpuPct, processos: metricas.length, pid: process.pid };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Comando manual no terminal do Hub. Roda no shell do Windows, um por vez,
+// e a saída vai chegando por evento, linha a linha, como num terminal de
+// verdade. É para teste rápido (nslookup, ping, curl, git) sem sair do app.
+let comandoAtual = null;
+ipcMain.handle('terminal:executar', (event, { comando, id } = {}) => {
+  const texto = String(comando || '').trim();
+  if (!texto) return { ok: false, error: 'Comando vazio.' };
+  if (comandoAtual) return { ok: false, error: 'Já tem um comando rodando. Espere terminar ou pare com "parar".' };
+  const { spawn } = require('child_process');
+  const cwd = require('os').homedir();
+  let filho;
+  try {
+    filho = spawn(texto, { shell: true, cwd, windowsHide: true, env: process.env });
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+  comandoAtual = { id, filho, inicio: Date.now() };
+  const enviar = (tipo, dados) => {
+    if (event.sender.isDestroyed()) return;
+    event.sender.send('terminal:saida', { id, tipo, texto: String(dados) });
+  };
+  // O Windows imprime na página de código do console (850/1252 no Brasil);
+  // decodifico como latin1 quando não for UTF-8 válido, para acento não virar
+  // interrogação.
+  const decodificar = (buf) => {
+    const utf8 = buf.toString('utf8');
+    return utf8.includes('�') ? buf.toString('latin1') : utf8;
+  };
+  filho.stdout.on('data', (d) => enviar('stdout', decodificar(d)));
+  filho.stderr.on('data', (d) => enviar('stderr', decodificar(d)));
+  const limite = setTimeout(() => { enviar('stderr', 'Passou de 120 s; encerrando o comando.\n'); try { filho.kill(); } catch (e) {} }, 120000);
+  filho.on('error', (e) => { clearTimeout(limite); comandoAtual = null; enviar('fim', JSON.stringify({ codigo: null, ms: 0, erro: e.message })); });
+  filho.on('close', (codigo) => {
+    clearTimeout(limite);
+    const ms = Date.now() - (comandoAtual ? comandoAtual.inicio : Date.now());
+    comandoAtual = null;
+    enviar('fim', JSON.stringify({ codigo, ms }));
+  });
+  return { ok: true, pid: filho.pid };
+});
+
+// Abre um link no navegador padrão. Só http(s), e só para o que o Hub
+// mesmo montou (o link da tarefa do Salesforce).
+ipcMain.handle('sistema:abrirLink', (event, { url } = {}) => {
+  try {
+    const u = new URL(String(url || ''));
+    if (!/^https?:$/.test(u.protocol)) return { ok: false, error: 'Só abro links http(s).' };
+    require('electron').shell.openExternal(u.toString());
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('terminal:parar', () => {
+  if (!comandoAtual) return { ok: true, parou: false };
+  try {
+    if (process.platform === 'win32') require('child_process').spawn('taskkill', ['/pid', String(comandoAtual.filho.pid), '/T', '/F'], { windowsHide: true });
+    else comandoAtual.filho.kill('SIGTERM');
+  } catch (e) { /* já morreu */ }
+  return { ok: true, parou: true };
+});
+
+// ---------- Git Bash dentro do Hub (ADR-128) ----------
+// Um bash de verdade, o do Git for Windows, num pseudoterminal do próprio
+// Windows (ConPTY, pelo node-pty): prompt colorido, setas, Tab, histórico e
+// programas interativos, como o terminal do Antigravity. É outro terminal, ao
+// lado do de atividade: aquele roda um comando por vez e mostra a saída como
+// linhas do log; este é o shell inteiro. Um por janela, que morre com ela e
+// com o Hub. O node-pty só carrega quando o bash abre.
+
+// Onde está o bash.exe: nas pastas de instalação do Git (a do usuário, em
+// AppData\Local\Programs, é a desta máquina) e, se não, ao lado do git do PATH.
+function acharGitBash(env = process.env, existe = (p) => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } }) {
+  const candidatos = [];
+  for (const base of [env.ProgramW6432, env.ProgramFiles, env['ProgramFiles(x86)'], env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs')]) {
+    if (base) candidatos.push(path.join(base, 'Git', 'bin', 'bash.exe'));
+  }
+  // O git do PATH mora em <Git>\cmd (ou <Git>\bin); o bash fica em <Git>\bin.
+  for (const dir of String(env.PATH || env.Path || '').split(path.delimiter)) {
+    const d = dir.trim().replace(/[\\/]+$/, '');
+    if (/[\\/](cmd|bin)$/i.test(d) && existe(path.join(d, 'git.exe'))) candidatos.push(path.join(path.dirname(d), 'bin', 'bash.exe'));
+  }
+  return candidatos.find((p) => existe(p)) || null;
+}
+
+// O número de build do Windows, que o xterm.js usa para acertar a quebra de
+// linha do ConPTY ao redimensionar.
+const buildDoWindows = () => Number(String(require('os').release()).split('.')[2]) || 0;
+
+const bashes = new Map(); // id do webContents -> { pty, shell, fila, timer, soltar }
+function fecharBash(id) {
+  const s = bashes.get(id);
+  if (!s) return false;
+  bashes.delete(id);
+  if (s.timer) clearTimeout(s.timer);
+  if (s.soltar) s.soltar();
+  try { s.pty.kill(); } catch (e) { /* já tinha saído */ }
+  return true;
+}
+
+ipcMain.handle('bash:abrir', (event, { cols, rows } = {}) => {
+  const wc = event.sender;
+  const ja = bashes.get(wc.id);
+  // A página recarregou com o bash vivo: segue o mesmo, a saída nova vai para ela.
+  if (ja) return { ok: true, jaAberto: true, shell: ja.shell, pid: ja.pty.pid, build: buildDoWindows() };
+  const shell = acharGitBash();
+  if (!shell) return { ok: false, error: 'Não achei o Git Bash nesta máquina. Instale o Git for Windows (git-scm.com) e abra de novo.' };
+  let pty;
+  try { pty = require('node-pty'); } catch (e) { return { ok: false, error: `o terminal não carregou (node-pty): ${e.message}` }; }
+  const tam = (n, padrao) => (Number.isFinite(n) && n >= 2 && n <= 1000 ? Math.floor(n) : padrao);
+  const cwd = require('os').homedir();
+  const opcoes = {
+    name: 'xterm-256color',
+    cols: tam(cols, 80),
+    rows: tam(rows, 24),
+    cwd,
+    // CHERE_INVOKING: o /etc/profile do Git fica na pasta em que abriu.
+    env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', CHERE_INVOKING: '1', TERM_PROGRAM: 'hub' },
+  };
+  // O ConPTY que vem com o node-pty (o conpty.dll do Windows Terminal), não o
+  // do Windows: com o do Windows, cada passo de redimensionar redesenhava a
+  // tela e as linhas saíam duplicadas e picadas (ADR-129). Ele pergunta ao
+  // terminal quem ele é (ESC [ c) e o xterm.js responde; sem resposta, espera
+  // ~3 s. Sem o conpty.dll (ou com o caminho até ele passando dos 260
+  // caracteres: erro 206), fica o do Windows, e a página avisa o motivo.
+  let p;
+  let conpty = 'node-pty';
+  let conptyErro = '';
+  try {
+    try {
+      p = pty.spawn(shell, ['--login', '-i'], { ...opcoes, useConptyDll: true });
+    } catch (e) {
+      conpty = 'windows';
+      conptyErro = e.message;
+      p = pty.spawn(shell, ['--login', '-i'], opcoes);
+    }
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+  const sessao = { pty: p, shell, fila: '', timer: null, soltar: null };
+  bashes.set(wc.id, sessao);
+  // A saída chega em rajadas de pedacinhos; junta por 8 ms para não mandar uma
+  // mensagem para a janela a cada pedaço.
+  const despejar = () => {
+    sessao.timer = null;
+    if (!sessao.fila) return;
+    const dados = sessao.fila;
+    sessao.fila = '';
+    if (!wc.isDestroyed()) wc.send('bash:dados', dados);
+  };
+  p.onData((d) => {
+    sessao.fila += d;
+    if (!sessao.timer) sessao.timer = setTimeout(despejar, 8);
+  });
+  p.onExit(({ exitCode }) => {
+    if (bashes.get(wc.id) !== sessao) return; // fechado pelo Hub: ninguém espera o aviso
+    if (sessao.timer) { clearTimeout(sessao.timer); despejar(); }
+    bashes.delete(wc.id);
+    if (sessao.soltar) sessao.soltar();
+    if (!wc.isDestroyed()) wc.send('bash:saiu', { codigo: exitCode });
+  });
+  const aoFecharJanela = () => fecharBash(wc.id);
+  wc.once('destroyed', aoFecharJanela);
+  sessao.soltar = () => { try { wc.removeListener('destroyed', aoFecharJanela); } catch (e) {} };
+  return { ok: true, shell, pid: p.pid, cwd, build: buildDoWindows(), conpty, conptyErro };
+});
+
+// Cada tecla é uma chamada; a página não espera a volta (não atrasa a digitação).
+ipcMain.handle('bash:escrever', (event, dados) => {
+  const s = bashes.get(event.sender.id);
+  if (!s || typeof dados !== 'string') return { ok: false };
+  s.pty.write(dados);
+  return { ok: true };
+});
+ipcMain.handle('bash:tamanho', (event, { cols, rows } = {}) => {
+  const s = bashes.get(event.sender.id);
+  if (!s || !(cols >= 2 && rows >= 2 && cols <= 1000 && rows <= 1000)) return { ok: false };
+  try { s.pty.resize(Math.floor(cols), Math.floor(rows)); } catch (e) { return { ok: false }; /* saiu no meio */ }
+  return { ok: true };
+});
+ipcMain.handle('bash:fechar', (event) => ({ ok: true, fechou: fecharBash(event.sender.id) }));
+app.on('before-quit', () => { for (const id of [...bashes.keys()]) fecharBash(id); });
+
+// As filas de Deploy do Salesforce (Group do tipo Queue) e as tarefas de cada
+// uma, mais as suas. É o que a tela inicial lista e o Kanban movimenta.
+// Colunas: "A fazer" é o status padrão da Tarefa, "Concluído" é o que tem
+// IsClosed, e "Em andamento" é qualquer outro aberto. Os nomes reais vêm
+// do TaskStatus da org, nunca de valor chutado aqui.
+async function sfColunasDeStatus(sf) {
+  const lista = await sf.consultar('SELECT MasterLabel, ApiName, IsClosed, IsDefault FROM TaskStatus ORDER BY SortOrder');
+  const fechado = lista.find((s) => s.IsClosed) || null;
+  const padrao = lista.find((s) => s.IsDefault && !s.IsClosed) || lista.find((s) => !s.IsClosed) || null;
+  const andamento = lista.find((s) => !s.IsClosed && !s.IsDefault && /andamento|progress|execu/i.test(`${s.MasterLabel} ${s.ApiName}`))
+    || lista.find((s) => !s.IsClosed && s.ApiName !== (padrao && padrao.ApiName)) || null;
+  const colunaDe = (status) => {
+    const s = lista.find((x) => x.ApiName === status || x.MasterLabel === status);
+    if (s && s.IsClosed) return 'concluido';
+    if (s && padrao && s.ApiName === padrao.ApiName) return 'afazer';
+    if (!s) return 'afazer';
+    return 'andamento';
+  };
+  return { lista, fechado, padrao, andamento, colunaDe };
+}
+
+const SF_CAMPOS_TAREFA_KANBAN = 'Id, Subject, Status, IsClosed, Priority, ActivityDate, OwnerId, Owner.Name, Owner.Type, WhatId, What.Name, What.Type, CreatedDate, CreatedById, CreatedBy.Name, LastModifiedDate, Description';
+
+ipcMain.handle('salesforce:tarefas', async () => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  try {
+    const saida = await sfComSessao(async (sf) => {
+      const eu = await sf.identidade();
+      const colunas = await sfColunasDeStatus(sf);
+      push("SOQL filas de Deploy (Group WHERE Type = 'Queue')", 'cmd');
+      const grupos = await sf.consultar("SELECT Id, Name, DeveloperName FROM Group WHERE Type = 'Queue' AND (Name LIKE '%Deploy%' OR Name LIKE '%Publica%')");
+      // Só as filas das marcas que o Hub atende (Busca Cliente e MPI
+      // Solutions). As outras (Ideal Marketing…) existem na org, mas não são
+      // do Guilherme, então não entram na home nem no Kanban.
+      const filas = grupos.map((g) => ({
+        id: g.Id,
+        nome: g.Name,
+        marca: /busca/i.test(g.Name) ? 'bc' : /mpi/i.test(g.Name) ? 'mpisolutions' : null,
+      })).filter((f) => f.marca);
+      for (const g of grupos) if (!filas.some((f) => f.id === g.Id)) push(`Fila ignorada (não é de uma marca do Hub): ${g.Name}`, 'info');
+      const donos = [eu.id, ...filas.map((f) => f.id)].map((id) => `'${escaparSoql(id)}'`).join(', ');
+      push(`SOQL tarefas abertas de ${filas.length} fila(s) e suas`, 'cmd');
+      const abertas = await sf.consultar(`SELECT ${SF_CAMPOS_TAREFA_KANBAN} FROM Task WHERE IsClosed = false AND OwnerId IN (${donos}) ORDER BY ActivityDate ASC NULLS LAST, CreatedDate DESC LIMIT 400`);
+      push('SOQL tarefas concluídas nos últimos 7 dias', 'cmd');
+      const fechadas = await sf.consultar(`SELECT ${SF_CAMPOS_TAREFA_KANBAN} FROM Task WHERE IsClosed = true AND OwnerId IN (${donos}) AND LastModifiedDate = LAST_N_DAYS:7 ORDER BY LastModifiedDate DESC LIMIT 200`);
+      const mapear = (t) => ({
+        id: t.Id,
+        assunto: t.Subject || '(sem assunto)',
+        status: t.Status,
+        coluna: colunas.colunaDe(t.Status),
+        fechada: !!t.IsClosed,
+        prioridade: t.Priority || '',
+        prazo: t.ActivityDate || null,
+        donoId: t.OwnerId,
+        dono: (t.Owner && t.Owner.Name) || '',
+        donoTipo: (t.Owner && t.Owner.Type) || '',
+        fila: filas.find((f) => f.id === t.OwnerId) ? t.OwnerId : null,
+        relativo: (t.What && t.What.Name) || '',
+        relativoTipo: (t.What && t.What.Type) || '',
+        relativoId: t.WhatId || null,
+        criada: t.CreatedDate,
+        alterada: t.LastModifiedDate,
+        // O comentário inteiro: é o que a tela da tarefa mostra (ADR-115).
+        descricao: mascararSegredos(String(t.Description || '')),
+        autor: (t.CreatedBy && t.CreatedBy.Name) || '',
+        autorId: t.CreatedById || null,
+        minha: t.OwnerId === eu.id,
+      });
+      const tarefas = [...abertas, ...fechadas].map(mapear);
+      push(`${abertas.length} aberta(s), ${fechadas.length} concluída(s) na semana.`, 'success');
+      return {
+        eu: { id: eu.id, nome: eu.nome, email: eu.email },
+        filas,
+        tarefas,
+        colunas: {
+          afazer: colunas.padrao ? { api: colunas.padrao.ApiName, rotulo: colunas.padrao.MasterLabel } : null,
+          andamento: colunas.andamento ? { api: colunas.andamento.ApiName, rotulo: colunas.andamento.MasterLabel } : null,
+          concluido: colunas.fechado ? { api: colunas.fechado.ApiName, rotulo: colunas.fechado.MasterLabel } : null,
+        },
+        instancia: sf.instanceUrl,
+      };
+    });
+    return { ok: true, log, ...saida };
+  } catch (e) {
+    push(`Salesforce: ${e.message}`, 'error');
+    return { ok: false, error: e.message, precisaReconectar: !!(e && (e.sessaoInvalida || e.status === 403 || e.reauth)), log };
+  }
+});
+
+// Mover um cartão no Kanban = trocar o Status da tarefa para o valor real da
+// coluna. Ir para "Em andamento" também assume a tarefa para você, porque
+// tarefa em andamento numa fila sem dono é ninguém fazendo.
+ipcMain.handle('salesforce:moverTarefa', async (event, { id, coluna } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  if (!/^00T[a-zA-Z0-9]{12,15}$/.test(String(id || ''))) return { ok: false, error: 'Id de tarefa inválido.', log };
+  if (!['afazer', 'andamento', 'concluido'].includes(coluna)) return { ok: false, error: 'Coluna desconhecida.', log };
+  try {
+    const saida = await sfComSessao(async (sf) => {
+      const colunas = await sfColunasDeStatus(sf);
+      const alvo = coluna === 'concluido' ? colunas.fechado : coluna === 'andamento' ? colunas.andamento : colunas.padrao;
+      if (!alvo) throw new Error(`A org não tem um status de Tarefa para "${coluna}".`);
+      const campos = { Status: alvo.ApiName };
+      if (coluna === 'andamento') {
+        const eu = await sf.identidade();
+        campos.OwnerId = eu.id;
+      }
+      push(`PATCH Task ${id} -> ${alvo.MasterLabel}${campos.OwnerId ? ' (assumida por você)' : ''}`, 'cmd');
+      await sf.atualizar('Task', id, campos);
+      push(`Tarefa movida para ${alvo.MasterLabel}.`, 'success');
+      return { status: alvo.ApiName, rotulo: alvo.MasterLabel, assumida: !!campos.OwnerId };
+    });
+    return { ok: true, log, ...saida };
+  } catch (e) {
+    push(`Salesforce: ${e.message}`, 'error');
+    return { ok: false, error: e.message, log };
+  }
+});
+
+// O que está configurado nesta máquina, sem revelar nada: só "tem" ou "não
+// tem". É o painel de auditoria das Configurações.
+ipcMain.handle('sistema:credenciais', () => {
+  const tenta = (f, padrao) => { try { return f() || padrao; } catch (e) { return padrao; } };
+  const gcfg = tenta(() => fs.existsSync(googleConfigPath()) ? JSON.parse(fs.readFileSync(googleConfigPath(), 'utf-8')) : null, {});
+  const oauthCfg = tenta(() => readOauthConfigFile(), {});
+  const msCfg = tenta(() => readMsConfig(), {});
+  const msTok = tenta(() => readMsToken(), null);
+  const sfTok = tenta(() => readSfToken(), null);
+  const sfCfg = tenta(() => readSfConfig(), {});
+  const bc = tenta(() => readEmpresaSegredos('bc'), {});
+  const mpi = tenta(() => readEmpresaSegredos('mpisolutions'), {});
+  const pub = tenta(() => readPublicacaoConfig(), {});
+  const painel = tenta(() => readPainelCreds(), null);
+  const doutor = tenta(() => readDoutorCreds(), null);
+  const dnsHist = tenta(() => readDnsHistKey(), null);
+  const item = (id, nome, ok, detalhe) => ({ id, nome, ok: !!ok, detalhe: detalhe || '' });
+  return {
+    ok: true,
+    itens: [
+      item('bitbucket', 'Bitbucket API', fs.existsSync(credsPath()), 'API Token gravado (DPAPI)'),
+      item('google_sa', 'Google Service Account', gcfg.saPath && fs.existsSync(gcfg.saPath), gcfg.saPath ? path.basename(gcfg.saPath) : 'sem caminho'),
+      item('google_oauth', 'Google OAuth Client', oauthCfg.clientId && oauthCfg.clientSecret, oauthCfg.clientId ? 'Client ID + Secret' : 'sem Client ID'),
+      item('salesforce', 'Salesforce', sfTok && sfTok.access_token, sfTok && sfTok.access_token ? (sfTok.nome || sfTok.email || 'conectado') : (sfCfg.dominio ? 'domínio salvo, sem sessão' : 'não configurado')),
+      item('microsoft', 'Microsoft Graph', msTok && (msTok.refresh_token || msTok.access_token), msTok ? (msTok.email || 'sessão ativa') : (msCfg.clientId ? 'app registrado, sem sessão' : 'sem registro no Azure')),
+      item('cloudflare_bc', 'Cloudflare · Busca Cliente', bc.cloudflareToken, bc.cloudflareToken ? 'token gravado' : 'sem token'),
+      item('cloudflare_mpi', 'Cloudflare · MPI Solutions', mpi.cloudflareToken, mpi.cloudflareToken ? 'token gravado' : 'sem token'),
+      item('registrobr_bc', 'Registro.br · Busca Cliente', bc.registrobrUsuario && bc.registrobrSenha, bc.registrobrUsuario || 'sem login'),
+      item('registrobr_mpi', 'Registro.br · MPI Solutions', mpi.registrobrUsuario && mpi.registrobrSenha, mpi.registrobrUsuario || 'sem login'),
+      item('painel', 'Painel MPI+', painel && painel.email && painel.senha, painel && painel.email ? painel.email : 'sem login'),
+      item('doutor', 'Painel /doutor', doutor && doutor.senha, doutor && doutor.emailMpi ? doutor.emailMpi : 'sem senha'),
+      item('dnshist', 'Histórico de DNS (WhoisXML)', dnsHist, dnsHist ? 'chave gravada' : 'opcional'),
+    ],
+    hestia: {
+      ip: pub.hestiaIpPublico || '',
+      servidor: ((pub.hestiaServidores || {})[pub.hestiaServidorPadrao]) || '',
+    },
+  };
 });

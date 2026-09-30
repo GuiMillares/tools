@@ -50,7 +50,9 @@ const cofre = {
   decryptString: (b) => String(b).replace(/^enc:/, ''),
 };
 
-const DIR = '/tmp/hub-dns';
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-dns-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const electronStub = {
   app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
   BrowserWindow: Object.assign(function () {}, { getAllWindows: () => [] }),
@@ -62,7 +64,7 @@ const googleFake = { auth: { GoogleAuth: function(){}, OAuth2: function(){} }, o
 const orig = Module._load;
 Module._load = (r, p, i) =>
   r === 'electron' ? electronStub
-  : r === 'googleapis' ? { google: googleFake }
+  : /[\\/]lib[\\/]google$/.test(r) ? { google: googleFake }
   : r === 'https' ? httpsStub
   : r === 'dns' ? dnsStub
   : orig(r, p, i);
@@ -76,9 +78,6 @@ const M = mod.exports;
 
 let falhas = 0;
 const check = (n, c, d = '') => { if (!c) falhas++; console.log(`${c ? '  ok  ' : ' FALHA'} ${n}${!c && d ? ' → ' + d : ''}`); };
-
-fs.mkdirSync(DIR, { recursive: true });
-try { fs.unlinkSync(path.join(DIR, 'dns-history-key.enc')); } catch (e) {}
 
 const porDominio = (res) => Object.fromEntries(res.resultados.map((r) => [r.dominio, r]));
 

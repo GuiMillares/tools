@@ -125,7 +125,9 @@ No resultado, etapa que você não pediu aparece como *não pedido*, não como f
 
 O `$idCliente` do template continua manual, é interno, não vem do Google. O `$idProjetoBusca` passou a ser preenchido pela tela (ver acima).
 
-**O JSON da service account não deve ficar dentro da pasta do projeto.** O campo de configuração aceita qualquer caminho absoluto, guarde o arquivo em outro lugar (por exemplo `%APPDATA%\\Hub\\`) e aponte o caminho para lá.
+**O JSON da service account não pode ficar dentro da pasta do projeto.** O campo de configuração aceita qualquer caminho absoluto: guarde o arquivo em `%APPDATA%\\pr-merge-tool\\`, junto dos outros dados do app, e aponte o caminho para lá.
+
+Isto não é preferência de organização. A pasta do projeto é um repositório git, e uma chave que esteve num repositório público está vazada para sempre — apagar o arquivo cria um commit novo, não apaga o antigo, e qualquer pessoa recupera o conteúdo com `git show <commit>:<arquivo>`. Já aconteceu uma vez (ADR-072). Se acontecer de novo, a ordem é: **revogar a chave no Google Cloud primeiro** (IAM e Admin → Contas de serviço → aba Chaves → excluir), criar uma nova, e só então cuidar do repositório. Enquanto a chave não for revogada, ela funciona na mão de quem a pegou.
 
 ### Modelos de container do GTM
 

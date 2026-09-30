@@ -333,15 +333,64 @@ Falha para a publicação com "Tentar de novo". Conferência do contato e troca 
 nameservers, quando falham, perguntam no terminal se pula. Não existe botão
 "Pular" fixo, e não há confirmação antes de publicar nem antes da planilha.
 
-### 4.8 Superfícies compartilhadas
+### 4.8 Salesforce Kanban — `salesforce`
 
-- **Tela inicial (Hub):** busca, ferramentas recentes e grid de cards por
-  categoria.
-- **Terminal de atividade:** painel direito fixo, presente em todas as
+As tarefas das filas de deploy do Salesforce (as filas `Deploy …`) e as suas,
+em três colunas: **A fazer**, **Em andamento** e **Concluído** (o que fechou
+nos últimos 7 dias). As colunas são os status reais da org, lidos do
+`TaskStatus`, não nomes fixos (ADR-115).
+
+- A tela inicial lista as duas filas com as próximas tarefas de cada uma e o
+  botão **Kanban**, que abre o quadro já filtrado naquela fila.
+- Arrastar um cartão (ou usar as setas) troca o Status no Salesforce. Mover
+  para "Em andamento" também assume a tarefa no seu nome.
+- Só as filas da Busca Cliente e da MPI Solutions aparecem; as outras filas
+  da org (Ideal Marketing, por exemplo) ficam de fora.
+- Clicar no cartão abre a tarefa: título, comentário, autor, responsável,
+  prazo e o registro relacionado, com botões para mover, copiar o link e
+  abrir no Salesforce. Sem Salesforce conectado, a home diz isso e aponta
+  para as Configurações; nada é inventado.
+
+### 4.9 Superfícies compartilhadas
+
+- **Tela inicial (Hub):** saudação com o nome de quem está logado, as filas
+  de deploy do Salesforce, o resumo das suas tarefas (abertas, entregas em
+  menos de 24h, sem prazo) e WHOIS/DNS de um domínio (ADR-113, ADR-115). As
+  ferramentas ficam na barra lateral; a grade "Automações & scripts" saiu
+  (ADR-127).
+- **Terminal de atividade:** painel direito, presente em todas as
   ferramentas. É onde toda chamada de API e todo aviso aparecem. Ver ADR-011.
-- **Configurações (engrenagem):** credenciais do Bitbucket, estratégia de merge,
-  workspace, caminho da service account, credenciais OAuth, registro do Azure e
-  chave da API de histórico de DNS.
+  Minimiza (vira um trilho fino que conta o que chegou, em vermelho se veio
+  erro) e fecha (o meio fica com a largura toda); volta pelo "Atividade" da
+  barra lateral, e sozinho quando o Hub pergunta algo (ADR-128).
+  Mostra as últimas 3.000 linhas (vai até 3.300 antes de cortar); as mais
+  antigas ficam no arquivo do dia, em Documentos\Hub\logs, e a primeira linha
+  do terminal avisa quando o corte começou. Pergunta ainda sem resposta nunca
+  sai da tela (ADR-096, ADR-109). Tem **linha de comando**: o que você digita
+  roda no shell do Windows (nslookup, ping, curl, git…), com `dns`, `whois`,
+  `limpar`, `parar` e `ajuda` do próprio Hub, e **atalhos** (`#dns`,
+  `#whois`, `#testar-dns-todos`…) que já pegam o domínio da tela (ADR-115).
+  "Copiar" copia o que está na tela.
+- **Git Bash:** um bash de verdade (o do Git for Windows, com o seu perfil,
+  prompt e cores), embaixo do painel do meio, com a cara do terminal do
+  Antigravity. Abre pelo "Git Bash" da barra lateral ou Ctrl+Shift+'; a borda
+  de cima muda a altura; `+` abre outro, a lixeira encerra, e ele maximiza,
+  minimiza e fecha (fechado, o bash continua vivo até a lixeira). Ctrl+C copia
+  a seleção (sem seleção, interrompe); Ctrl+V cola (ADR-128). Redimensionar
+  não duplica nem pica linhas: o bash roda no ConPTY do Windows Terminal (que
+  vem no node-pty) e só fica sabendo do tamanho novo quando a borda é solta
+  (ADR-129).
+- **Topo:** a busca (Ctrl+K: Enter abre o módulo pelo nome, sem ligar para
+  acento, ou consulta o WHOIS se for um domínio, ADR-127), memória e CPU de
+  verdade (soma dos processos do Electron) e quem está logado. Não há rodapé nem pílulas de sessão: o que
+  está conectado e configurado (Bitbucket, Salesforce, Microsoft,
+  Cloudflare, Registro.br, servidor Hestia) aparece na auditoria de
+  credenciais das Configurações, que lê tudo ao abrir (ADR-126).
+- **Configurações:** uma tela com seis abas: Geral & Git, Contas Google &
+  Azure, Cloudflare & Registro.br, Salesforce & Servidores, Painéis & /Doutor
+  e Conceder acesso (a ferramenta 4.4 mora aqui). Em cima, a auditoria de
+  credenciais diz o que está gravado nesta máquina, sem revelar valor, e
+  "Testar todas" confere as sessões no terminal. Ctrl+S salva.
 
 ## 5. Fora de escopo
 
@@ -368,10 +417,30 @@ conversa antes de virar código:
   janela do painel é reaproveitada entre as etapas e as esperas são por
   condição, não por tempo fixo (ADR-072); o que sobra de espera é o relógio
   dos outros: propagação de DNS, job de publicação, emissão do certificado.
+- **Consumo medido** (ADR-106 a ADR-109, ADR-125 e ADR-126, i5 de 4 núcleos
+  e 16 GB). **O Hub parado não desenha: 0,06% da máquina**, contra 3,8% na
+  mesma tela (1366×720) e ~11% no monitor de 2560×1080 com o redesign v2.4 de
+  29/09, que tinha pontos pulsando para sempre. Nada pulsa para sempre: o
+  "ocupado" e o "pendente" piscam em degraus e só com a janela em foco (0,7%
+  enquanto algo roda; esmaecendo seriam 2,2% a 4%). A janela desacelera em
+  segundo plano, menos durante a rodada em massa, a automação e as etapas da
+  publicação. Ao abrir, 1,35 s e ~390 MB somando os processos do Electron. O
+  Google só é carregado na primeira ação que usa ele (~0,35 s a mais, uma vez
+  por sessão). Abrir uma ferramenta leva ~26 ms (mediana), a lista de uma
+  rodada de 32 sites ~60 ms (0,8 s com 3.000), e a tela do terminal guarda só
+  as últimas linhas. Quem mexer em algo que pese mede antes e depois com `npm
+  run medir` (com `--por-cima` para a medida não depender das outras janelas);
+  consumo "visível" só vale com prova de que a janela desenhou, e o medidor
+  traz a prova: conta os quadros antes do parado e do minimizado, anota se a
+  janela estava minimizada e marca como inválido o parado com a janela
+  minimizada ou escondida, ou mexida no meio (ADR-126, ADR-130). `npm test`
+  roda a suíte inteira e `npm run bench` as partes locais.
 - **Offline:** o app abre e navega sem rede; as operações falham com mensagem
   clara.
 - **Acessibilidade:** anel de foco visível e consistente; navegação por teclado
   nos campos principais (Enter dispara a ação da tela).
+- **Movimento:** abertura, troca de tela, hover e clique têm animação curta
+  (nada passa de 400 ms) e `prefers-reduced-motion` desliga tudo (ADR-115).
 
 ## 7. Pré-requisitos de configuração
 
@@ -398,6 +467,9 @@ Sem isso o app abre mas não faz nada útil:
    que bater com a constante `MS_SCOPES` do código: escopo que o app pede e o
    registro não declara falha na renovação da sessão com `AADSTS65001`, não na
    hora de usar (ver ADR-068).
+6. **Git for Windows**, para o Git Bash dentro do Hub. A instalação por usuário
+   (`AppData\Local\Programs\Git`) serve; sem ela, o resto do Hub funciona e o
+   Git Bash diz o que instalar (ADR-128).
 
 ## 8. Como o produto cresce
 

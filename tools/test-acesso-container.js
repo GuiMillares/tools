@@ -12,8 +12,11 @@ const Module = require('module');
 const fs = require('fs');
 
 const handlers = {};
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-acesso-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const electronStub = {
-  app: { getPath: () => '/tmp/hub-test', whenReady: () => ({ then: () => ({}) }), on() {} },
+  app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
   BrowserWindow: Object.assign(function () {}, { getAllWindows: () => [] }),
   ipcMain: { handle(n, f) { handlers[n] = f; } },
   safeStorage: { isEncryptionAvailable: () => false }, clipboard: { writeText() {} },
@@ -24,7 +27,7 @@ const googleFake = {
   options() {}, analyticsadmin: () => ({}), tagmanager: () => ({}),
 };
 const orig = Module._load;
-Module._load = (r,p,i) => r==='electron'?electronStub : r==='googleapis'?{google:googleFake} : orig(r,p,i);
+Module._load = (r,p,i) => r==='electron'?electronStub : /[\\/]lib[\\/]google$/.test(r)?{google:googleFake} : orig(r,p,i);
 const src = fs.readFileSync(path.join(__dirname,'..','main.js'),'utf-8');
 const mod = { exports: {} };
 new Function('require','module','exports','__dirname','__filename',

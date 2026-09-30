@@ -1,6 +1,6 @@
 {
   "name": "pr-merge-tool",
-  "version": "1.0.22",
+  "version": "1.0.53",
   "description": "Ferramenta local para revisar e mergear PRs do Bitbucket Cloud sem passar pela interface web",
   "main": "main.js",
   "author": "Guilherme",
@@ -9,7 +9,10 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win",
-    "atualizar": "node tools/atualizar.js"
+    "atualizar": "node tools/atualizar.js",
+    "test": "node tools/rodar-testes.js",
+    "bench": "node tools/bench.js",
+    "medir": "node tools/medir-recursos.js"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -17,12 +20,19 @@
     "playwright": "^1.62.1"
   },
   "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "googleapis": "^176.0.0",
+    "node-pty": "^1.1.0",
     "xlsx": "^0.18.5"
   },
   "build": {
     "appId": "com.castrotech.prmergetool",
     "productName": "PR Merge Tool",
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico"
@@ -34,7 +44,13 @@
       "renderer/**/*",
       "templates/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/node-pty/**/*.pdb",
+      "!node_modules/node-pty/prebuilds/darwin-*/**",
+      "!node_modules/node-pty/prebuilds/win32-arm64/**",
+      "!node_modules/node-pty/{src,deps,third_party,scripts,node_modules}/**",
+      "!node_modules/node-pty/lib/**/*.test.js",
+      "!node_modules/@xterm/*/src/**"
     ]
   },
   "allowScripts": {

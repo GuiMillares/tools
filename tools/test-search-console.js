@@ -16,6 +16,11 @@ let updateErro = null;
 // que a ADR-049 conserta.
 let scChamadas = [];
 let scListaResp = () => ({ data: { siteEntry: [] } });
+// A sessão da marca recusada pelo Google (ADR-099): toda chamada com ela cai.
+let oauthRecusado = false;
+const recusa = (p) => {
+  if (oauthRecusado && p.auth) throw Object.assign(new Error('invalid_grant'), { response: { data: { error: 'invalid_grant', error_description: 'Token has been expired or revoked.' } } });
+};
 
 const googleFake = {
   auth: {
@@ -29,11 +34,11 @@ const googleFake = {
   options() {},
   searchconsole: () => ({
     sites: {
-      add: async (p) => { scChamadas.push({ op: 'sites.add', auth: p.auth?.marcador || null, siteUrl: p.siteUrl }); return { data: {} }; },
-      list: async (p) => { scChamadas.push({ op: 'sites.list', auth: p.auth?.marcador || null }); return scListaResp(); },
+      add: async (p) => { scChamadas.push({ op: 'sites.add', auth: p.auth?.marcador || null, siteUrl: p.siteUrl }); recusa(p); return { data: {} }; },
+      list: async (p) => { scChamadas.push({ op: 'sites.list', auth: p.auth?.marcador || null }); recusa(p); return scListaResp(); },
     },
     sitemaps: {
-      submit: async (p) => { scChamadas.push({ op: 'sitemaps.submit', auth: p.auth?.marcador || null, feedpath: p.feedpath }); return { data: {} }; },
+      submit: async (p) => { scChamadas.push({ op: 'sitemaps.submit', auth: p.auth?.marcador || null, feedpath: p.feedpath }); recusa(p); return { data: {} }; },
     },
   }),
   analyticsadmin: () => ({ accountSummaries: { list: async () => ({ data: {} }) } }),
@@ -52,7 +57,9 @@ const googleFake = {
   }),
 };
 
-const DIR = '/tmp/hub-sc';
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-sc-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const electronStub = {
   app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
   BrowserWindow: Object.assign(function () {}, { getAllWindows: () => [] }),
@@ -68,7 +75,7 @@ const httpsStub = {
     const url = `https://${options.hostname}${options.path}`;
     let corpo = '';
     const req = {
-      on() { return req; },
+      on(ev, fn) { if (ev === 'error') req._erro = fn; return req; },
       // buscarInicioDaPagina põe um timeout na requisição; sem isto o teste
       // morre antes de chegar no Search Console.
       setTimeout() { return req; },
@@ -76,6 +83,8 @@ const httpsStub = {
       write(c) { corpo += c; },
       end() {
         const r = httpResponder(url, options.method, corpo);
+        // Erro de rede/TLS (ADR-100): a requisição falha antes da resposta.
+        if (r.erroRede) { setImmediate(() => req._erro && req._erro(new Error(r.erroRede))); return; }
         const res = {
           statusCode: r.statusCode, headers: r.headers || {}, setEncoding() {}, resume() {},
           on(ev, fn) { if (ev === 'data' && r.body) fn(r.body); if (ev === 'end') setImmediate(fn); return res; },
@@ -90,11 +99,14 @@ const httpsStub = {
 const orig = Module._load;
 Module._load = (r, p, i) =>
   r === 'electron' ? electronStub
-  : r === 'googleapis' ? { google: googleFake }
+  : /[\\/]lib[\\/]google$/.test(r) ? { google: googleFake }
   : r === 'https' ? httpsStub
   : orig(r, p, i);
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+// As esperas de verdade (5 a 30 s entre tentativas) viram milissegundos aqui:
+// o que se testa é a ordem e a quantidade de tentativas, não o relógio.
+const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8')
+  .replace('const SC_ESPERAS_MS = [0, 5000, 10000, 20000, 30000];', 'const SC_ESPERAS_MS = [0, 5, 10, 20, 30];');
 const mod = { exports: {} };
 new Function('require','module','exports','__dirname','__filename',
   src + ';module.exports={googleAccountFor,bitbucketError,resolveRepo,listBitbucketWorkspaces,searchConsoleSiteUrl,searchConsoleMethodFor,searchConsoleVerifyMethodFor,painelScValueMethodFor,buildFileVerificationValue,brandHasBitbucket,BITBUCKET_SCOPE_HINT};')
@@ -104,7 +116,6 @@ const M = mod.exports;
 let falhas = 0;
 const check = (n, c, d = '') => { if (!c) falhas++; console.log(`${c ? '  ok  ' : ' FALHA'} ${n}${!c && d ? ' → ' + d : ''}`); };
 
-fs.mkdirSync(DIR, { recursive: true });
 const SA = path.join(DIR, 'sa.json');
 fs.writeFileSync(SA, JSON.stringify({ project_id: 'proj', client_email: 'bot@proj.iam.gserviceaccount.com' }));
 const escreveConfig = (cfg) => fs.writeFileSync(path.join(DIR, 'google-config.json'), JSON.stringify(cfg));
@@ -347,6 +358,20 @@ const texto = (r) => (r.log || []).map((l) => l.message).join(' | ');
     const semLista = (r.log || []).map((l) => l.message).join(' | ');
     check('lista vazia vira aviso, não silêncio', /não lista/.test(semLista), semLista.slice(-250));
 
+    // O log do print: invalid_grant na sessão da marca (ADR-099).
+    oauthRecusado = true;
+    r = await preparar();
+    oauthRecusado = false;
+    const caiu = (r.log || []).map((l) => l.message).join(' | ');
+    check('invalid_grant: diz que é o login da conta, não a API', /não aceita mais a sessão de bcrelatoriotags@gmail\.com.*Não é a API/.test(caiu), caiu.slice(-500));
+    check('explica o modo "Teste" de 7 dias', /7 dias/.test(caiu) && /Tela de consentimento OAuth/.test(caiu));
+    check('não fala mais em API desabilitada', !/API desabilitada|está desabilitada/.test(caiu), caiu.slice(-300));
+    check('avisa uma vez só', (caiu.match(/não aceita mais a sessão/g) || []).length === 1, caiu);
+    check('registra de novo pela service account', scChamadas.filter((c) => c.op === 'sites.add').map((c) => c.auth).join() === 'oauth-de-usuario,', JSON.stringify(scChamadas));
+    check('e manda o sitemap pela service account', scChamadas.filter((c) => c.op === 'sitemaps.submit').every((c) => c.auth === null) && r.sitemapOk === true, JSON.stringify(scChamadas));
+    check('apaga o token morto (a tela passa a mostrar desconectado)', !fs.existsSync(tokenMpiPlus));
+    check('o resultado diz que a sessão caiu', r.sessaoMarcaRecusada === true && r.registradaPor === 'a service account', JSON.stringify({ s: r.sessaoMarcaRecusada, p: r.registradaPor }));
+
     limpaToken();
   }
 
@@ -375,6 +400,22 @@ const texto = (r) => (r.log || []).map((l) => l.message).join(' | ');
     httpResponder = () => ({ statusCode: 200, body: '<html></html>' });
     r = await handlers['searchconsole:prepare'](null, { siteUrl: 'https://teste.com.br/', saPath: SA, brand: 'mpiplus', analyticsId: 'G-X' });
     check('sem tag: recusa dizendo que não achou a tag', r.ok === false && /não achei nem a tag/.test(r.error), r.error);
+  }
+
+  console.log('\n=== SSL de produção ainda não ativo: certificado do servidor (ADR-100) ===');
+  {
+    escreveConfig({ saPath: SA, brandAccounts: { mpiplus: 'bcrelatoriotags@gmail.com' } });
+    let tentativas = 0;
+    httpResponder = () => { tentativas++; return { erroRede: "Hostname/IP does not match certificate's altnames: Host: clinicamagarinos.com.br. is not in the cert's altnames: DNS:srv-wp-02.idealplus.idealtrends.io" }; };
+    const inicio = Date.now();
+    const r = await handlers['searchconsole:prepare'](null, { siteUrl: 'https://clinicamagarinos.com.br/', saPath: SA, brand: 'mpiplus', analyticsId: 'G-SJYXZH0ZCM' });
+    check('não fica esperando: para na primeira tentativa', tentativas === 1 && Date.now() - inicio < 3000, `${tentativas} tentativas, ${Date.now() - inicio}ms`);
+    check('marca como SSL pendente', r.ok === false && r.sslPendente === true, JSON.stringify({ ok: r.ok, s: r.sslPendente }));
+    check('explica que é o SSL de produção, com o nome do servidor', /HTTPS de clinicamagarinos\.com\.br ainda não tem o certificado do domínio \(o servidor responde com o de srv-wp-02\.idealplus\.idealtrends\.io\): o SSL de produção não está ativo/.test(r.error), r.error);
+    check('não fala mais em "sincronize as integrações"', !/Sincronize as integrações/.test(r.error));
+    const fonte = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+    const ehCert = new Function(`${fonte.slice(fonte.indexOf('function ehErroDeCertificado('), fonte.indexOf('function erroSslPendente('))} return ehErroDeCertificado;`)();
+    check('erro de rede comum não vira SSL pendente', !ehCert('getaddrinfo ENOTFOUND x') && !ehCert('tempo esgotado') && ehCert('self signed certificate'));
   }
 
   Module._load = orig;

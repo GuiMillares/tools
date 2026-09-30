@@ -1,3 +1,19 @@
 node_modules
 dist
-hub-automacao-189437b5726a.json
+
+# Chaves de service account do Google. A regra é larga de propósito: a linha
+# antiga citava um nome de arquivo só, e não protegeu nada — o arquivo já estava
+# rastreado quando ela entrou, e gitignore não desrastreia (ADR-072).
+#
+# O lugar certo da chave é FORA do projeto, em %APPDATA%\pr-merge-tool. Isto
+# aqui é a segunda linha de defesa, não a primeira.
+hub-automacao*.json
+*service-account*.json
+*service_account*.json
+*-key.json
+*.pem
+.env
+.env.*
+
+# Screenshots do harness de preview (tools/preview.js)
+shots

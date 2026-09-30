@@ -8,7 +8,9 @@ const Module = require('module');
 const fs = require('fs');
 
 const handlers = {};
-const DIR = '/tmp/hub-planilha';
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-planilha-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const cofre = { isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from('enc:' + s), decryptString: (b) => String(b).replace(/^enc:/, '') };
 const electronStub = {
   app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
@@ -62,12 +64,10 @@ const httpsStub = {
 const orig = Module._load;
 Module._load = (r, p, i) =>
   r === 'electron' ? electronStub
-  : r === 'googleapis' ? { google: { auth: { GoogleAuth: function () {}, OAuth2: function () {} }, options() {} } }
+  : /[\\/]lib[\\/]google$/.test(r) ? { google: { auth: { GoogleAuth: function () {}, OAuth2: function () {} }, options() {} } }
   : r === 'https' ? httpsStub
   : orig(r, p, i);
 
-fs.rmSync(DIR, { recursive: true, force: true });
-fs.mkdirSync(DIR, { recursive: true });
 // Sessão da Microsoft já conectada e válida, e a planilha configurada.
 fs.writeFileSync(path.join(DIR, 'ms-config.json'), JSON.stringify({ clientId: 'cid', tenant: 'tid' }));
 fs.writeFileSync(path.join(DIR, 'ms-token.enc'), 'enc:' + JSON.stringify({ access_token: 'tok', refresh_token: 'r', expiresAt: Date.now() + 3600e3, email: 'g@x' }));

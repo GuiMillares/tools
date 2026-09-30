@@ -10,7 +10,9 @@ const fs = require('fs');
 
 const handlers = {};
 let janelas = 0;
-const DIR = '/tmp/hub-pub';
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-pub-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const cofre = { isEncryptionAvailable: () => true, encryptString: (s) => Buffer.from('enc:' + s), decryptString: (b) => String(b).replace(/^enc:/, '') };
 // Uma janela de mentira para o cache do painel (ADR-072): carrega na hora,
 // nunca pede login, e conta quantas vezes foi criada e destruída.
@@ -129,13 +131,10 @@ const dnsStub = { promises: { Resolver: function () { return resolverFake; }, as
 const orig = Module._load;
 Module._load = (r, p, i) =>
   r === 'electron' ? electronStub
-  : r === 'googleapis' ? { google: { auth: { GoogleAuth: function () {}, OAuth2: function () {} }, options() {} } }
+  : /[\\/]lib[\\/]google$/.test(r) ? { google: { auth: { GoogleAuth: function () {}, OAuth2: function () {} }, options() {} } }
   : r === 'https' ? httpsStub
   : r === 'dns' ? dnsStub
   : orig(r, p, i);
-
-fs.rmSync(DIR, { recursive: true, force: true });
-fs.mkdirSync(DIR, { recursive: true });
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
 const mod = { exports: {} };

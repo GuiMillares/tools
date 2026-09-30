@@ -8,8 +8,11 @@
 // por conta, e a distinção entre sessão expirada e escopo insuficiente.
 const path = require('path'); const Module = require('module'); const fs = require('fs');
 const handlers = {};
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-conceder-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const electronStub = {
-  app: { getPath: () => '/tmp/hub-test', whenReady: () => ({ then: () => ({}) }), on() {} },
+  app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
   BrowserWindow: Object.assign(function () {}, { getAllWindows: () => [] }),
   ipcMain: { handle(n, f) { handlers[n] = f; } },
   safeStorage: { isEncryptionAvailable: () => false }, clipboard: { writeText() {} },
@@ -36,7 +39,7 @@ const googleFake = {
   }),
 };
 const orig = Module._load;
-Module._load = (r,p,i) => r==='electron'?electronStub : r==='googleapis'?{google:googleFake} : orig(r,p,i);
+Module._load = (r,p,i) => r==='electron'?electronStub : /[\\/]lib[\\/]google$/.test(r)?{google:googleFake} : orig(r,p,i);
 const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'),'utf-8');
 new Function('require','module','exports','__dirname','__filename', src)
   (require, {exports:{}}, {}, path.join(__dirname, '..'), path.join(__dirname, '..', 'main.js'));
@@ -45,10 +48,9 @@ let falhas = 0;
 const check = (n,c,d='') => { if(!c) falhas++; console.log(`${c?'  ok  ':' FALHA'} ${n}${!c&&d?' → '+d:''}`); };
 
 (async () => {
-  fs.mkdirSync('/tmp/hub-test', { recursive: true });
-  fs.writeFileSync('/tmp/hub-test/oauth-token.json', JSON.stringify({ access_token:'a', refresh_token:'r', email:'guilherme@x' }));
-  fs.writeFileSync('/tmp/hub-test/google-config.json', JSON.stringify({ saPath: '/tmp/hub-test/sa.json' }));
-  fs.writeFileSync('/tmp/hub-test/sa.json', JSON.stringify({ project_id:'p', client_email:'hub-bot@hub-automacao.iam.gserviceaccount.com' }));
+  fs.writeFileSync(path.join(DIR, 'oauth-token.json'), JSON.stringify({ access_token:'a', refresh_token:'r', email:'guilherme@x' }));
+  fs.writeFileSync(path.join(DIR, 'google-config.json'), JSON.stringify({ saPath: path.join(DIR, 'sa.json') }));
+  fs.writeFileSync(path.join(DIR, 'sa.json'), JSON.stringify({ project_id:'p', client_email:'hub-bot@hub-automacao.iam.gserviceaccount.com' }));
 
   console.log('\n=== Listar contas do GTM por marca ===');
   const r1 = await handlers['tagmanager:listBrandAccounts'](null, { brand:'mpisolutions', clientId:'c', clientSecret:'s' });

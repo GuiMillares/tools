@@ -1,6 +1,6 @@
 // Teste do motor de template do GTM (ADR-015) contra uma API do Tag Manager
 // simulada. Não toca em rede: carrega o main.js num contexto onde `electron` e
-// `googleapis` são dublês, e chama applyGtmTemplate direto.
+// o `google` (lib/google.js, ADR-107) são dublês, e chama applyGtmTemplate direto.
 //
 //     node tools/test-gtm-template.js
 //
@@ -16,8 +16,11 @@ const Module = require('module');
 
 const handlers = {};
 
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = require('fs').mkdtempSync(path.join(require('os').tmpdir(), 'hub-gtm-'));
+process.on('exit', () => require('fs').rmSync(DIR, { recursive: true, force: true }));
 const electronStub = {
-  app: { getPath: () => '/tmp/hub-test', whenReady: () => ({ then: () => ({}) }), on() {} },
+  app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
   BrowserWindow: Object.assign(function () {}, { getAllWindows: () => [] }),
   ipcMain: { handle(nome, fn) { handlers[nome] = fn; } },
   safeStorage: { isEncryptionAvailable: () => false },
@@ -48,7 +51,7 @@ const googleStub = { google: googleFake };
 const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request === 'electron') return electronStub;
-  if (request === 'googleapis') return googleStub;
+  if (/[\\/]lib[\\/]google$/.test(request)) return googleStub;
   return originalLoad(request, parent, isMain);
 };
 
@@ -469,7 +472,7 @@ async function roda(brand, opts = {}, measurementId = 'G-NOVO123ABC') {
 
   console.log('\n=== Verificação ponta a ponta: os 4 cenários do relato ===');
   {
-    const saFake = '/tmp/hub-test-sa.json';
+    const saFake = path.join(DIR, 'sa-fake.json');
     require('fs').writeFileSync(saFake, JSON.stringify({ project_id: 'x', client_email: 'y' }));
 
     // Contas como o Google realmente devolve.
@@ -485,7 +488,7 @@ async function roda(brand, opts = {}, measurementId = 'G-NOVO123ABC') {
     googleFake._analyticsadmin = {
       accounts: { list: async () => ({ data: { accounts: contasReais.map((c) => ({ name: c.name, displayName: c.displayName })) } }) },
     };
-    require('fs').writeFileSync('/tmp/hub-test/oauth-token.json', JSON.stringify({ access_token: 'a', refresh_token: 'r', email: 'ferramentasmpisolutions@x' }));
+    require('fs').writeFileSync(path.join(DIR, 'oauth-token.json'), JSON.stringify({ access_token: 'a', refresh_token: 'r', email: 'ferramentasmpisolutions@x' }));
     const r1 = await handlers['analytics:listBrandAccounts'](null, { brand: 'mpisolutions', clientId: 'c', clientSecret: 's' });
     check('(1) MPI Solutions aparece em "Conceder acesso"', r1.ok && r1.accounts.length === 1, JSON.stringify(r1.accounts || r1.error));
     check('(1) com o ID 331619898', r1.accounts?.[0]?.id === '331619898', r1.accounts?.[0]?.id);
@@ -580,9 +583,16 @@ async function roda(brand, opts = {}, measurementId = 'G-NOVO123ABC') {
       },
     };
 
-    const saFake = '/tmp/hub-test-sa.json';
-    require('fs').mkdirSync('/tmp', { recursive: true });
+    const saFake = path.join(DIR, 'sa-fake.json');
     require('fs').writeFileSync(saFake, JSON.stringify({ project_id: 'x', client_email: 'y' }));
+
+    // A busca guarda o domínio de cada data stream num cache em disco (ADR-131),
+    // na pasta de dados, que aqui é a mesma para o arquivo inteiro: sem limpar,
+    // uma busca vê o que a outra leu (o caso (4) acima deixa as propriedades 1 e
+    // 2 no cache com streams vazios).
+    const cacheStreams = path.join(DIR, 'analytics-streams-cache.json');
+    const semCache = () => require('fs').rmSync(cacheStreams, { force: true });
+    semCache();
 
     const r = await handlers['google:findExisting'](null, { query: 'clinicasaovicente.com.br', saPath: saFake, brand: 'bc' });
     check('a busca respondeu ok', r.ok, r.error);
@@ -593,6 +603,13 @@ async function roda(brand, opts = {}, measurementId = 'G-NOVO123ABC') {
     check('propriedade da MPI ficou fora do escopo do bc', !r.analytics.some((a) => a.account.includes('MPI')));
     check('GTM só da conta no escopo', r.gtm.length === 1 && r.gtm[0].publicId === 'GTM-BC1', JSON.stringify(r.gtm.map(g=>g.publicId)));
 
+    // ADR-131: o que foi lido fica no cache, e a mesma busca de novo não gasta API.
+    const lidoNoCache = (() => { try { return JSON.parse(require('fs').readFileSync(cacheStreams, 'utf-8')); } catch (e) { return {}; } })();
+    check('guardou no cache o domínio de cada propriedade lida', ['properties/1', 'properties/2', 'properties/3'].every((p) => Array.isArray(lidoNoCache[p]?.web)) && lidoNoCache['properties/2'].web[0]?.measurementId === 'G-BBB', Object.keys(lidoNoCache).join(','));
+    listadas = 0;
+    const rCache = await handlers['google:findExisting'](null, { query: 'clinicasaovicente.com.br', saPath: saFake, brand: 'bc' });
+    check('a 2ª busca pelo mesmo domínio acha pelo cache, sem chamar a API', rCache.analytics.length === 1 && rCache.analytics[0]?.measurementIds[0]?.measurementId === 'G-BBB' && listadas === 0, `${rCache.analytics.length} achada(s), ${listadas} chamada(s)`);
+
     // mesma busca com a marca MPI Solutions: agora só a conta dela
     listadas = 0;
     const r2 = await handlers['google:findExisting'](null, { query: 'clinicasaovicente.com.br', saPath: saFake, brand: 'mpisolutions' });
@@ -600,11 +617,14 @@ async function roda(brand, opts = {}, measurementId = 'G-NOVO123ABC') {
     check('MPI Solutions acha o G-MPI', r2.analytics[0]?.measurementIds[0]?.measurementId === 'G-MPI');
     check('MPI Solutions acha o GTM dela', r2.gtm.length === 1 && r2.gtm[0].publicId === 'GTM-MPI');
 
-    // busca por pedaço do nome, sem TLD
+    // busca por pedaço do nome, sem TLD (sem cache: o casamento na leitura da API)
+    semCache();
     const r3 = await handlers['google:findExisting'](null, { query: 'clinicasaovicente', saPath: saFake, brand: 'bc' });
     check('busca sem o TLD também casa', r3.analytics.length === 1);
 
-    // propriedade sem permissão não derruba a busca
+    // propriedade sem permissão não derruba a busca (sem cache, senão a
+    // resposta vem dele e a API nem é chamada)
+    semCache();
     googleFake._analyticsadmin.properties.dataStreams.list = async ({ parent }) => {
       if (parent === 'properties/1') throw new Error('403 sem permissão');
       return { data: { dataStreams: streams[parent] || [] } };

@@ -21,7 +21,9 @@ const cofre = {
   decryptString: (b) => String(b).replace(/^enc:/, ''),
 };
 
-const DIR = '/tmp/hub-painel';
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-painel-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const electronStub = {
   app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
   // Se alguma guarda deixar passar, a janela é criada e o teste percebe.
@@ -38,7 +40,7 @@ const electronStub = {
 const orig = Module._load;
 Module._load = (r, p, i) =>
   r === 'electron' ? electronStub
-  : r === 'googleapis' ? { google: { auth: { GoogleAuth: function () {}, OAuth2: function () {} }, options() {} } }
+  : /[\\/]lib[\\/]google$/.test(r) ? { google: { auth: { GoogleAuth: function () {}, OAuth2: function () {} }, options() {} } }
   : orig(r, p, i);
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
@@ -51,9 +53,7 @@ const M = mod.exports;
 let falhas = 0;
 const check = (n, c, d = '') => { if (!c) falhas++; console.log(`${c ? '  ok  ' : ' FALHA'} ${n}${!c && d ? ' → ' + d : ''}`); };
 
-fs.mkdirSync(DIR, { recursive: true });
 const arquivoCreds = path.join(DIR, 'painel-creds.enc');
-try { fs.unlinkSync(arquivoCreds); } catch (e) {}
 
 const URL_OK = 'https://idealplus.idealtrends.io/clientes/2775/hub?projeto=2851&tab=publicacao';
 const valores = { analyticsKey: 'G-X', searchConsoleKey: 'google-site-verification: x.html' };

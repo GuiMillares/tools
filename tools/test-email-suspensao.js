@@ -39,8 +39,11 @@ const cofre = {
   decryptString: (b) => String(b).replace(/^enc:/, ''),
 };
 
+// Pasta só deste teste no %TEMP%, apagada na saída mesmo que ele lance.
+const DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hub-mail-'));
+process.on('exit', () => fs.rmSync(DIR, { recursive: true, force: true }));
 const electronStub = {
-  app: { getPath: () => '/tmp/hub-mail', whenReady: () => ({ then: () => ({}) }), on() {} },
+  app: { getPath: () => DIR, whenReady: () => ({ then: () => ({}) }), on() {} },
   BrowserWindow: Object.assign(function () {}, { getAllWindows: () => [] }),
   ipcMain: { handle(n, f) { handlers[n] = f; } },
   safeStorage: cofre, clipboard: { writeText() {} },
@@ -48,7 +51,7 @@ const electronStub = {
 const googleFake = { auth: { GoogleAuth: function(){}, OAuth2: function(){} }, options(){} };
 
 const orig = Module._load;
-Module._load = (r,p,i) => r==='electron'?electronStub : r==='googleapis'?{google:googleFake} : r==='https'?httpsStub : orig(r,p,i);
+Module._load = (r,p,i) => r==='electron'?electronStub : /[\\/]lib[\\/]google$/.test(r)?{google:googleFake} : r==='https'?httpsStub : orig(r,p,i);
 
 const src = fs.readFileSync(path.join(__dirname,'..','main.js'),'utf-8');
 const mod = { exports: {} };
@@ -59,9 +62,8 @@ const M = mod.exports;
 let falhas = 0;
 const check = (n,c,d='') => { if(!c) falhas++; console.log(`${c?'  ok  ':' FALHA'} ${n}${!c&&d?' → '+d:''}`); };
 
-fs.mkdirSync('/tmp/hub-mail', { recursive: true });
-const escreveToken = (t) => fs.writeFileSync('/tmp/hub-mail/ms-token.enc', cofre.encryptString(JSON.stringify(t)));
-fs.writeFileSync('/tmp/hub-mail/ms-config.json', JSON.stringify({ clientId: 'abc-123', tenant: 'common' }));
+const escreveToken = (t) => fs.writeFileSync(path.join(DIR, 'ms-token.enc'), cofre.encryptString(JSON.stringify(t)));
+fs.writeFileSync(path.join(DIR, 'ms-config.json'), JSON.stringify({ clientId: 'abc-123', tenant: 'common' }));
 
 const pedido = {
   to: ['suporte@m3solutions.com.br'],
@@ -123,7 +125,7 @@ const pedido = {
   console.log('\n=== Sessão / configuração ===');
   {
     responder = () => ({ statusCode: 202, body: '' });
-    fs.unlinkSync('/tmp/hub-mail/ms-token.enc');
+    fs.unlinkSync(path.join(DIR, 'ms-token.enc'));
     const r = await handlers['mail:sendBatch'](null, pedido);
     check('sem token pede pra conectar', !r.ok && r.reauth === true, JSON.stringify(r));
 
@@ -131,7 +133,7 @@ const pedido = {
     escreveToken({ access_token: 'velho', expiresAt: Date.now() - 1000 });
     const r2 = await handlers['mail:sendBatch'](null, pedido);
     check('token vencido sem refresh → reauth', !r2.ok && r2.reauth === true);
-    check('e o token morto foi apagado', !fs.existsSync('/tmp/hub-mail/ms-token.enc'));
+    check('e o token morto foi apagado', !fs.existsSync(path.join(DIR, 'ms-token.enc')));
   }
 
   console.log('\n=== Renovação pelo refresh token ===');
@@ -149,8 +151,8 @@ const pedido = {
     check('usou o token novo', chamadas.some(c => c.headers?.Authorization === 'Bearer novo'));
     check('gravou o refresh novo', M.readMsToken().refresh_token === 'r2');
     check('token fica criptografado em disco',
-      !fs.readFileSync('/tmp/hub-mail/ms-token.enc','utf-8').includes('"access_token"') ||
-      fs.readFileSync('/tmp/hub-mail/ms-token.enc','utf-8').startsWith('enc:'));
+      !fs.readFileSync(path.join(DIR, 'ms-token.enc'),'utf-8').includes('"access_token"') ||
+      fs.readFileSync(path.join(DIR, 'ms-token.enc'),'utf-8').startsWith('enc:'));
   }
 
   console.log('\n=== Validação de entrada ===');

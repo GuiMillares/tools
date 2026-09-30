@@ -71,6 +71,8 @@ const TOOLS = [
   { id: 'publish', category: 'google', name: 'Publicar MPI+', desc: 'Do DNS às tags: zona na Cloudflare, nameservers, aprovar, publicar em produção, SSL e propriedades.' },
   { id: 'ssl', category: 'hosting', name: 'Ativar SSL', desc: 'Confere onde cada domínio está hospedado e pede a ativação do SSL de quem é da M3.' },
   { id: 'suspender', category: 'hosting', name: 'Suspender sites', desc: 'Confere onde cada domínio está hospedado e envia o pedido de suspensão de quem é da M3.' },
+  { id: 'doutor', category: 'hosting', name: 'Bloquear contatos', desc: 'Entra no /doutor do site com a credencial da marca e bloqueia os contatos da empresa (o telefone vira ##).' },
+  { id: 'ouvidoria', category: 'hosting', name: 'Ouvidoria / SSL', desc: 'Planilha de domínios: acha a conta no Salesforce, lê o caso de Ouvidoria (Definição e Data de Conclusão) e devolve a Situação e se deve ativar o SSL.' },
 ];
 
 function toolCategory(id) {
@@ -189,6 +191,9 @@ const state = {
   // O que a aba "Criar novo" vai criar. Tudo marcado por padrão: o caso comum
   // é projeto novo, que precisa das quatro coisas.
   npSteps: { analytics: true, gtm: true, recaptcha: true, searchconsole: true },
+  // Publicar em massa: criar a tarefa "Publicação V1 -> V2" no Salesforce de
+  // cada site publicado, achando o caso sozinho (ADR-097). Lembrado.
+  sfTarefasAuto: false,
   npFind: null, // resultado da busca por propriedades existentes
   npPicked: { idAnalytics: '', tagmanager: '' }, // o que foi escolhido pra reaproveitar
   oauthClientId: '', // credenciais do login manual (ferramenta "Conceder acesso")
@@ -206,7 +211,24 @@ const state = {
 };
 
 const el = {
-  topbarTitle: document.getElementById('topbarTitle'),
+  navList: document.getElementById('navList'),
+  // Redesign v2.4 (ADR-115)
+  tbCpu: document.getElementById('tbCpu'),
+  tbUserInicial: document.getElementById('tbUserInicial'),
+  navOnline: document.getElementById('navOnline'),
+  terminalMeta: document.getElementById('terminalMeta'),
+  copyLogBtn: document.getElementById('copyLogBtn'),
+  termAtalhos: document.getElementById('termAtalhos'),
+  termInput: document.getElementById('termInput'),
+  termRun: document.getElementById('termRun'),
+  termPrompt: document.getElementById('termPrompt'),
+  settingsHost: document.getElementById('settingsHost'),
+  cfgTabs: document.getElementById('cfgTabs'),
+  tbUserNome: document.getElementById('tbUserNome'),
+  tbUserMarca: document.getElementById('tbUserMarca'),
+  tbMem: document.getElementById('tbMem'),
+  tbSearch: document.getElementById('tbSearch'),
+  terminalTitle: document.getElementById('terminalTitle'),
   leftPanel: document.getElementById('leftPanel'),
   terminal: document.getElementById('terminal'),
   terminalPanel: document.querySelector('.terminal-panel'),
@@ -250,6 +272,9 @@ const el = {
   rbrSenhaMpiInput: document.getElementById('rbrSenhaMpiInput'),
   painelEmailInput: document.getElementById('painelEmailInput'),
   painelSenhaInput: document.getElementById('painelSenhaInput'),
+  doutorEmailMpiInput: document.getElementById('doutorEmailMpiInput'),
+  doutorEmailBuscaInput: document.getElementById('doutorEmailBuscaInput'),
+  doutorSenhaInput: document.getElementById('doutorSenhaInput'),
   brandAccountBcInput: document.getElementById('brandAccountBcInput'),
   brandAccountMpiSolutionsInput: document.getElementById('brandAccountMpiSolutionsInput'),
   brandAccountMpiPlusInput: document.getElementById('brandAccountMpiPlusInput'),
@@ -269,6 +294,18 @@ const LOG_BUFFER_MAX = 3000;
 const logBuffer = [];
 let logSeq = 0;
 
+// A tela guarda só as últimas linhas (ADR-109). Com tudo, a janela crescia
+// ~13 MB por mil linhas e cada log() ficava um pouco mais lento a cada linha,
+// por quantos dias o Hub ficasse aberto. O arquivo do dia em
+// Documentos\Hub\logs guarda tudo (ADR-096), e o buffer acima já parava aqui.
+// O corte é em lote: a tela vai até LOG_TELA_MAX + LOG_TELA_FOLGA e volta a
+// LOG_TELA_MAX de uma vez. Tirar uma linha do topo a cada log() obriga o
+// Chromium a reposicionar todas as de baixo e triplicava o custo de cada
+// linha (33 ms contra 12 ms, com 3.000 na tela).
+const LOG_TELA_MAX = LOG_BUFFER_MAX;
+const LOG_TELA_FOLGA = 300;
+const LOG_AVISO_CORTE = 'As linhas mais antigas saíram da tela para ela não ficar lenta. O arquivo do dia, em Documentos\\Hub\\logs, tem todas.';
+
 function logLineElement(entry) {
   const line = document.createElement('div');
   line.className = `log-line ${entry.type}`;
@@ -277,6 +314,36 @@ function logLineElement(entry) {
     `<span class="ts">${escapeHtml(entry.ts)}</span>` +
     `<span class="log-msg">${escapeHtml(entry.message)}</span>`;
   return line;
+}
+
+// Tira do começo do terminal o que passou do limite e deixa no topo uma linha
+// dizendo onde está o resto. Pergunta ainda sem resposta nunca sai: é por ela
+// que a rodada está esperando (ADR-064).
+function apararTerminal() {
+  const t = el.terminal;
+  if (t.childElementCount <= LOG_TELA_MAX + LOG_TELA_FOLGA) return;
+  let aviso = t.firstElementChild;
+  if (!aviso.classList.contains('log-cortado')) {
+    aviso = document.createElement('div');
+    aviso.className = 'log-line info log-cortado';
+    aviso.innerHTML =
+      `<span class="log-glyph">${LOG_GLYPH.info}</span>` +
+      `<span class="ts"></span>` +
+      `<span class="log-msg">${escapeHtml(LOG_AVISO_CORTE)}</span>`;
+    t.insertBefore(aviso, t.firstElementChild);
+  }
+  // O excesso é contado uma vez: childElementCount percorre os filhos, e
+  // perguntar a cada volta deixaria um corte grande quadrático.
+  let sobra = t.childElementCount - 1 - LOG_TELA_MAX;
+  let linha = aviso.nextElementSibling;
+  while (linha && sobra > 0) {
+    const proxima = linha.nextElementSibling;
+    if (!linha.classList.contains('ask') || linha.classList.contains('answered')) {
+      linha.remove();
+      sobra--;
+    }
+    linha = proxima;
+  }
 }
 
 function log(message, type = 'info') {
@@ -288,16 +355,72 @@ function log(message, type = 'info') {
   };
   logBuffer.push(entry);
   if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+  logParaArquivo(entry);
 
   el.terminal.appendChild(logLineElement(entry));
+  apararTerminal();
   el.terminal.scrollTop = el.terminal.scrollHeight;
+  // Com a Atividade minimizada ou fechada, conta o que chegou (ADR-128).
+  if (typeof avisarLinhaNova === 'function') avisarLinhaNova(type);
+}
+
+// Tudo que aparece no terminal vai também para Documentos\Hub\logs, um arquivo
+// por dia. Se o Windows fechar o Hub de madrugada, o que aconteceu até ali
+// fica gravado (ADR-096). Junta as linhas por meio segundo para não abrir o
+// arquivo a cada linha.
+const logFilaArquivo = [];
+let logArquivoTimer = null;
+function logParaArquivo(entry) {
+  logFilaArquivo.push({ ts: `${new Date().toLocaleDateString('pt-BR')} ${entry.ts}`, type: entry.type, message: entry.message });
+  if (logArquivoTimer) return;
+  logArquivoTimer = setTimeout(() => {
+    logArquivoTimer = null;
+    const linhas = logFilaArquivo.splice(0, logFilaArquivo.length);
+    if (linhas.length && window.api && window.api.gravarLog) window.api.gravarLog(linhas).catch(() => {});
+  }, 500);
 }
 
 // Uma pergunta dentro do terminal, com botões (ADR-064). Devolve a opção
 // escolhida. É para o que o app não consegue descobrir sozinho e não pode
 // chutar: a pergunta fica na linha do tempo, com a resposta logo abaixo.
+// ----- Parar no meio (ADR-102) -----
+// O botão "Parar" liga isto, avisa o processo principal (que interrompe as
+// esperas e as janelas do painel) e fecha as perguntas abertas no terminal.
+// Quem rodava termina de parar e desliga no fim (pararTerminou).
+let paradaAgora = false;
+const perguntasAbertas = new Set(); // funções que fecham uma pergunta aberta
+const ehParada = (e) => /parado por você/i.test(String((e && e.message) || e || ''));
+
+async function pararAgora() {
+  if (paradaAgora) return;
+  paradaAgora = true;
+  log('Parando: o que está no meio é interrompido; uma gravação que já saiu (um registro na Cloudflare, por exemplo) termina, mas o passo seguinte não começa.', 'warn');
+  for (const fechar of [...perguntasAbertas]) fechar();
+  perguntasAbertas.clear();
+  try { await window.api.pararProcesso(); } catch (e) {}
+}
+
+async function pararTerminou() {
+  if (!paradaAgora) return;
+  paradaAgora = false;
+  try { await window.api.liberarProcesso(); } catch (e) {}
+}
+
+// Espera da tela que a parada interrompe.
+function esperarOuParar(ms) {
+  if (paradaAgora) return Promise.reject(new Error('parado por você'));
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { perguntasAbertas.delete(fechar); resolve(); }, ms);
+    const fechar = () => { clearTimeout(t); reject(new Error('parado por você')); };
+    perguntasAbertas.add(fechar);
+  });
+}
+
 function perguntarNoTerminal(mensagem, opcoes) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    if (paradaAgora) { reject(new Error('parado por você')); return; }
+    // A rodada espera esta resposta: a Atividade escondida volta (ADR-128).
+    if (typeof mostrarAtividade === 'function') mostrarAtividade();
     const line = document.createElement('div');
     line.className = 'log-line ask';
     const ts = new Date().toLocaleTimeString('pt-BR', { hour12: false });
@@ -308,9 +431,17 @@ function perguntarNoTerminal(mensagem, opcoes) {
       opcoes.map((o) => `<button class="btn compact" data-ask="${escapeHtml(o.valor)}">${escapeHtml(o.rotulo)}</button>`).join('') +
       `</span></span>`;
     el.terminal.appendChild(line);
+    apararTerminal();
     el.terminal.scrollTop = el.terminal.scrollHeight;
+    const fechar = () => {
+      line.querySelectorAll('[data-ask]').forEach((x) => { x.disabled = true; });
+      line.classList.add('answered');
+      reject(new Error('parado por você'));
+    };
+    perguntasAbertas.add(fechar);
     line.querySelectorAll('[data-ask]').forEach((b) => {
       b.addEventListener('click', () => {
+        perguntasAbertas.delete(fechar);
         line.querySelectorAll('[data-ask]').forEach((x) => { x.disabled = true; });
         line.classList.add('answered');
         const escolhida = opcoes.find((o) => o.valor === b.dataset.ask);
@@ -318,6 +449,52 @@ function perguntarNoTerminal(mensagem, opcoes) {
         resolve(b.dataset.ask);
       });
     });
+  });
+}
+
+// Pergunta com resposta escrita, no terminal (o link do painel quando o Hub
+// não acha o cliente, ADR-098). validar(texto) devolve '' quando serve, ou o
+// motivo, que aparece embaixo do campo sem fechar a pergunta. Devolve o texto,
+// ou null quando a pessoa cancela.
+function perguntarTextoNoTerminal(mensagem, { placeholder = '', rotuloOk = 'Usar', validar = () => '' } = {}) {
+  return new Promise((resolve) => {
+    if (typeof mostrarAtividade === 'function') mostrarAtividade();
+    const line = document.createElement('div');
+    line.className = 'log-line ask';
+    const ts = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+    line.innerHTML =
+      `<span class="log-glyph">?</span>` +
+      `<span class="ts">${escapeHtml(ts)}</span>` +
+      `<span class="log-msg">${escapeHtml(mensagem)}` +
+      `<span class="ask-texto"><input type="text" placeholder="${escapeHtml(placeholder)}" autocomplete="off" spellcheck="false" />` +
+      `<button class="btn compact primary" data-ask="ok">${escapeHtml(rotuloOk)}</button>` +
+      `<button class="btn compact" data-ask="cancelar">Cancelar</button></span>` +
+      `<span class="ask-erro" hidden></span></span>`;
+    el.terminal.appendChild(line);
+    apararTerminal();
+    el.terminal.scrollTop = el.terminal.scrollHeight;
+    const input = line.querySelector('input');
+    const erro = line.querySelector('.ask-erro');
+    if (paradaAgora) { resolve(null); return; }
+    const fechar = (valor) => {
+      perguntasAbertas.delete(aoParar);
+      line.querySelectorAll('button, input').forEach((x) => { x.disabled = true; });
+      line.classList.add('answered');
+      resolve(valor);
+    };
+    const aoParar = () => fechar(null);
+    perguntasAbertas.add(aoParar);
+    const confirmar = () => {
+      const texto = input.value.trim();
+      const motivo = validar(texto);
+      if (motivo) { erro.textContent = motivo; erro.hidden = false; input.focus(); return; }
+      log(`Resposta: ${texto}`, 'info');
+      fechar(texto);
+    };
+    line.querySelector('[data-ask="ok"]').addEventListener('click', confirmar);
+    line.querySelector('[data-ask="cancelar"]').addEventListener('click', () => { log('Resposta: cancelado', 'info'); fechar(null); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmar(); });
+    setTimeout(() => input.focus(), 0);
   });
 }
 
@@ -388,10 +565,14 @@ function saveHubState() {
     mailSsl: state.mailSsl,
     sslProjeto: state.sslProjeto,
     npSteps: state.npSteps,
+    sfTarefasAuto: state.sfTarefasAuto,
   });
 }
 
 async function openTool(id) {
+  if (id === 'findproject') { state.npTab = 'find'; id = 'newproject'; }
+  if (id === 'grantaccess') { openSettings('acesso'); return; }
+  if (id === 'newproject' && !state.npTab) state.npTab = 'create';
   state.view = id;
   state.recents = [id, ...state.recents.filter((r) => r !== id)].slice(0, 4);
   await saveHubState();
@@ -399,102 +580,1228 @@ async function openTool(id) {
 }
 
 function render() {
-  if (state.view === 'home') {
-    el.topbarTitle.textContent = 'Hub';
-    renderHome();
-  } else {
-    const tool = TOOLS.find((t) => t.id === state.view);
-    el.topbarTitle.textContent = tool ? tool.name : 'Hub';
-    if (state.view === 'merge') renderMergeTool();
-    if (state.view === 'newproject') renderNewProjectTool();
-    if (state.view === 'findproject') renderFindProjectTool();
-    if (state.view === 'grantaccess') renderGrantAccessTool();
-    if (state.view === 'suspender') renderSuspendTool();
-    if (state.view === 'ssl') renderSuspendTool();
-    if (state.view === 'publish') renderPublishTool();
-    if (state.view === 'bulk') renderBulkTool();
+  // As configurações moram num nó fixo (ids e listeners não se perdem);
+  // antes de qualquer tela sobrescrever o painel, ele volta para o esconderijo.
+  guardarSettingsBox();
+  el.leftPanel.classList.toggle('wide', state.view === 'home' || state.view === 'kanban' || state.view === 'config');
+  document.querySelector('.app-body')?.classList.toggle('home', state.view === 'home');
+  renderChrome();
+  // Os atalhos leem os campos da tela nova, então esperam ela existir.
+  queueMicrotask(renderAtalhosTerminal);
+  if (state.view === 'home') { renderHome(); return; }
+  if (state.view === 'kanban') { renderKanbanTool(); return; }
+  if (state.view === 'config') { renderConfigTool(); return; }
+  if (state.view === 'merge') renderMergeTool();
+  if (state.view === 'newproject') renderNewProjectTool();
+  if (state.view === 'findproject') { state.view = 'newproject'; state.npTab = 'find'; renderNewProjectTool(); }
+  if (state.view === 'grantaccess') { openSettings('acesso'); return; }
+  if (state.view === 'suspender') renderSuspendTool();
+  if (state.view === 'ssl') renderSuspendTool();
+  if (state.view === 'publish') renderPublishTool();
+  if (state.view === 'bulk') renderBulkTool();
+  if (state.view === 'doutor') renderDoutorTool();
+  if (state.view === 'ouvidoria') renderOuvidoriaTool();
+}
+
+// ---------- Moldura v2.4: sidebar de módulos + topo + rodapé (ADR-114) ----------
+
+const NAV_ICON = {
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>',
+  deploy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19l3-3M12 3s5 2 5 8c0 3-2 6-2 6l-5-5s3-2 3-5c0-2-1-4-1-4z"/><circle cx="14.5" cy="8.5" r="1.2" fill="currentColor"/></svg>',
+  kanban: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="5" height="14" rx="1"/><rect x="10" y="4" width="5" height="9" rx="1"/><rect x="17" y="4" width="4" height="12" rx="1"/></svg>',
+  publish: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 8l5-5 5 5M5 21h14"/></svg>',
+  bulk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 4v16"/></svg>',
+  google: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  ouvidoria: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg>',
+  doutor: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  ssl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l8-3 8 3v6c0 5-4 8-8 9-4-1-8-4-8-9z"/></svg>',
+  suspender: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H5.2L4 18z"/><path d="M9 9h6"/></svg>',
+  terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>',
+};
+
+NAV_ICON.merge = ICONS.merge;
+NAV_ICON.config = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
+
+// A sidebar espelha os mockups (ADR-115): só módulo que existe. As
+// configurações ficam no pé da sidebar, fora desta lista.
+const MODULES = [
+  { id: 'home', nome: 'Início', icon: 'home', tag: 'HOME' },
+  { id: 'merge', nome: 'Mergear PRs', icon: 'merge', tag: 'MOD_GIT_MERGE' },
+  { id: 'kanban', nome: 'Salesforce Kanban', icon: 'kanban', tag: 'MOD_SF_KANBAN' },
+  { id: 'publish', nome: 'Publicar MPI+', icon: 'publish', tag: 'MOD_PUBLISH_MPI' },
+  { id: 'bulk', nome: 'Publicação em Massa', icon: 'bulk', tag: 'MOD_BULK' },
+  { id: 'newproject', nome: 'Propriedades Google', icon: 'google', tag: 'MOD_GOOGLE_PROPS' },
+  { id: 'ouvidoria', nome: 'Ouvidoria & Auditoria', icon: 'ouvidoria', tag: 'MOD_OUVIDORIA' },
+  { id: 'doutor', nome: 'Bloquear Contatos', icon: 'doutor', tag: 'MOD_AUTO_LOCK' },
+  { id: 'ssl', nome: 'Ativação SSL / E-mails', icon: 'ssl', tag: 'MOD_SSL_MAIL_DISPATCH' },
+  { id: 'suspender', nome: 'Suspensão & E-mails', icon: 'suspender', tag: 'MOD_SUSPEND_MAIL' },
+  { id: 'config', nome: 'Configurações', icon: 'config', tag: 'MOD_CONFIG_VAULT', oculto: true },
+];
+
+function renderChrome() {
+  if (el.navList) {
+    el.navList.innerHTML = MODULES.filter((m) => !m.oculto).map((m) => `
+      <button class="nav-item ${state.view === m.id ? 'active' : ''}" data-mod="${m.id}">
+        ${NAV_ICON[m.icon] || ''}<span>${escapeHtml(m.nome)}</span>
+        ${state.view === m.id ? '<span class="nav-dot"></span>' : ''}
+      </button>`).join('');
+    el.navList.querySelectorAll('[data-mod]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.mod;
+      if (id === 'home') return goHome();
+      openTool(id);
+    }));
   }
+  if (el.settingsBtn) el.settingsBtn.classList.toggle('active', state.view === 'config');
+  if (el.terminalTitle) {
+    const m = MODULES.find((x) => x.id === state.view);
+    el.terminalTitle.textContent = m && m.id !== 'home' ? 'Atividade · ' + m.nome : 'Atividade em tempo real';
+  }
+  atualizarTopbar();
+}
+
+function atualizarTopbar() {
+  const nome = hubUsuario || nomeDoEmailLocal(state.creds?.email) || '';
+  if (el.tbUserNome) el.tbUserNome.textContent = nome || '—';
+  if (el.tbUserInicial) el.tbUserInicial.textContent = (primeiroNome(nome) || '·').charAt(0).toUpperCase();
+  if (el.tbUserMarca) el.tbUserMarca.textContent = brandName(state.brand) || '';
+  if (el.navOnline) el.navOnline.classList.toggle('off', !navigator.onLine);
+}
+
+// A busca do topo (Ctrl+K). Ela filtrava a grade de ferramentas da tela
+// inicial, que saiu (ADR-127); agora o Enter abre direto o módulo cujo nome
+// bate com o texto (sem acento conta igual), depois pelas descrições, e, se
+// nada bater e o texto for um domínio, consulta o WHOIS/DNS na tela inicial.
+const semAcento = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function buscarNoTopo(texto) {
+  const q = semAcento(texto).trim();
+  if (!q) return;
+  const limpar = () => { if (el.tbSearch) { el.tbSearch.value = ''; el.tbSearch.blur(); } };
+  const achado = MODULES.find((m) => semAcento(m.nome).includes(q))
+    || TOOLS.find((t) => semAcento(t.name).includes(q))
+    || TOOLS.find((t) => semAcento(t.desc).includes(q));
+  if (achado) {
+    limpar();
+    if (achado.id === 'home') goHome();
+    else if (achado.id === 'config') openSettings();
+    else openTool(achado.id);
+    return;
+  }
+  const dominio = normalizeDomain(texto);
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(dominio)) {
+    limpar();
+    whoisEstado.dominio = dominio;
+    goHome();
+    consultarWhois();
+    return;
+  }
+  log(`Nada no Hub com "${String(texto).trim()}". Digite o nome de um módulo (publicar, kanban, ouvidoria…) ou um domínio.`, 'warn');
+}
+
+// Telemetria de verdade (ADR-115): memória e CPU somando os processos do
+// Electron, e o estado da sessão do Salesforce, repolados de tempos em tempos.
+// Com a janela escondida (minimizada ou atrás de outra), não há quem leia:
+// o tick não trabalha, e volta na hora em que ela aparece (ADR-126).
+let hubSfConectado = false;
+let hubCredenciais = null;
+function iniciarTopbarLive() {
+  const tick = async () => {
+    if (document.visibilityState === 'hidden') return;
+    try {
+      const r = await window.api.telemetria();
+      if (r && r.ok) {
+        if (el.tbMem) el.tbMem.textContent = `${r.memMb} MB`;
+        if (el.tbCpu) {
+          const pct = Number(r.cpuPct) || 0;
+          el.tbCpu.textContent = `${pct < 5 ? 'Ocioso' : 'Ativo'} (${pct.toFixed(1)}%)`;
+          el.tbCpu.classList.toggle('quente', pct >= 40);
+        }
+        if (el.terminalMeta) el.terminalMeta.innerHTML = `PID: <b>${escapeHtml(String(r.pid))}</b> · ${r.processos} processo(s)`;
+      }
+    } catch (e) {}
+    try { const sf = await window.api.salesforceGetConfig(); hubSfConectado = !!(sf && sf.ok && sf.conectado); } catch (e) {}
+    atualizarTopbar();
+  };
+  tick();
+  setInterval(tick, 10000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+  window.addEventListener('online', atualizarTopbar);
+  window.addEventListener('offline', atualizarTopbar);
+  // Sem foco, os indicadores de "ocupado" param de piscar (ADR-126): mesmo em
+  // degraus, cada piscada redesenha a janela, e com o foco em outro programa
+  // ninguém está olhando para o Hub.
+  const marcarFoco = () => document.documentElement.classList.toggle('sem-foco', !document.hasFocus());
+  window.addEventListener('focus', marcarFoco);
+  window.addEventListener('blur', marcarFoco);
+  marcarFoco();
+}
+
+// ---------- Terminal: comando manual e atalhos (ADR-115) ----------
+
+// O terminal aceita comando digitado, para testar direto dali: nslookup,
+// ping, curl, git… rodam no shell do Windows e a saída chega linha a linha.
+// Alguns são do próprio Hub (dns, whois, limpar, ajuda), porque o Windows não
+// tem whois e o Hub já sabe consultar.
+let comandoRodando = null;
+let cancelarEscutaComando = null;
+const SHELL_MAX_LINHAS = 400;
+
+const AJUDA_TERMINAL = [
+  'Comandos do Hub: dns <domínio> · whois <domínio> · limpar · parar · ajuda',
+  'Qualquer outra coisa roda no shell do Windows: nslookup, ping, tracert, curl, git…',
+  'Os atalhos (#) preenchem o comando com o domínio da tela e já executam.',
+];
+
+function logShell(texto, err) {
+  const linhas = String(texto).replace(/\r/g, '').split('\n');
+  if (linhas.length && linhas[linhas.length - 1] === '') linhas.pop();
+  for (const l of linhas) {
+    if (comandoRodando && ++comandoRodando.linhas > SHELL_MAX_LINHAS) {
+      if (comandoRodando.linhas === SHELL_MAX_LINHAS + 1) log(`(saída cortada em ${SHELL_MAX_LINHAS} linhas; o arquivo do dia não tem o resto)`, 'warn');
+      return;
+    }
+    log(l, err ? 'shell err' : 'shell');
+  }
+}
+
+function iniciarTerminalComando() {
+  if (!el.termInput) return;
+  const rodar = () => { const t = el.termInput.value; el.termInput.value = ''; executarNoTerminal(t); };
+  el.termInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); rodar(); }
+    if (e.key === 'Escape') { el.termInput.blur(); }
+    if (e.key === 'ArrowUp' && histCmd.length) { e.preventDefault(); histIdx = Math.max(0, histIdx - 1); el.termInput.value = histCmd[histIdx] || ''; }
+    if (e.key === 'ArrowDown' && histCmd.length) { e.preventDefault(); histIdx = Math.min(histCmd.length, histIdx + 1); el.termInput.value = histCmd[histIdx] || ''; }
+  });
+  el.termRun.addEventListener('click', () => { if (comandoRodando) pararComandoTerminal(); else rodar(); });
+  if (window.api.onComandoSaida) {
+    cancelarEscutaComando = window.api.onComandoSaida((d) => {
+      if (!comandoRodando || d.id !== comandoRodando.id) return;
+      if (d.tipo === 'stdout') logShell(d.texto, false);
+      else if (d.tipo === 'stderr') logShell(d.texto, true);
+      else if (d.tipo === 'fim') {
+        let fim = {};
+        try { fim = JSON.parse(d.texto); } catch (e) {}
+        const seg = ((fim.ms || 0) / 1000).toFixed(1);
+        if (fim.erro) log(`Não consegui rodar: ${fim.erro}`, 'error');
+        else log(`Terminou com código ${fim.codigo === null ? '?' : fim.codigo} em ${seg}s.`, fim.codigo === 0 ? 'success' : 'warn');
+        comandoRodando = null;
+        clearBusy();
+        atualizarBotaoTerminal();
+      }
+    });
+  }
+  // Ctrl+` foca o terminal de qualquer tela (e o mostra, se estava escondido).
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === '`') {
+      e.preventDefault();
+      if (typeof mostrarAtividade === 'function') mostrarAtividade();
+      el.termInput.focus();
+    }
+  });
+}
+
+const histCmd = [];
+let histIdx = 0;
+
+function atualizarBotaoTerminal() {
+  if (!el.termRun) return;
+  el.termRun.textContent = comandoRodando ? 'PARAR ■' : 'ENTER ↵';
+  el.termRun.classList.toggle('parar', !!comandoRodando);
+}
+
+async function pararComandoTerminal() {
+  if (!comandoRodando) return;
+  log('Parando o comando…', 'warn');
+  try { await window.api.pararComando(); } catch (e) {}
+}
+
+async function executarNoTerminal(entrada) {
+  const texto = String(entrada || '').trim();
+  if (!texto) return;
+  histCmd.push(texto);
+  histIdx = histCmd.length;
+  if (texto.startsWith('#')) {
+    const a = atalhosDaTela().find((x) => x.rotulo === texto.split(/\s+/)[0]);
+    if (!a) { log(`Atalho desconhecido: ${texto}. Os desta tela: ${atalhosDaTela().map((x) => x.rotulo).join(' ') || 'nenhum'}.`, 'warn'); return; }
+    if (typeof a.comando === 'function') { log(`${a.rotulo}`, 'cmd'); await a.comando(); return; }
+    return executarNoTerminal(a.comando);
+  }
+  const [cmd, ...args] = texto.split(/\s+/);
+  const c = cmd.toLowerCase();
+  if (['limpar', 'clear', 'cls'].includes(c)) { el.terminal.innerHTML = ''; return; }
+  if (['ajuda', 'help', '?'].includes(c)) { for (const l of AJUDA_TERMINAL) log(l, 'info'); return; }
+  if (['parar', 'stop'].includes(c)) { await pararComandoTerminal(); return; }
+  if (['dns', 'whois'].includes(c)) {
+    const alvos = args.map((a) => normalizeDomain(a)).filter(Boolean);
+    if (!alvos.length) { log(`Uso: ${c} <domínio> [outro domínio…]`, 'warn'); return; }
+    for (const d of alvos) await consultarDnsNoTerminal(d, c === 'whois');
+    return;
+  }
+  if (comandoRodando) { log('Já tem um comando rodando. Espere terminar ou clique em PARAR.', 'warn'); return; }
+  const id = genId();
+  comandoRodando = { id, texto, linhas: 0 };
+  log(`$ ${texto}`, 'cmd');
+  setBusy(`rodando ${cmd}`);
+  atualizarBotaoTerminal();
+  const res = await window.api.executarComando({ comando: texto, id }).catch((e) => ({ ok: false, error: e.message }));
+  if (!res || !res.ok) {
+    comandoRodando = null;
+    clearBusy();
+    atualizarBotaoTerminal();
+    log(`Não consegui rodar: ${(res && res.error) || 'erro'}`, 'error');
+  }
+}
+
+// dns/whois pelo próprio Hub (mesma consulta da tela inicial), impressos no
+// terminal em vez do cartão.
+async function consultarDnsNoTerminal(dominio, comWhois) {
+  log(`${comWhois ? 'whois' : 'dns'} ${dominio}`, 'cmd');
+  const r = await withBusy(`consultando ${dominio}`, () => window.api.whois({ dominio }));
+  if (!r || !r.ok) { log(`Falhou: ${(r && r.error) || 'erro'}`, 'error'); return; }
+  const dns = r.dns || {};
+  log(`NS: ${(dns.ns || []).join(', ') || '(nenhum)'}`, dns.ns && dns.ns.length ? 'info' : 'warn');
+  log(`A (raiz): ${(dns.a || []).join(', ') || '(não resolve)'}`, dns.a && dns.a.length ? 'info' : 'warn');
+  if (dns.mx && dns.mx.length) log(`MX: ${dns.mx.join(' · ')}`, 'info');
+  if (comWhois) {
+    const w = r.whois || {};
+    if (w.erro) log(`WHOIS indisponível: ${w.erro}`, 'warn');
+    else {
+      const c = w.campos || {};
+      for (const [k, v] of [['Titular', c.titular], ['Registrador', c.registrador], ['Criado', c.criado], ['Expira', c.expira], ['Status', c.status]]) if (v) log(`${k}: ${v}`, 'info');
+      if (w.texto) logShell(w.texto, false);
+    }
+  }
+  log(`${dominio}: consulta concluída.`, 'success');
+}
+
+// O domínio que a tela atual está olhando, para os atalhos preencherem.
+function dominioDaTela() {
+  const v = state.view;
+  const val = (id) => (document.getElementById(id)?.value || '').trim();
+  let d = '';
+  if (v === 'home') d = whoisEstado.dominio || val('whoisDominio');
+  else if (v === 'doutor') d = doutorEstado.dominio || val('doutorDominio');
+  else if (v === 'publish') d = (pub && pub.dominio) || val('pubDominio');
+  else if (v === 'ssl' || v === 'suspender') d = parseDomains(val('mailDomains'))[0] || '';
+  else if (v === 'ouvidoria') d = (ouvEstado.dominios || [])[0] || '';
+  else if (v === 'newproject') d = val('npDomainInput') || val('npSearchInput');
+  else if (v === 'bulk') d = (bulkRows[0] && bulkRows[0].dominio) || '';
+  else if (v === 'merge') d = (state.queue[0] && state.queue[0].repo) || '';
+  return normalizeDomain(d) || '';
+}
+
+function atalhosDaTela() {
+  const d = dominioDaTela();
+  const v = state.view;
+  const lista = [];
+  if (d) {
+    lista.push({ rotulo: '#dns', comando: `dns ${d}` });
+    lista.push({ rotulo: '#whois', comando: `whois ${d}` });
+    lista.push({ rotulo: '#nslookup', comando: `nslookup ${d}` });
+    lista.push({ rotulo: '#ping', comando: `ping -n 2 ${d}` });
+  }
+  if (v === 'ssl' || v === 'suspender') {
+    lista.push({ rotulo: '#testar-dns-todos', comando: async () => {
+      const ds = parseDomains(document.getElementById('mailDomains')?.value || '');
+      if (!ds.length) { log('Cole os domínios na lista primeiro.', 'warn'); return; }
+      for (const x of ds) await consultarDnsNoTerminal(x, false);
+    } });
+  }
+  if (v === 'doutor' && d) lista.push({ rotulo: '#abrir-doutor', comando: `start https://${d}/doutor/` });
+  if (v === 'publish' && d) lista.push({ rotulo: '#ns-no-pai', comando: `nslookup -type=NS ${d}` });
+  if (v === 'kanban' || v === 'home') lista.push({ rotulo: '#recarregar-filas', comando: async () => { await carregarTarefasSf(true); render(); } });
+  if (v === 'config') lista.push({ rotulo: '#testar-credenciais', comando: async () => testarCredenciais() });
+  if (v === 'merge') lista.push({ rotulo: '#git-version', comando: 'git --version' });
+  lista.push({ rotulo: '#limpar', comando: 'limpar' });
+  lista.push({ rotulo: '#ajuda', comando: 'ajuda' });
+  return lista;
+}
+
+function renderAtalhosTerminal() {
+  if (!el.termAtalhos) return;
+  el.termAtalhos.innerHTML = atalhosDaTela().map((a) => `<button class="term-chip" data-atalho="${escapeHtml(a.rotulo)}">${escapeHtml(a.rotulo)}</button>`).join('');
+  el.termAtalhos.querySelectorAll('[data-atalho]').forEach((b) => b.addEventListener('click', () => executarNoTerminal(b.dataset.atalho)));
+  if (el.termPrompt) {
+    const nome = primeiroNome(hubUsuario || nomeDoEmailLocal(state.creds?.email) || 'hub').toLowerCase();
+    const m = MODULES.find((x) => x.id === state.view);
+    el.termPrompt.textContent = `${nome}@hub:~/${m && m.id !== 'home' ? m.id : ''}$`;
+  }
+}
+
+function copiarTerminal() {
+  const linhas = [...el.terminal.querySelectorAll('.log-line')].map((l) => {
+    const ts = l.querySelector('.ts')?.textContent || '';
+    const msg = l.querySelector('.log-msg')?.textContent || '';
+    return `${ts ? `[${ts}] ` : ''}${msg}`;
+  });
+  if (!linhas.length) { log('Nada para copiar.', 'info'); return; }
+  window.api.copyToClipboard(linhas.join('\n')).then(() => {
+    log(`${linhas.length} linha(s) copiadas.`, 'success');
+    flashCopied(el.copyLogBtn, 'Copiado!');
+  });
+}
+
+// ---------- Tarefas e filas do Salesforce (home + kanban) (ADR-115) ----------
+
+let sfKanban = { dados: null, carregando: false, erro: null, quando: 0, fila: 'todas', movendo: new Set() };
+
+async function carregarTarefasSf(forcar) {
+  if (sfKanban.carregando) return sfKanban.dados;
+  if (!forcar && sfKanban.dados && Date.now() - sfKanban.quando < 60000) return sfKanban.dados;
+  if (!hubSfConectado) {
+    try { const sf = await window.api.salesforceGetConfig(); hubSfConectado = !!(sf && sf.ok && sf.conectado); } catch (e) {}
+    if (!hubSfConectado) { sfKanban.dados = null; sfKanban.erro = 'Salesforce desconectado'; return null; }
+  }
+  sfKanban.carregando = true;
+  renderFilasSePossivel();
+  const r = await withBusy('lendo as filas do Salesforce', () => window.api.salesforceTarefas()).catch((e) => ({ ok: false, error: e.message }));
+  sfKanban.carregando = false;
+  sfKanban.quando = Date.now();
+  if (r && r.log && forcar) for (const e of r.log) log(e.message, e.type);
+  if (!r || !r.ok) {
+    sfKanban.erro = (r && r.error) || 'falhou';
+    log(`Filas do Salesforce: ${sfKanban.erro}${r && r.precisaReconectar ? ' (reconecte nas configurações)' : ''}`, 'warn');
+  } else {
+    sfKanban.erro = null;
+    sfKanban.dados = r;
+    if (forcar) log(`Salesforce: ${r.filas.length} fila(s), ${r.tarefas.filter((t) => !t.fechada).length} tarefa(s) aberta(s).`, 'success');
+  }
+  renderFilasSePossivel();
+  return sfKanban.dados;
+}
+
+function renderFilasSePossivel() {
+  if (state.view === 'home') { const w = document.getElementById('homeFilas'); if (w) renderHomeFilas(); }
+  if (state.view === 'kanban') renderKanbanTool();
+}
+
+const hoje = () => new Date().toISOString().slice(0, 10);
+function prazoInfo(t) {
+  if (!t.prazo) return { texto: 'sem prazo', cls: 'dim', critica: false };
+  const h = hoje();
+  const amanha = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  if (t.prazo < h) return { texto: `atrasada (${formatarDataCurta(t.prazo)})`, cls: 'warn', critica: true };
+  if (t.prazo === h) return { texto: 'Hoje', cls: 'warn', critica: true };
+  if (t.prazo === amanha) return { texto: 'Amanhã', cls: 'cyan', critica: false };
+  return { texto: formatarDataCurta(t.prazo), cls: '', critica: false };
+}
+function formatarDataCurta(iso) {
+  const [a, m, d] = String(iso).split('-');
+  return d && m ? `${d}/${m}` : iso;
+}
+
+function tarefasDaFila(filaId) {
+  const d = sfKanban.dados;
+  if (!d) return [];
+  if (filaId === 'todas') return d.tarefas;
+  if (filaId === 'minhas') return d.tarefas.filter((t) => t.minha);
+  return d.tarefas.filter((t) => t.fila === filaId);
+}
+
+function linkDaTarefa(t) {
+  const base = (sfKanban.dados && sfKanban.dados.instancia) || '';
+  if (!base) return '';
+  return `${base.replace('.my.salesforce.com', '.lightning.force.com')}/lightning/r/Task/${t.id}/view`;
+}
+
+// A tarefa aberta num cartão por cima do quadro: título, comentário e autor
+// (o que o Guilherme pediu), mais o resto que já veio na consulta.
+function abrirTarefaNoSalesforce(t) {
+  fecharTarefaAberta();
+  const p = prazoInfo(t);
+  const url = linkDaTarefa(t);
+  const data = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const col = KB_COLUNAS.find((c) => c.id === t.coluna);
+  const box = document.createElement('div');
+  box.className = 'modal tarefa-modal';
+  box.innerHTML = `<div class="modal-box tarefa-box anim-in">
+    <div class="tarefa-head">
+      <span class="sec-title">Tarefa do Salesforce</span>
+      <span class="spacer"></span>
+      <span class="badge ${t.fechada ? 'ok' : p.critica ? 'warn' : 'neutral'}">${escapeHtml(col ? col.nome : t.status)}</span>
+      <button class="text-btn" data-fechar title="Fechar (Esc)">✕</button>
+    </div>
+    <h2 class="tarefa-titulo">${escapeHtml(t.assunto)}</h2>
+    <div class="tarefa-meta">
+      <div><span class="k">Autor</span><span class="v">${escapeHtml(t.autor || '—')}</span></div>
+      <div><span class="k">Responsável</span><span class="v">${escapeHtml(t.dono || '—')}${t.minha ? ' <span class="badge ok raw">você</span>' : ''}</span></div>
+      <div><span class="k">Prazo</span><span class="v ${p.cls === 'warn' ? 'warn-text' : ''}">${escapeHtml(t.prazo ? `${formatarDataCurta(t.prazo)} (${p.texto})` : 'sem prazo')}</span></div>
+      <div><span class="k">Status</span><span class="v mono">${escapeHtml(t.status || '')}</span></div>
+      ${t.relativo ? `<div><span class="k">Relacionado</span><span class="v">${escapeHtml(`${t.relativoTipo === 'Case' ? 'Caso' : t.relativoTipo || ''} ${t.relativo}`.trim())}</span></div>` : ''}
+      <div><span class="k">Criada em</span><span class="v mono">${escapeHtml(data(t.criada))}</span></div>
+    </div>
+    <div class="section-label">Comentário</div>
+    <div class="tarefa-comentario">${t.descricao ? escapeHtml(t.descricao) : '<span class="dim">(sem comentário)</span>'}</div>
+    <div class="modal-actions">
+      <span class="kb-mover" style="margin:0">
+        ${KB_COLUNAS.filter((c) => c.id !== t.coluna).map((c) => `<button class="btn compact ghost" data-mover="${c.id}">Mover para ${escapeHtml(c.nome)}</button>`).join('')}
+      </span>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-copiar ${url ? '' : 'disabled'}>Copiar link</button>
+      <button class="btn primary" data-abrir ${url ? '' : 'disabled'}>Abrir no Salesforce</button>
+    </div>
+  </div>`;
+  document.body.appendChild(box);
+  const fechar = () => fecharTarefaAberta();
+  box.addEventListener('click', (e) => { if (e.target === box) fechar(); });
+  box.querySelector('[data-fechar]').addEventListener('click', fechar);
+  box.querySelector('[data-copiar]').addEventListener('click', (e) => { window.api.copyToClipboard(url).then(() => { log(`Link da tarefa copiado: ${url}`, 'success'); flashCopied(e.currentTarget, 'Copiado!'); }); });
+  box.querySelector('[data-abrir]').addEventListener('click', async () => {
+    const r = window.api.abrirLink ? await window.api.abrirLink({ url }) : { ok: false, error: 'sem API' };
+    if (r && r.ok) log(`Abrindo a tarefa no navegador: ${url}`, 'info');
+    else log(`Não consegui abrir: ${(r && r.error) || 'erro'}`, 'error');
+  });
+  box.querySelectorAll('[data-mover]').forEach((b) => b.addEventListener('click', () => { fechar(); moverTarefaKanban(t.id, b.dataset.mover); }));
+  tarefaAbertaEsc = (e) => { if (e.key === 'Escape') fechar(); };
+  document.addEventListener('keydown', tarefaAbertaEsc);
+}
+
+let tarefaAbertaEsc = null;
+function fecharTarefaAberta() {
+  document.querySelectorAll('.tarefa-modal').forEach((m) => m.remove());
+  if (tarefaAbertaEsc) { document.removeEventListener('keydown', tarefaAbertaEsc); tarefaAbertaEsc = null; }
+}
+
+function renderHomeFilas() {
+  const wrap = document.getElementById('homeFilas');
+  if (!wrap) return;
+  const d = sfKanban.dados;
+  if (!hubSfConectado || (!d && !sfKanban.carregando)) {
+    wrap.innerHTML = `<div class="fila" style="grid-column: 1 / -1; min-height: 0">
+      <div class="fila-head"><span class="fila-nome">${NAV_ICON.kanban}Filas do Salesforce</span><span class="fila-n dim">offline</span></div>
+      <div class="fila-vazia">${hubSfConectado ? `Não consegui ler as filas: ${escapeHtml(sfKanban.erro || 'erro')}.` : 'Conecte o Salesforce nas configurações para ver as filas de deploy aqui.'}</div>
+      <div class="fila-foot">${hubSfConectado ? '<button class="btn compact ghost" id="filasTentar">Tentar de novo</button>' : '<button class="btn compact ghost" id="filasConfig">Abrir configurações</button>'}</div>
+    </div>`;
+    document.getElementById('filasTentar')?.addEventListener('click', () => carregarTarefasSf(true));
+    document.getElementById('filasConfig')?.addEventListener('click', () => openSettings('salesforce'));
+    return;
+  }
+  if (!d) {
+    wrap.innerHTML = `<div class="fila" style="grid-column: 1 / -1; min-height: 0"><div class="fila-vazia">Lendo as filas do Salesforce…</div></div>`;
+    return;
+  }
+  const filas = d.filas.length ? d.filas : [{ id: 'minhas', nome: 'Minhas tarefas', marca: null }];
+  wrap.innerHTML = filas.map((f, i) => {
+    const abertas = tarefasDaFila(f.id).filter((t) => !t.fechada);
+    const lista = abertas.slice(0, 4);
+    return `<div class="fila ${i % 2 ? 'cyan' : ''}">
+      <div class="fila-head"><span class="fila-nome" title="${escapeHtml(f.nome)}">${NAV_ICON.deploy}<span>${escapeHtml(f.nome)}</span></span><span class="fila-n">${abertas.length} na fila</span></div>
+      <div class="fila-itens">
+        ${lista.length ? lista.map((t) => {
+          const p = prazoInfo(t);
+          return `<div class="fila-item" data-tarefa="${escapeHtml(t.id)}" title="${escapeHtml(t.assunto)}">${t.coluna === 'andamento' ? ICONS.history : NAV_ICON.ouvidoria}<span class="t">${escapeHtml(t.assunto)}</span><span class="m ${p.cls}">${t.coluna === 'andamento' ? 'em andamento' : escapeHtml(p.texto)}</span></div>`;
+        }).join('') : '<div class="fila-vazia">Nada na fila.</div>'}
+        ${abertas.length > 4 ? `<div class="fila-vazia">+ ${abertas.length - 4} tarefa(s)</div>` : ''}
+      </div>
+      <div class="fila-foot"><button class="btn compact ghost" data-kanban="${escapeHtml(f.id)}">${NAV_ICON.kanban} Kanban</button></div>
+    </div>`;
+  }).join('');
+  wrap.querySelectorAll('[data-kanban]').forEach((b) => b.addEventListener('click', () => { sfKanban.fila = b.dataset.kanban; openTool('kanban'); }));
+  wrap.querySelectorAll('[data-tarefa]').forEach((b) => b.addEventListener('click', () => { const t = sfKanban.dados?.tarefas.find((x) => x.id === b.dataset.tarefa); if (t) abrirTarefaNoSalesforce(t); }));
+  renderHomeResumoSf();
+}
+
+function renderHomeResumoSf() {
+  const wrap = document.getElementById('homeSf');
+  if (!wrap) return;
+  const d = sfKanban.dados;
+  const nome = hubUsuario || '';
+  if (!d) { wrap.innerHTML = ''; return; }
+  const abertas = d.tarefas.filter((t) => !t.fechada);
+  const proximas = abertas.filter((t) => prazoInfo(t).critica || (t.prazo && t.prazo <= new Date(Date.now() + 86400000).toISOString().slice(0, 10)));
+  const semPrazo = abertas.filter((t) => !t.prazo);
+  const destaque = [...abertas].filter((t) => t.prazo).sort((a, b) => a.prazo.localeCompare(b.prazo)).slice(0, 3);
+  wrap.innerHTML = `<div class="sf-resumo">
+    <div class="sf-resumo-head">
+      <span class="home-sec-title">${NAV_ICON.ouvidoria}Tarefas do Salesforce <span class="r">· ${escapeHtml(primeiroNome(nome) || d.eu.nome || '')}</span></span>
+      <span class="home-pill cyan">sessão ativa</span>
+      <button class="btn compact ghost" id="homeAbrirKanban">${NAV_ICON.kanban} Abrir no quadro Kanban</button>
+    </div>
+    <div class="sf-nums">
+      <div class="sf-num"><div class="sf-num-l">Tarefas abertas</div><div class="sf-num-v"><b>${String(abertas.length).padStart(2, '0')}</b><span class="badge ok">em fila</span></div></div>
+      <div class="sf-num"><div class="sf-num-l">Próximas entregas</div><div class="sf-num-v"><b>${String(proximas.length).padStart(2, '0')}</b><span class="badge warn">&lt; 24h</span></div></div>
+      <div class="sf-num"><div class="sf-num-l">Sem prazo fixado</div><div class="sf-num-v"><b>${String(semPrazo.length).padStart(2, '0')}</b><span class="badge neutral">backlog</span></div></div>
+    </div>
+    ${destaque.length ? `<div class="sf-lista">${destaque.map((t) => {
+      const p = prazoInfo(t);
+      return `<div class="sf-tarefa ${p.critica ? 'critica' : ''}" data-tarefa="${escapeHtml(t.id)}"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${p.critica ? '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>' : '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/>'}</svg><span class="t">${escapeHtml(t.assunto)}</span><span class="p">${escapeHtml(p.texto)}</span><span class="badge ${p.critica ? 'warn' : t.coluna === 'andamento' ? 'ok' : 'neutral'}">${p.critica ? 'Crítico' : t.coluna === 'andamento' ? 'Em andamento' : 'A fazer'}</span></div>`;
+    }).join('')}</div>` : ''}
+  </div>`;
+  document.getElementById('homeAbrirKanban')?.addEventListener('click', () => { sfKanban.fila = 'todas'; openTool('kanban'); });
+  wrap.querySelectorAll('[data-tarefa]').forEach((b) => b.addEventListener('click', () => { const t = sfKanban.dados?.tarefas.find((x) => x.id === b.dataset.tarefa); if (t) abrirTarefaNoSalesforce(t); }));
+}
+
+// ----- Kanban -----
+
+const KB_COLUNAS = [
+  { id: 'afazer', nome: 'A fazer' },
+  { id: 'andamento', nome: 'Em andamento' },
+  { id: 'concluido', nome: 'Concluído' },
+];
+
+function renderKanbanTool() {
+  const d = sfKanban.dados;
+  const filas = d ? d.filas : [];
+  const opcoes = [{ id: 'todas', nome: 'Todas' }, ...filas, { id: 'minhas', nome: 'Minhas' }];
+  if (!opcoes.some((o) => o.id === sfKanban.fila)) sfKanban.fila = 'todas';
+  const tarefas = tarefasDaFila(sfKanban.fila);
+  el.leftPanel.innerHTML = `
+    ${backButtonHtml()}
+    <div class="kanban-head">
+      <div class="kanban-filas">${opcoes.map((o) => `<button class="term-chip ${sfKanban.fila === o.id ? 'active' : ''}" data-fila="${escapeHtml(o.id)}" style="${sfKanban.fila === o.id ? 'color:var(--accent);border-color:var(--accent-line)' : ''}">${escapeHtml(o.nome)}${d ? ` <span class="dim">${tarefasDaFila(o.id).filter((t) => !t.fechada).length}</span>` : ''}</button>`).join('')}</div>
+      <span class="spacer"></span>
+      <button class="btn compact ghost" id="kbRecarregar" ${sfKanban.carregando ? 'disabled' : ''}>${sfKanban.carregando ? 'Lendo…' : 'Recarregar'}</button>
+    </div>
+    ${!hubSfConectado ? `<div class="sec"><div class="sec-title">Salesforce desconectado</div><p class="hint">Conecte o Salesforce nas configurações para ver e mover as tarefas.</p><button class="btn ghost compact mt8" id="kbConfig">Abrir configurações</button></div>` : ''}
+    <div class="kanban" id="kanban">
+      ${KB_COLUNAS.map((c) => {
+        const itens = tarefas.filter((t) => t.coluna === c.id);
+        return `<div class="kb-col" data-col="${c.id}">
+          <div class="kb-col-head"><span>${c.nome}</span><span class="n">${itens.length}</span></div>
+          <div class="kb-itens">
+            ${itens.length ? itens.map((t) => kbCardHtml(t)).join('') : `<div class="kb-vazio">${d ? 'Nada aqui.' : sfKanban.carregando ? 'Lendo…' : ''}</div>`}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <p class="hint mt12">Arraste um cartão entre as colunas (ou use as setas) para trocar o status da tarefa no Salesforce. Mover para "Em andamento" também assume a tarefa no seu nome. "Concluído" mostra o que fechou nos últimos 7 dias. Clicar no cartão abre a tarefa (título, comentário e autor).</p>
+  `;
+  document.getElementById('backToHub').addEventListener('click', goHome);
+  document.getElementById('kbConfig')?.addEventListener('click', () => openSettings('salesforce'));
+  document.getElementById('kbRecarregar').addEventListener('click', () => carregarTarefasSf(true));
+  el.leftPanel.querySelectorAll('[data-fila]').forEach((b) => b.addEventListener('click', () => { sfKanban.fila = b.dataset.fila; renderKanbanTool(); }));
+  wireKanbanDnd();
+  if (!d && !sfKanban.carregando && hubSfConectado) carregarTarefasSf(false);
+}
+
+function kbCardHtml(t) {
+  const p = prazoInfo(t);
+  const idx = KB_COLUNAS.findIndex((c) => c.id === t.coluna);
+  const fila = sfKanban.dados?.filas.find((f) => f.id === t.fila);
+  return `<div class="kb-card ${t.minha ? 'minha' : ''} ${p.critica && !t.fechada ? 'critica' : ''} ${t.fechada ? 'fechada' : ''} ${sfKanban.movendo.has(t.id) ? 'movendo' : ''}" draggable="true" data-id="${escapeHtml(t.id)}">
+    <div class="kb-t">${escapeHtml(t.assunto)}</div>
+    <div class="kb-s">${escapeHtml(t.relativo ? `${t.relativoTipo === 'Case' ? 'Caso' : t.relativoTipo || ''} ${t.relativo}`.trim() : t.dono || '')}</div>
+    <div class="kb-m">
+      ${!t.fechada ? `<span class="badge ${p.cls === 'warn' ? 'warn' : 'neutral'}">${escapeHtml(p.texto)}</span>` : `<span class="badge ok">${escapeHtml(t.status)}</span>`}
+      ${fila ? `<span class="badge neutral raw">${escapeHtml(fila.nome.replace(/^deploy\s*/i, ''))}</span>` : t.minha ? '<span class="badge neutral raw">minha</span>' : ''}
+      <span class="kb-mover">
+        ${idx > 0 ? `<button data-mover="${KB_COLUNAS[idx - 1].id}" title="Mover para ${KB_COLUNAS[idx - 1].nome}">←</button>` : ''}
+        ${idx < KB_COLUNAS.length - 1 ? `<button data-mover="${KB_COLUNAS[idx + 1].id}" title="Mover para ${KB_COLUNAS[idx + 1].nome}">→</button>` : ''}
+      </span>
+    </div>
+  </div>`;
+}
+
+function wireKanbanDnd() {
+  const board = document.getElementById('kanban');
+  if (!board) return;
+  let arrastando = null;
+  board.querySelectorAll('.kb-card').forEach((card) => {
+    card.addEventListener('dragstart', (e) => { arrastando = card.dataset.id; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', arrastando); } catch (x) {} });
+    card.addEventListener('dragend', () => { card.classList.remove('dragging'); board.querySelectorAll('.kb-col').forEach((c) => c.classList.remove('over')); });
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('[data-mover]')) return;
+      const t = sfKanban.dados?.tarefas.find((x) => x.id === card.dataset.id);
+      if (t) abrirTarefaNoSalesforce(t);
+    });
+    card.querySelectorAll('[data-mover]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); moverTarefaKanban(card.dataset.id, b.dataset.mover); }));
+  });
+  board.querySelectorAll('.kb-col').forEach((col) => {
+    col.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; col.classList.add('over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('over'));
+    col.addEventListener('drop', (e) => { e.preventDefault(); col.classList.remove('over'); const id = arrastando || e.dataTransfer.getData('text/plain'); arrastando = null; if (id) moverTarefaKanban(id, col.dataset.col); });
+  });
+}
+
+async function moverTarefaKanban(id, coluna) {
+  const t = sfKanban.dados?.tarefas.find((x) => x.id === id);
+  if (!t || t.coluna === coluna || sfKanban.movendo.has(id)) return;
+  const de = t.coluna;
+  sfKanban.movendo.add(id);
+  renderKanbanTool();
+  const r = await withBusy(`movendo "${t.assunto}"`, () => window.api.salesforceMoverTarefa({ id, coluna })).catch((e) => ({ ok: false, error: e.message }));
+  sfKanban.movendo.delete(id);
+  if (r && r.log) for (const e of r.log) log(e.message, e.type);
+  if (r && r.ok) {
+    t.coluna = coluna;
+    t.status = r.status;
+    t.fechada = coluna === 'concluido';
+    if (r.assumida) { t.minha = true; t.fila = null; t.dono = (sfKanban.dados.eu && sfKanban.dados.eu.nome) || t.dono; }
+    log(`"${t.assunto}": ${KB_COLUNAS.find((c) => c.id === de)?.nome} → ${KB_COLUNAS.find((c) => c.id === coluna)?.nome}.`, 'success');
+  } else {
+    log(`Não movi "${t.assunto}": ${(r && r.error) || 'erro'}`, 'error');
+  }
+  renderKanbanTool();
+}
+
+// ---------- Configurações como tela (ADR-115) ----------
+
+function guardarSettingsBox() {
+  if (el.settingsModal && el.settingsHost && el.settingsModal.parentElement !== el.settingsHost) el.settingsHost.appendChild(el.settingsModal);
+}
+
+const CFG_TABS = ['geral', 'google', 'cloudflare', 'salesforce', 'paineis', 'acesso'];
+
+function renderConfigTool() {
+  const m = MODULES.find((x) => x.id === 'config');
+  el.leftPanel.innerHTML = `
+    ${backButtonHtml()}
+    <div class="tool-sub">Credenciais criptografadas nesta máquina (Windows DPAPI) · host: localhost</div>
+    <div class="cfg-audit" id="cfgAudit"></div>
+    <div id="cfgMount"></div>
+  `;
+  document.getElementById('backToHub').addEventListener('click', goHome);
+  document.getElementById('cfgMount').appendChild(el.settingsModal);
+  el.settingsModal.classList.remove('hidden');
+  ativarCfgTab(state.cfgTab || 'geral');
+  el.cfgTabs.querySelectorAll('[data-cfg-tab]').forEach((b) => { b.onclick = () => ativarCfgTab(b.dataset.cfgTab); });
+  hubCredenciais = null; // a cada abertura, o estado de agora
+  renderCfgAudit();
+  renderGrantAccessTool();
+}
+
+function ativarCfgTab(tab) {
+  if (!CFG_TABS.includes(tab)) tab = 'geral';
+  state.cfgTab = tab;
+  el.cfgTabs.querySelectorAll('[data-cfg-tab]').forEach((b) => b.classList.toggle('active', b.dataset.cfgTab === tab));
+  el.settingsModal.querySelectorAll('[data-cfg-pane]').forEach((p) => p.classList.toggle('active', p.dataset.cfgPane === tab));
+}
+
+function renderCfgAudit() {
+  const wrap = document.getElementById('cfgAudit');
+  if (!wrap) return;
+  const c = hubCredenciais;
+  const itens = (c && c.itens) || [];
+  const ok = itens.filter((i) => i.ok).length;
+  wrap.innerHTML = `
+    <div class="cfg-audit-head">
+      <span class="home-sec-title">${NAV_ICON.ouvidoria}Telemetria &amp; auditoria de credenciais <span class="r">· ${c ? `${ok} de ${itens.length} integradas` : 'lendo…'}</span></span>
+      <span class="home-head-right"><span class="home-pill ${c ? '' : 'dim'}">engine: DPAPI</span><button class="btn compact ghost" id="cfgTestar">Testar todas</button></span>
+    </div>
+    <div class="cfg-audit-grid">${itens.map((i) => `<div class="cred ${i.ok ? 'ok' : 'off'}"><div style="min-width:0"><div class="n">${escapeHtml(i.nome)}</div><div class="d">${escapeHtml(i.detalhe)}</div></div><span class="s">${i.ok ? '[OK]' : '[--]'}</span></div>`).join('')}</div>`;
+  document.getElementById('cfgTestar').addEventListener('click', testarCredenciais);
+  if (!c) carregarCredenciaisDaAuditoria();
+}
+
+// Sem o rodapé de status, ninguém mais lê as credenciais de minuto em minuto
+// (ADR-126): a auditoria busca quando a tela das Configurações abre.
+let credenciaisLendo = false;
+async function carregarCredenciaisDaAuditoria() {
+  if (credenciaisLendo) return;
+  credenciaisLendo = true;
+  try {
+    const r = await window.api.statusCredenciais();
+    if (r && r.ok) { hubCredenciais = r; renderCfgAudit(); }
+  } catch (e) {
+    // fica "lendo…"; o "Testar todas" tenta de novo
+  } finally {
+    credenciaisLendo = false;
+  }
+}
+
+// "Testar todas": o que o Hub sabe conferir de verdade, cada um no terminal.
+async function testarCredenciais() {
+  log('Conferindo as credenciais desta máquina…', 'cmd');
+  try { const r = await window.api.statusCredenciais(); if (r && r.ok) { hubCredenciais = r; renderCfgAudit(); for (const i of r.itens) log(`${i.nome}: ${i.ok ? 'ok' : 'não configurado'}${i.detalhe ? ` (${i.detalhe})` : ''}`, i.ok ? 'info' : 'warn'); } } catch (e) {}
+  await refreshOauthStatus().catch(() => {});
+  log(`Google (login manual): ${state.oauth.connected ? `conectado${state.oauth.email ? ' como ' + state.oauth.email : ''}` : 'sem sessão'}`, state.oauth.connected ? 'success' : 'warn');
+  await refreshMsStatus().catch(() => {});
+  log(`Microsoft Graph: ${state.ms.connected ? `conectado${state.ms.email ? ' como ' + state.ms.email : ''}` : 'sem sessão'}`, state.ms.connected ? 'success' : 'warn');
+  try {
+    const sf = await window.api.salesforceGetConfig();
+    hubSfConectado = !!(sf && sf.ok && sf.conectado);
+    if (hubSfConectado) {
+      const r = await window.api.salesforceTarefas();
+      if (r && r.ok) { sfKanban.dados = r; sfKanban.quando = Date.now(); log(`Salesforce: sessão válida, ${r.filas.length} fila(s) de deploy encontrada(s).`, 'success'); }
+      else log(`Salesforce: ${r.error}`, 'error');
+    } else log('Salesforce: não conectado.', 'warn');
+  } catch (e) { log(`Salesforce: ${e.message}`, 'error'); }
+  try {
+    const p = await window.api.painelStatus();
+    log(`Painel MPI+: ${p.configured ? `login gravado (${p.email || '?'})` : 'sem login'}`, p.configured ? 'success' : 'warn');
+  } catch (e) {}
+  if (window.api.doutorStatus) {
+    try { const d = await window.api.doutorStatus(); log(`Painel /doutor: ${d.temSenha ? 'senha gravada' : 'sem senha'}`, d.temSenha ? 'success' : 'warn'); } catch (e) {}
+  }
+  atualizarTopbar();
+  log('Conferência das credenciais concluída.', 'success');
+}
+
+// ---------- Ferramenta: bloquear contatos no /doutor (ADR-105) ----------
+
+let doutorEstado = { marca: 'mpisolutions', dominio: '', acao: 'bloquear', tarefa: '', rodando: false, ultimo: null };
+
+function renderDoutorTool() {
+  const desb = doutorEstado.acao === 'desbloquear';
+  el.leftPanel.innerHTML = `
+    ${backButtonHtml()}
+    <div class="sec anim-in">
+    <div class="sec-head"><span class="sec-title">Bloquear contatos (Doutor &amp; Marcas)</span><span class="sec-meta">Selenium / CF_Worker</span></div>
+    <div class="tool-sub" style="margin:0 0 12px">TARGET: /doutor/ · timeout: 45s · idempotente</div>
+    <label class="field">
+      <span>Marca (decide o e-mail do login) <span class="tag">auth profile</span></span>
+      <select id="doutorMarca">
+        <option value="mpisolutions" ${doutorEstado.marca === 'mpisolutions' ? 'selected' : ''}>MPI Solutions</option>
+        <option value="bc" ${doutorEstado.marca === 'bc' ? 'selected' : ''}>Busca Cliente</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>Domínio do cliente <span class="tag cyan">https://</span></span>
+      <input id="doutorDominio" type="text" placeholder="ex: cliente.com.br" value="${escapeHtml(doutorEstado.dominio)}" autocomplete="off" />
+    </label>
+    <label class="field">
+      <span>Ação <span class="tag">target state</span></span>
+      <select id="doutorAcao">
+        <option value="bloquear" ${doutorEstado.acao === 'bloquear' ? 'selected' : ''}>Bloquear contatos</option>
+        <option value="desbloquear" ${doutorEstado.acao === 'desbloquear' ? 'selected' : ''}>Desbloquear contatos</option>
+      </select>
+    </label>
+    ${!desb ? `<label class="field">
+      <span>Link da tarefa no Salesforce <span class="tag cyan">opcional</span></span>
+      <input id="doutorTarefa" type="text" placeholder='cole o link da tarefa (conclui e comenta "Contatos removidos" ao autor)' value="${escapeHtml(doutorEstado.tarefa || '')}" autocomplete="off" />
+    </label>` : ''}
+    <button id="doutorBtn" class="btn ${desb ? 'primary' : 'caution'} full-width" ${doutorEstado.rodando ? 'disabled' : ''}>${ICONS.ssl} ${doutorEstado.rodando ? (desb ? 'Desbloqueando...' : 'Bloqueando...') : (desb ? 'Desbloquear contatos' : 'Bloquear contatos')}</button>
+    <div class="btn-meta"><span>timeout: 45s</span><span>idempotente (já no estado pedido = nada a fazer)</span></div>
+    <div id="doutorResultado"></div>
+    </div>
+    ${infoBoxHtml('<p>O Hub abre <strong>https://&lt;domínio&gt;/doutor/</strong>, entra com a credencial da marca (uma senha só, configurada em Configurações), acha a empresa do cliente e <strong>esvazia os telefones/WhatsApp no cadastro e salva</strong> — é isso que tira o contato do site. Ao bloquear, guarda os números (criptografados) para o desbloquear repor. O painel costuma responder <strong>504</strong> e concluir mesmo assim; o Hub confere relendo o cadastro, não pelo 504.</p><p>Com o link da tarefa preenchido, ao terminar ele conclui a tarefa no Salesforce e comenta <strong>"Contatos removidos"</strong> ao autor. Se já estiver no estado pedido, não faz nada.</p>')}
+    <div class="stat-grid" id="doutorStats"></div>
+  `;
+  document.getElementById('backToHub').addEventListener('click', goHome);
+  renderDoutorStats();
+  document.getElementById('doutorMarca').addEventListener('change', (e) => { doutorEstado.marca = e.target.value; renderDoutorStats(); });
+  document.getElementById('doutorDominio').addEventListener('input', (e) => { doutorEstado.dominio = e.target.value.trim(); renderAtalhosTerminal(); });
+  document.getElementById('doutorAcao').addEventListener('change', (e) => { doutorEstado.acao = e.target.value; renderDoutorTool(); });
+  const tf = document.getElementById('doutorTarefa'); if (tf) tf.addEventListener('input', (e) => { doutorEstado.tarefa = e.target.value.trim(); });
+  document.getElementById('doutorBtn').addEventListener('click', bloquearContatosDoutor);
+  renderDoutorResultado();
+}
+
+// Os dois cartões de estado do mockup: credencial da marca e último resultado.
+function renderDoutorStats() {
+  const wrap = document.getElementById('doutorStats');
+  if (!wrap) return;
+  const marca = doutorEstado.marca === 'bc' ? 'Busca Cliente' : 'MPI Solutions';
+  const u = doutorEstado.ultimo;
+  const ultimo = !u
+    ? statCardHtml({ rotulo: 'Último estado', titulo: 'Nenhuma ação nesta sessão', dot: 'off', sub: 'o resultado aparece aqui e no terminal', subCls: 'dim' })
+    : statCardHtml({ rotulo: 'Último estado', titulo: u.titulo, dot: u.ok ? '' : u.incerto ? 'warn' : 'err', sub: u.sub || '', subCls: u.ok ? '' : 'warn', foot: `há pouco via Hub` });
+  const cred = (r) => statCardHtml({ rotulo: 'Credencial ativa', titulo: marca, dot: r && r.temSenha ? '' : 'off', sub: r && r.temSenha ? 'chave criptografada OK' : 'sem senha do /doutor nas configurações', subCls: r && r.temSenha ? '' : 'warn', foot: (r && (doutorEstado.marca === 'bc' ? r.emailBusca : r.emailMpi)) || 'e-mail não configurado' });
+  wrap.innerHTML = cred(null) + ultimo;
+  if (window.api.doutorStatus) window.api.doutorStatus().then((r) => { if (document.getElementById('doutorStats')) wrap.innerHTML = cred(r) + ultimo; }).catch(() => {});
+}
+
+function renderDoutorResultado() {
+  renderDoutorStats();
+  const wrap = document.getElementById('doutorResultado');
+  if (!wrap) return;
+  const r = doutorEstado.ultimo;
+  if (!r) { wrap.innerHTML = ''; return; }
+  const cls = r.ok ? 'is-ok' : r.incerto ? 'is-warn' : 'is-err';
+  wrap.innerHTML = `<div class="row ${cls}" style="margin-top:10px"><div class="row__main">
+    <div class="row__title">${escapeHtml(r.titulo)}</div>
+    ${r.sub ? `<div class="row__sub">${escapeHtml(r.sub)}</div>` : ''}
+  </div></div>`;
+}
+
+async function bloquearContatosDoutor() {
+  const marca = doutorEstado.marca;
+  const acao = doutorEstado.acao === 'desbloquear' ? 'desbloquear' : 'bloquear';
+  const desb = acao === 'desbloquear';
+  const dominio = normalizeDomain(doutorEstado.dominio);
+  if (!dominio) { log('Informe o domínio do cliente.', 'error'); return; }
+  const nomeMarca = marca === 'bc' ? 'Busca Cliente' : 'MPI Solutions';
+  const pergunta = desb
+    ? `Desbloquear os contatos de ${dominio} no /doutor (${nomeMarca})?\n\nOs telefones/WhatsApp da empresa voltam a aparecer no site.`
+    : `Bloquear os contatos de ${dominio} no /doutor (${nomeMarca})?\n\nOs telefones/WhatsApp da empresa são removidos do site.`;
+  if (!confirm(pergunta)) { log('Ação cancelada.', 'info'); return; }
+  doutorEstado.rodando = true;
+  doutorEstado.ultimo = null;
+  renderDoutorTool();
+  log(`/doutor: ${desb ? 'desbloqueando' : 'bloqueando'} os contatos de ${dominio} (${nomeMarca}).`, 'cmd');
+  const res = await withBusy(`${desb ? 'desbloqueando' : 'bloqueando'} contatos de ${dominio}`, () => window.api.doutorBloquear({ dominio, marca, acao }));
+  if (res.log) for (const e of res.log) log(e.message, e.type);
+  doutorEstado.rodando = false;
+  const alvo = res.empresa || dominio;
+  if (res.ok && res.jaEstava) doutorEstado.ultimo = { ok: true, titulo: `${alvo}: já estava ${desb ? 'com contatos no ar' : 'sem contatos'}`, sub: 'nada a fazer' };
+  else if (res.ok) doutorEstado.ultimo = { ok: true, titulo: `Contatos ${desb ? 'restaurados' : 'removidos'}: ${alvo}`, sub: desb ? 'os telefones voltam ao site' : 'os telefones saem do site (o painel pode ter mostrado 504)' };
+  else if (res.incerto) doutorEstado.ultimo = { incerto: true, titulo: `Não confirmei em ${alvo}`, sub: res.error || 'confira no /doutor' };
+  else doutorEstado.ultimo = { ok: false, titulo: `Não ${desb ? 'desbloqueou' : 'bloqueou'} ${dominio}`, sub: res.error || 'veja o log' };
+
+  // Bloqueio concluído + link da tarefa = conclui a tarefa e comenta ao autor.
+  if (res.ok && !desb && doutorEstado.tarefa) {
+    log('Salesforce: concluindo a tarefa e comentando "Contatos removidos" ao autor.', 'cmd');
+    try {
+      const ft = await withBusy('concluindo a tarefa no Salesforce', () => window.api.salesforceFecharTarefa({ link: doutorEstado.tarefa, texto: 'Contatos removidos', assumir: true, concluir: true, comentar: true }));
+      if (ft && ft.log) for (const e of ft.log) log(e.message, e.type);
+      if (ft && ft.ok) { log('Tarefa concluída e comentada.', 'success'); doutorEstado.ultimo.sub = `${doutorEstado.ultimo.sub} · tarefa concluída`; }
+      else { log(`Não consegui concluir a tarefa: ${(ft && ft.error) || 'veja o log'}`, 'error'); doutorEstado.ultimo.sub = `${doutorEstado.ultimo.sub} · tarefa NÃO concluída`; }
+    } catch (e) { log(`Falha ao concluir a tarefa: ${e.message}`, 'error'); }
+  }
+  renderDoutorTool();
+}
+
+// ---------- Ferramenta: Ouvidoria / SSL (ADR-111) ----------
+
+let ouvEstado = { dominios: [], outros: [], meta: {}, temCliente: false, origem: '', rodando: false, parar: false, linhas: [], feito: false };
+
+function renderOuvidoriaTool() {
+  el.leftPanel.innerHTML = `
+    ${backButtonHtml()}
+    <div class="sec anim-in">
+    <div class="sec-head"><span class="sec-title">Auditoria de Ouvidoria &amp; status SSL</span><span class="sec-meta">${hubSfConectado ? 'automatizado · SFDC' : 'salesforce desconectado'}</span></div>
+    <div class="tool-sub" style="margin:0 0 12px">Validação cruzada de casos de Ouvidoria vs regra de publicação SSL</div>
+    <label class="field">
+      <span>Planilha de domínios (.xlsx, .csv ou colado)</span>
+      <input id="ouvFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    </label>
+    <label class="field">
+      <span>ou cole os domínios (um por linha) <span class="tag" id="ouvContagem">${ouvEstado.dominios.length ? `${ouvEstado.dominios.length} domínios informados` : ''}</span></span>
+      <textarea id="ouvTexto" rows="5" placeholder="cliente1.com.br\ncliente2.com.br" autocomplete="off">${escapeHtml(ouvEstado.texto || '')}</textarea>
+    </label>
+    </div>
+    <div class="sec anim-in">
+      <div class="sec-head"><span class="sec-title">Parâmetros &amp; filtros de auditoria SFDC</span></div>
+      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Consultar casos de Ouvidoria vinculados ao domínio</span></label>
+      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Validar campos <strong>Definição</strong> e <strong>Data de Conclusão</strong></span></label>
+      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Regra SSL: Ativar SSL = <strong>não</strong> se Cancelado/Jurídico; <strong>sim</strong> no restante</span></label>
+      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Marcar domínios não localizados para revisão manual</span></label>
+    </div>
+    <div id="ouvResumo"></div>
+    <div id="ouvAcoes"></div>
+    <div id="ouvLista"></div>
+    ${infoBoxHtml('<p>Com a coluna <strong>cliente</strong> na planilha, o Hub confere só <strong>Busca Cliente</strong> e <strong>MPI Solutions</strong>. Soluções Industriais, Doutores da Web e o resto ficam de fora, na aba <strong>"Outros clientes"</strong> do arquivo final. Sem coluna cliente (domínios colados), confere todos.</p><p>Para achar a conta, usa confiança graduada: <strong>razão social</strong> (se vier na planilha) &gt; <strong>Website da conta</strong> &gt; domínio no <strong>assunto do caso</strong> &gt; <strong>contato</strong> com e-mail do domínio &gt; <strong>tarefa de publicação</strong>. Só resolve com uma conta clara; senão marca revisar (não chuta conta errada). Aí lê os casos de <strong>Ouvidoria</strong> (Definição e Data de Conclusão): Situação = a Definição; Ativar SSL = <strong>não</strong> se Cancelado/Jurídico, <strong>sim</strong> no resto.</p>', 'Protocolo de auditoria e regras da Ouvidoria')}
+  `;
+  document.getElementById('backToHub').addEventListener('click', goHome);
+  document.getElementById('ouvFile').addEventListener('change', async (e) => {
+    const arquivo = e.target.files && e.target.files[0];
+    if (!arquivo) return;
+    const bytes = new Uint8Array(await arquivo.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const res = await window.api.lerPlanilha({ nome: arquivo.name, base64: btoa(bin) });
+    if (!res.ok) { log(res.error, 'error'); return; }
+    ouvCarregar(res.linhas, arquivo.name);
+  });
+  document.getElementById('ouvTexto').addEventListener('change', async (e) => {
+    ouvEstado.texto = e.target.value;
+    const res = await window.api.lerPlanilha({ texto: e.target.value });
+    if (!res.ok) { log(res.error, 'error'); return; }
+    ouvCarregar(res.linhas, 'texto colado');
+  });
+  renderOuvidoria();
+}
+
+// Classifica o valor da coluna "cliente" (ADR-117). Só Busca Cliente e MPI
+// Solutions entram no SSL; Soluções Industriais, Doutores da Web e o resto
+// (inclusive em branco) ficam de fora, na aba "Outros clientes".
+function ouvClienteCat(txt) {
+  const n = String(txt || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!n) return 'outro';
+  if (n === 'bc' || n.includes('busca cliente') || n.includes('buscacliente')) return 'bc';
+  if (n === 'mpi' || n.includes('mpi solutions') || n.includes('mpisolutions') || n.includes('mpi solu')) return 'mpi';
+  return 'outro';
+}
+
+// Da planilha crua: acha o cabeçalho e as colunas (domínio, cliente, razão
+// social). Com coluna "cliente", separa BC/MPI (para conferir) dos demais
+// (ignorados). Sem coluna "cliente" (ex.: domínios colados), confere todos.
+function ouvCarregar(linhas, origem) {
+  linhas = linhas || [];
+  const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const ehCab = (cel) => /dom[ií]?nio|site|url|cliente|produto|marca|raz[aã]o|conta|empresa/i.test(String(cel || ''));
+  let cab = -1;
+  for (let i = 0; i < Math.min(linhas.length, 6); i++) { if ((linhas[i] || []).some(ehCab)) { cab = i; break; } }
+  let domIdx = -1, cliIdx = -1, razaoIdx = -1;
+  if (cab >= 0) {
+    const H = (linhas[cab] || []).map(norm);
+    domIdx = H.findIndex((h) => /dominio|site|url/.test(h));
+    cliIdx = H.findIndex((h) => /cliente|produto|marca/.test(h));
+    razaoIdx = H.findIndex((h) => /razao|conta|empresa/.test(h));
+  }
+  const inicio = cab >= 0 ? cab + 1 : 0;
+  const vistos = new Set();
+  const dominios = [];
+  const outros = [];
+  const meta = {};
+  for (let i = inicio; i < linhas.length; i++) {
+    const linha = linhas[i] || [];
+    let dom = domIdx >= 0 ? normalizeDomain(String(linha[domIdx] || '').trim()) : '';
+    if (!dom || !pareceDominio(dom)) {
+      for (const cel of linha) { const d = normalizeDomain(String(cel || '').trim()); if (d && pareceDominio(d)) { dom = d; break; } }
+    }
+    if (!dom || !pareceDominio(dom) || vistos.has(dom)) continue;
+    vistos.add(dom);
+    const cliente = cliIdx >= 0 ? String(linha[cliIdx] || '').trim() : '';
+    const razao = razaoIdx >= 0 ? String(linha[razaoIdx] || '').trim() : '';
+    meta[dom] = { cliente, razao };
+    if (cliIdx >= 0 && ouvClienteCat(cliente) === 'outro') outros.push({ dominio: dom, cliente });
+    else dominios.push(dom);
+  }
+  ouvEstado = { ...ouvEstado, dominios, outros, meta, temCliente: cliIdx >= 0, origem, rodando: false, parar: false, linhas: [], feito: false };
+  const cont = document.getElementById('ouvContagem');
+  if (cont) cont.textContent = dominios.length ? `${dominios.length} domínios para conferir` : '';
+  log(`Ouvidoria: ${dominios.length} para conferir (BC/MPI)${cliIdx >= 0 ? `, ${outros.length} ignorado(s) (não BC/MPI)` : ''}, de ${origem}.`, dominios.length ? 'info' : 'warn');
+  renderAtalhosTerminal();
+  renderOuvidoria();
+}
+
+function renderOuvidoria() {
+  const resumo = document.getElementById('ouvResumo');
+  const acoes = document.getElementById('ouvAcoes');
+  const lista = document.getElementById('ouvLista');
+  if (!resumo || !acoes || !lista) return;
+
+  const outrosN = (ouvEstado.outros || []).length;
+  resumo.innerHTML = ouvEstado.dominios.length || outrosN
+    ? `<div class="section-label">${ouvEstado.dominios.length} para conferir${ouvEstado.linhas.length ? `, ${ouvEstado.linhas.length} conferido(s)` : ''}${outrosN ? ` · ${outrosN} ignorado(s) (não BC/MPI)` : ''}</div>`
+    : '';
+
+  if (ouvEstado.rodando) {
+    acoes.innerHTML = `<button id="ouvParar" class="btn caution full-width">Parar depois deste</button>`;
+    document.getElementById('ouvParar').addEventListener('click', () => { ouvEstado.parar = true; log('Vou parar depois do domínio atual.', 'warn'); });
+  } else {
+    let h = '';
+    if (ouvEstado.dominios.length) h += `<button id="ouvRun" class="btn primary full-width">${ICONS.search} Processar e auditar Ouvidoria (${ouvEstado.dominios.length} domínio${ouvEstado.dominios.length > 1 ? 's' : ''})</button>`;
+    if (ouvEstado.linhas.length || (ouvEstado.outros || []).length) h += `<button id="ouvExport" class="btn ghost full-width" style="margin-top:6px">Salvar planilha (.xlsx)</button>`;
+    acoes.innerHTML = h;
+    const run = document.getElementById('ouvRun');
+    if (run) run.addEventListener('click', rodarOuvidoria);
+    const exp = document.getElementById('ouvExport');
+    if (exp) exp.addEventListener('click', exportarOuvidoria);
+  }
+
+  const badge = (l) => l.erro ? ['err', 'erro'] : !l.achou ? ['warn', 'revisar'] : l.ativarSsl === 'não' ? ['warn', 'SSL: não'] : ['ok', 'SSL: sim'];
+  lista.innerHTML = ouvEstado.linhas.length
+    ? '<div class="rows">' + ouvEstado.linhas.map((l) => {
+        const [cls, txt] = badge(l);
+        return `<div class="row is-${cls === 'err' ? 'err' : cls === 'warn' ? 'warn' : 'ok'}"><div class="row__main"><div class="row__title">${escapeHtml(l.razao || l.dominio)}</div><div class="row__sub">${escapeHtml(l.razao ? l.dominio + ' · ' : '')}${escapeHtml(l.situacao || l.motivo || '')}</div></div><span class="badge ${cls}">${escapeHtml(txt)}</span></div>`;
+      }).join('') + '</div>'
+    : '';
+}
+
+async function rodarOuvidoria() {
+  if (ouvEstado.rodando || !ouvEstado.dominios.length) return;
+  const sf = await window.api.salesforceGetConfig();
+  if (!(sf && sf.ok && sf.conectado)) { log('Conecte o Salesforce nas configurações antes de conferir a Ouvidoria.', 'error'); return; }
+  ouvEstado.rodando = true;
+  ouvEstado.parar = false;
+  ouvEstado.linhas = [];
+  ouvEstado.feito = false;
+  renderOuvidoria();
+  log(`Conferindo a Ouvidoria de ${ouvEstado.dominios.length} domínio(s) no Salesforce.`, 'cmd');
+  for (const dominio of ouvEstado.dominios) {
+    if (ouvEstado.parar) { log('Parado por você.', 'warn'); break; }
+    const info = ouvEstado.meta[dominio] || {};
+    const cliente = info.cliente || '';
+    const res = await withBusy(`conferindo ${dominio}`, () => window.api.checarOuvidoria({ dominio, razao: info.razao || '' }));
+    if (res.log) for (const e of res.log) log(e.message, e.type);
+    if (!res.ok) {
+      ouvEstado.linhas.push({ dominio, cliente, erro: true, motivo: res.error || 'erro', situacao: res.error || 'erro', ativarSsl: '' });
+      if (res.precisaReconectar) { log('Salesforce recusou o acesso. Reconecte e rode de novo.', 'error'); break; }
+    } else if (!res.achou) {
+      ouvEstado.linhas.push({ dominio, cliente, achou: false, motivo: res.motivo, situacao: `não encontrado no Salesforce (${res.motivo})`, ativarSsl: 'revisar' });
+    } else {
+      ouvEstado.linhas.push({ dominio, cliente, achou: true, razao: res.razao, situacao: res.situacao, ativarSsl: res.ativarSsl });
+    }
+    renderOuvidoria();
+  }
+  ouvEstado.rodando = false;
+  ouvEstado.parar = false;
+  ouvEstado.feito = true;
+  const achados = ouvEstado.linhas.filter((l) => l.achou).length;
+  const revisar = ouvEstado.linhas.filter((l) => !l.achou && !l.erro).length;
+  log(`Ouvidoria: ${achados} achado(s), ${revisar} para revisão manual, de ${ouvEstado.linhas.length} conferido(s). Clique em "Salvar planilha" para exportar.`, 'success');
+  renderOuvidoria();
+}
+
+async function exportarOuvidoria() {
+  const outros = ouvEstado.outros || [];
+  if (!ouvEstado.linhas.length && !outros.length) { log('Nada para exportar ainda.', 'warn'); return; }
+  // Aba 1: o resultado dos BC/MPI conferidos. Aba 2: os ignorados (não BC/MPI).
+  const abas = [
+    {
+      aba: 'Resultado',
+      colunas: ['Razão Social', 'Domínio', 'Cliente', 'Situação', 'Ativar SSL?'],
+      linhas: ouvEstado.linhas.map((l) => [l.razao || '', l.dominio, l.cliente || '', l.situacao || '', l.ativarSsl || '']),
+    },
+    {
+      aba: 'Outros clientes',
+      colunas: ['Domínio', 'Cliente'],
+      linhas: outros.map((o) => [o.dominio, o.cliente || '']),
+    },
+  ];
+  const res = await window.api.exportarPlanilha({ nomeSugerido: 'ouvidoria-ssl.xlsx', abas });
+  if (!res.ok) { log(res.error, 'error'); return; }
+  if (res.cancelado) { log('Exportação cancelada.', 'info'); return; }
+  log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s), ${outros.length ? 'com aba "Outros clientes"' : 'aba única'}).`, 'success');
 }
 
 // ---------- Tela inicial (Hub) ----------
 
+// O nome do usuário logado para a saudação (ADR-113). Vem do processo (Salesforce
+// se conectado, senão do e-mail); enquanto não chega, mostra o que dá para
+// derivar do e-mail do Bitbucket aqui mesmo.
+let hubUsuario = null;
+function nomeDoEmailLocal(email) {
+  const local = String(email || '').split('@')[0] || '';
+  return local.split(/[._-]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+function primeiroNome(nome) { return String(nome || '').trim().split(/\s+/)[0] || ''; }
+
 function renderHome() {
-  const recentsHtml = state.recents.length
-    ? `<div class="section-label">Recentes</div>
-       <div class="chip-row">
-         ${state.recents.map((id) => {
-           const t = TOOLS.find((x) => x.id === id);
-           if (!t) return '';
-           return `<button class="chip" data-cat="${t.category}" data-open="${t.id}">${ICONS[t.id] || ''}<span>${t.name}</span></button>`;
-         }).join('')}
-       </div>`
-    : '';
+  const nome = hubUsuario || nomeDoEmailLocal(state.creds?.email) || '';
+  const marca = brandName(state.brand);
+  const nFilas = sfKanban.dados ? sfKanban.dados.filas.length : 0;
 
   el.leftPanel.innerHTML = `
-    <div class="search-wrap">
-      ${ICONS.search}
-      <input id="hubSearch" class="search-input" type="text" placeholder="Pesquisar ferramenta" autocomplete="off" />
+    <div class="home-head anim-in">
+      <div class="home-head-left">
+        ${NAV_ICON.terminal}
+        <div class="home-hi">
+          <span class="home-hi__ola">Bem-vindo(a), <span class="home-hi__nome">${escapeHtml(primeiroNome(nome) || 'você')}</span>${marca ? ` <span class="dim" style="font-weight:500">(${escapeHtml(marca)})</span>` : ''}</span>
+          <span class="home-hi__sub">${escapeHtml(nome || 'Hub')} · ambiente local</span>
+        </div>
+      </div>
+      <div class="home-head-right">
+        <span class="home-pill ${hubSfConectado ? 'cyan' : 'dim'}">${hubSfConectado ? `${nFilas} fila(s) online` : 'SFDC off'}</span>
+        <span class="home-pill ${state.creds ? '' : 'dim'}">${state.creds ? 'Bitbucket ativo' : 'Bitbucket off'}</span>
+      </div>
     </div>
-    ${recentsHtml}
-    <div class="section-label">Ferramentas</div>
-    <div id="toolGrid" class="tool-grid"></div>
+
+    <div class="home-grid">
+      <div class="home-col">
+        <div class="home-sec-title anim-in">${NAV_ICON.deploy}Filas ativas de produção <span class="r">${sfKanban.carregando ? 'lendo…' : hubSfConectado ? 'salesforce' : 'offline'}</span></div>
+        <div class="filas anim-in" id="homeFilas"></div>
+        <div id="homeSf" class="anim-in"></div>
+      </div>
+      <div class="home-col">
+        <div class="whois-card anim-in">
+          <div class="whois-head">${ICONS.search || ''}<div class="section-label">Pesquisa de apontamento &amp; DNS</div><span class="spacer"></span><span class="home-pill cyan">whois/dns</span></div>
+          <div class="whois-row">
+            <input id="whoisDominio" type="text" placeholder="ex: cliente.com.br" value="${escapeHtml(whoisEstado.dominio || '')}" autocomplete="off" />
+            <button id="whoisBtn" class="btn primary" ${whoisEstado.rodando ? 'disabled' : ''}>${whoisEstado.rodando ? 'Consultando...' : 'Consultar'}</button>
+          </div>
+          <div id="whoisResultado"></div>
+        </div>
+      </div>
+    </div>
   `;
+  // A grade "Automações & scripts" saiu daqui (ADR-127): as ferramentas estão
+  // na barra lateral, e a busca do topo (Ctrl+K) abre qualquer uma pelo nome.
 
-  renderToolGrid('');
+  renderWhois();
+  renderHomeFilas();
+  renderHomeResumoSf();
+  if (hubSfConectado && !sfKanban.dados && !sfKanban.carregando) carregarTarefasSf(false);
 
-  document.getElementById('hubSearch').addEventListener('input', (e) => {
-    renderToolGrid(e.target.value.trim().toLowerCase());
-  });
+  const wd = document.getElementById('whoisDominio');
+  wd.addEventListener('input', (e) => { whoisEstado.dominio = e.target.value.trim(); renderAtalhosTerminal(); });
+  wd.addEventListener('keydown', (e) => { if (e.key === 'Enter') consultarWhois(); });
+  document.getElementById('whoisBtn').addEventListener('click', consultarWhois);
 
-  el.leftPanel.querySelectorAll('[data-open]').forEach((elm) => {
-    elm.addEventListener('click', () => openTool(elm.dataset.open));
-  });
-}
-
-function renderToolGrid(filter) {
-  const grid = document.getElementById('toolGrid');
-  const filtered = TOOLS.filter(
-    (t) => !filter || t.name.toLowerCase().includes(filter) || t.desc.toLowerCase().includes(filter)
-  );
-
-  if (filtered.length === 0) {
-    grid.innerHTML = `<div class="empty-state"><p>Nenhuma ferramenta encontrada.</p></div>`;
-    return;
+  // Puxa o nome de verdade (Salesforce/e-mail) uma vez e re-renderiza a saudação.
+  if (hubUsuario === null && window.api.usuarioLogado) {
+    hubUsuario = '';
+    window.api.usuarioLogado().then((r) => {
+      if (r && r.ok && r.nome) {
+        hubUsuario = r.nome;
+        atualizarTopbar();
+        renderAtalhosTerminal();
+        if (state.view === 'home') { const el2 = document.querySelector('.home-hi__nome'); const sub = document.querySelector('.home-hi__sub'); if (el2) el2.textContent = primeiroNome(r.nome); if (sub) sub.textContent = `${r.nome} · ambiente local`; }
+      }
+    }).catch(() => {});
   }
-
-  // Grade de cartões, compacta (ADR-056): o Guilherme prefere assim, e com
-  // seis ferramentas a grade cabe na tela sem rolar.
-  grid.innerHTML = filtered
-    .map(
-      (t) => `
-      <button class="tool-card" data-cat="${t.category}" data-open="${t.id}">
-        <span class="tool-card-icon">${ICONS[t.id] || ''}</span>
-        <span class="tool-card-name">${t.name}</span>
-        <span class="tool-card-desc">${t.desc}</span>
-        <span class="tool-card-cat">${t.category}</span>
-      </button>`
-    )
-    .join('');
-
-  grid.querySelectorAll('[data-open]').forEach((elm) => {
-    elm.addEventListener('click', () => openTool(elm.dataset.open));
-  });
 }
 
-function backButtonHtml() {
-  return `<button class="back-btn" id="backToHub">${ICONS.hub}<span>Hub</span></button>`;
+// ---------- WHOIS + DNS na tela inicial (ADR-113) ----------
+
+let whoisEstado = { dominio: '', rodando: false, resultado: null };
+
+async function consultarWhois() {
+  const dominio = normalizeDomain(whoisEstado.dominio);
+  if (!dominio) { log('Informe um domínio para consultar.', 'error'); return; }
+  whoisEstado.rodando = true;
+  whoisEstado.resultado = null;
+  renderHome();
+  const res = await withBusy(`consultando ${dominio}`, () => window.api.whois({ dominio }));
+  whoisEstado.rodando = false;
+  if (!res || !res.ok) { whoisEstado.resultado = { erro: (res && res.error) || 'falhou' }; log(`WHOIS/DNS: ${(res && res.error) || 'falhou'}`, 'error'); }
+  else { whoisEstado.resultado = res; log(`WHOIS/DNS de ${dominio}: ${res.dns.ns.length} nameserver(s), ${res.dns.a.length} A.`, 'success'); }
+  renderHome();
+}
+
+function renderWhois() {
+  const wrap = document.getElementById('whoisResultado');
+  if (!wrap) return;
+  const r = whoisEstado.resultado;
+  if (!r) { wrap.innerHTML = ''; return; }
+  if (r.erro) { wrap.innerHTML = `<div class="whois-res"><div class="whois-bloco">Não consegui consultar: ${escapeHtml(r.erro)}</div></div>`; return; }
+  const dns = r.dns || {};
+  const w = r.whois || {};
+  const c = w.campos || {};
+  const linha = (rot, val) => val ? `<dt>${escapeHtml(rot)}</dt><dd>${escapeHtml(val)}</dd>` : '';
+  const nsDns = (dns.ns || []);
+  const nsWhois = (c.nameservers || []);
+  const nsMostrar = nsDns.length ? nsDns : nsWhois;
+  wrap.innerHTML = `<div class="whois-res">
+    <div class="whois-bloco">
+      <h4>DNS em uso <span class="ns-cyan">(nameservers)</span></h4>
+      ${nsMostrar.length ? `<ul class="whois-list">${nsMostrar.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}</ul>` : '<div class="whois-kv"><dt>—</dt><dd>não achei nameservers (o domínio existe e está delegado?)</dd></div>'}
+      <dl class="whois-kv" style="margin-top:8px">
+        ${dns.a && dns.a.length ? `<dt>A (raiz)</dt><dd>${escapeHtml(dns.a.join(', '))}</dd>` : ''}
+        ${dns.mx && dns.mx.length ? `<dt>MX</dt><dd>${escapeHtml(dns.mx.join(' · '))}</dd>` : ''}
+      </dl>
+    </div>
+    <div class="whois-bloco">
+      <h4>WHOIS</h4>
+      ${w.erro ? `<div class="whois-kv"><dt>—</dt><dd>WHOIS indisponível: ${escapeHtml(w.erro)}</dd></div>` : `<dl class="whois-kv">
+        ${linha('Titular', c.titular)}
+        ${linha('Registrador', c.registrador)}
+        ${linha('Criado', c.criado)}
+        ${linha('Expira', c.expira)}
+        ${linha('Status', c.status)}
+      </dl>`}
+      ${w.aviso ? `<div class="whois-kv" style="margin-top:6px"><dt>nota</dt><dd>${escapeHtml(w.aviso)}</dd></div>` : ''}
+      ${w.texto ? `<details class="whois-raw"><summary>Ver WHOIS completo</summary><pre>${escapeHtml(w.texto)}</pre></details>` : ''}
+    </div>
+  </div>`;
+}
+
+function backButtonHtml({ tabs = '' } = {}) {
+  const m = MODULES.find((x) => x.id === state.view);
+  const nome = (m && m.nome) || (TOOLS.find((t) => t.id === state.view) || {}).name || '';
+  const tag = (m && m.tag) || 'MOD_' + String(state.view || '').toUpperCase();
+  return `<div class="tool-head anim-in">
+    <button class="th-back" id="backToHub">${ICONS.hub}<span>Hub</span></button>
+    <span class="th-sep">/</span><span class="th-name">${escapeHtml(nome)}</span>
+    ${tabs}
+    <span class="th-tag" ${tabs ? 'style="margin-left:8px"' : ''}>${escapeHtml(tag)}</span>
+  </div>`;
+}
+
+// Abas no cabeçalho da ferramenta (Parâmetros | Etapas, Fila | Histórico…).
+function toolTabsHtml(abas, ativa, attr) {
+  return `<div class="tool-tabs">${abas.map((a) => `<button class="${a.id === ativa ? 'active' : ''}" data-${attr}="${escapeHtml(a.id)}">${escapeHtml(a.nome)}${a.n !== undefined ? `<span class="n">(${a.n})</span>` : ''}</button>`).join('')}</div>`;
+}
+
+// O texto explicativo de cada ferramenta vira uma caixa dobrável, como nos
+// mockups: "Como funciona essa automação", fechada por padrão.
+function infoBoxHtml(corpoHtml, titulo = 'Como funciona essa automação', aberta = false) {
+  return `<details class="info-box anim-in" ${aberta ? 'open' : ''}><summary>${escapeHtml(titulo)}</summary><div class="info-body">${corpoHtml}</div></details>`;
+}
+
+function statCardHtml({ rotulo, titulo, dot = '', sub = '', subCls = '', foot = '' }) {
+  return `<div class="stat anim-in"><div class="stat-label"><span>${escapeHtml(rotulo)}</span></div><div class="stat-title"><span class="dot ${dot}"></span>${escapeHtml(titulo)}</div>${sub ? `<div class="stat-sub ${subCls}">${escapeHtml(sub)}</div>` : ''}${foot ? `<div class="stat-foot">${escapeHtml(foot)}</div>` : ''}</div>`;
 }
 
 // ---------- Ferramenta: Mergear PRs ----------
 
 function renderMergeTool() {
+  const abas = toolTabsHtml([{ id: 'queue', nome: 'Fila', n: state.queue.length }, { id: 'history', nome: 'Histórico', n: state.history.length }], state.mergeMode, 'merge-mode');
   el.leftPanel.innerHTML = `
-    ${backButtonHtml()}
-    <div class="segmented">
-      <button class="seg-btn ${state.mergeMode === 'queue' ? 'active' : ''}" data-merge-mode="queue">${ICONS.merge}<span>Fila</span></button>
-      <button class="seg-btn ${state.mergeMode === 'history' ? 'active' : ''}" data-merge-mode="history">${ICONS.history}<span>Histórico</span></button>
-    </div>
-    <div id="mergeBody"></div>
+    ${backButtonHtml({ tabs: abas })}
+    <div class="sec anim-in" id="mergeBody"></div>
   `;
 
   document.getElementById('backToHub').addEventListener('click', goHome);
@@ -1052,13 +2359,21 @@ function workspaceForBrand(brand) {
 // dá para verificar no Search Console e mandar o sitemap; e só com a
 // propriedade verificada o trilho do Search Console no relatório passa.
 async function publicarMpiPlus(v, btn, opts = {}) {
-  const marca = opts.brand || state.brand;
   const integracoes = await sincronizarPainel(v, btn, ['integracoes'], opts);
   if (!integracoes.ok) {
     log('Parei aqui: sem as integrações no painel, verificar o Search Console não tem como dar certo.', 'warn');
     return integracoes;
   }
+  // SSL ainda não ativo (o Publicar MPI+ sabe): as tags já estão no painel; o
+  // Search Console e o relatório ficam para depois do SSL (ADR-100).
+  if (opts.semVerificar) return { ...integracoes, scAdiado: true };
+  return verificarScERelatorio(v, btn, opts);
+}
 
+// Verificar o Search Console e, só com a propriedade verificada, sincronizar
+// o relatório do painel. Separado para o Publicar MPI+ rodar depois do SSL.
+async function verificarScERelatorio(v, btn, opts = {}) {
+  const marca = opts.brand || state.brand;
   log(`Verificando o Search Console de ${v.siteUrl}`, 'cmd');
   const prep = await withBusy('verificando o Search Console', () =>
     window.api.prepareSearchConsole({
@@ -1073,8 +2388,10 @@ async function publicarMpiPlus(v, btn, opts = {}) {
 
   if (!prep.ok) {
     log(
-      `Search Console não verificado: ${prep.error}, o relatório do painel ficaria com o trilho em "fail", ` +
-        'então não vou sincronizá-lo agora. Publique o site e use "Sincronizar no painel" de novo.',
+      prep.sslPendente
+        ? 'Search Console e relatório do painel ficam para depois do SSL de produção (sem ele o trilho do Search Console nasce "fail").'
+        : `Search Console não verificado: ${prep.error}, o relatório do painel ficaria com o trilho em "fail", ` +
+            'então não vou sincronizá-lo agora. Publique o site e use "Sincronizar no painel" de novo.',
       'warn'
     );
     return prep;
@@ -1238,21 +2555,21 @@ async function commitGeralPhp(domain, values, btn) {
 // Criar e buscar eram abas de uma ferramenta só. Viraram duas: quem chega para
 // uma reformulação não quer ver botão de criar, e vice-versa (ADR-052).
 function renderNewProjectTool() {
+  if (!state.npTab) state.npTab = 'create';
+  const abas = toolTabsHtml([{ id: 'create', nome: 'Criar novo' }, { id: 'find', nome: 'Buscar existente' }], state.npTab, 'np-tab');
   el.leftPanel.innerHTML = `
-    ${backButtonHtml()}
-    <div id="npBody"></div>
+    ${backButtonHtml({ tabs: abas })}
+    <div class="sec anim-in" id="npBody"></div>
   `;
   document.getElementById('backToHub').addEventListener('click', goHome);
-  renderNpCreate();
+  el.leftPanel.querySelectorAll('[data-np-tab]').forEach((b) => b.addEventListener('click', () => { state.npTab = b.dataset.npTab; renderNewProjectTool(); }));
+  if (state.npTab === 'find') renderNpFind();
+  else renderNpCreate();
 }
 
 function renderFindProjectTool() {
-  el.leftPanel.innerHTML = `
-    ${backButtonHtml()}
-    <div id="npBody"></div>
-  `;
-  document.getElementById('backToHub').addEventListener('click', goHome);
-  renderNpFind();
+  state.npTab = 'find';
+  renderNewProjectTool();
 }
 
 // ----- Aba "Criar novo" -----
@@ -1947,11 +3264,13 @@ const GRANT_TARGETS = {
 
 // Fora do hub-state de propósito: é uma rodada, não uma preferência.
 let bulkLinhas = [];      // a planilha crua: string[][]
+let bulkOrigem = '';      // nome do arquivo (ou "texto colado"), para a rodada salva
 let bulkMapa = null;      // { razao, dominio, painel } -> índice da coluna, ou -1
 let bulkTemCabecalho = false;
 let bulkRows = [];
 let bulkRodando = false;
 let bulkParar = false;
+let bulkParouNoMeio = false; // "Parar agora": o site do meio fica para retomar (ADR-102)
 let bulkCriar = true;       // criar no Google o que não existir
 // O SSL não sai antes do DNS apontar, e quem publica em lote não fica olhando
 // linha por linha. O que ficou sem certificado é anotado aqui e sai junto no
@@ -1961,17 +3280,31 @@ let bulkSslAtivados = [];
 // Domínios cujo contato técnico não é nosso: o Hub não mexe no DNS deles, e a
 // lista vai para o atendimento falar com o cliente (ADR-072). Sai em .xlsx.
 let bulkForaDeCasa = [];
+let bulkGoogleQuebrado = null; // motivo, quando a chave do Google foi recusada nesta rodada (ADR-092)
 let bulkSfConectado = false;   // Salesforce ligado nesta rodada? (ADR-090)
 let bulkSfCriadas = [];        // domínios cuja tarefa foi criada no caso
+let bulkSfPendentes = [];      // linhas cuja tarefa não saiu e dá para tentar de novo (ADR-093)
 
 const BULK_PAPEIS = {
   razao: { rotulo: 'Razão social', cabecalhos: ['razao social', 'razão social', 'razao', 'cliente', 'empresa', 'nome', 'nome fantasia', 'projeto'] },
   dominio: { rotulo: 'Domínio', cabecalhos: ['dominio', 'domínio', 'domain', 'site', 'url', 'url do site', 'endereco', 'endereço'] },
   painel: { rotulo: 'Link do painel', cabecalhos: ['painel', 'link', 'link do painel', 'hub', 'painel mpi', 'url do painel', 'mpi+'] },
   caso: { rotulo: 'Link do caso', cabecalhos: ['caso', 'link do caso', 'link caso', 'caso salesforce', 'salesforce', 'sf', 'link do caso salesforce'] },
+  temporario: { rotulo: 'Link temporário', cabecalhos: ['temporario', 'temporário', 'link temporario', 'link temporário', 'site temporario', 'site temporário', 'url temporaria', 'url temporária', 'temp', 'dominio temporario', 'domínio temporário'] },
 };
 
-const pareceDominio = (v) => /^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(normalizeDomain(v) || '') && !/idealplus\.idealtrends\.io/i.test(v);
+// O site temporário do painel (…mpitemporario.com.br). Confirma o contrato
+// certo quando o Hub acha o link do painel sozinho (ADR-098).
+const DOMINIO_TEMPORARIO = 'mpitemporario.com.br';
+function normalizarTemporario(valor) {
+  let s = String(valor || '').trim().toLowerCase();
+  if (!s) return '';
+  s = s.replace(/^[a-z]+:\/\//, '').replace(/[/?#].*$/, '').replace(/:\d+$/, '').replace(/\.$/, '').replace(/^www\./, '');
+  return /^([a-z0-9-]+\.)+[a-z]{2,}$/.test(s) ? s : '';
+}
+const pareceTemporario = (v) => { const h = normalizarTemporario(v); return !!h && (h === DOMINIO_TEMPORARIO || h.endsWith(`.${DOMINIO_TEMPORARIO}`)); };
+
+const pareceDominio = (v) => /^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(normalizeDomain(v) || '') && !/idealplus\.idealtrends\.io/i.test(v) && !pareceTemporario(v);
 const parecePainel = (v) => !!normalizePainelUrl(v);
 // Link do caso do Salesforce: ou um link Lightning com /r/Case/, ou um Id que
 // começa com 500. Não confundir com o link do painel (esse é do idealplus).
@@ -1983,7 +3316,7 @@ function bulkDetectarCabecalho(linhas) {
   if (!linhas.length) return false;
   const l = linhas[0].map((c) => String(c || '').trim().toLowerCase());
   const conhecidas = l.filter((c) => Object.values(BULK_PAPEIS).some((p) => p.cabecalhos.includes(c))).length;
-  const dados = l.filter((c) => pareceDominio(c) || parecePainel(c)).length;
+  const dados = l.filter((c) => pareceDominio(c) || parecePainel(c) || pareceTemporario(c)).length;
   return conhecidas > 0 && dados === 0;
 }
 
@@ -1992,7 +3325,7 @@ function bulkDetectarCabecalho(linhas) {
 function bulkDetectarColunas(linhas, temCabecalho) {
   const corpo = temCabecalho ? linhas.slice(1) : linhas;
   const nCols = Math.max(0, ...linhas.map((l) => l.length));
-  const mapa = { razao: -1, dominio: -1, painel: -1, caso: -1 };
+  const mapa = { razao: -1, dominio: -1, painel: -1, caso: -1, temporario: -1 };
   if (!nCols) return mapa;
 
   const cabecalho = temCabecalho ? linhas[0].map((c) => String(c || '').trim().toLowerCase()) : [];
@@ -2005,7 +3338,8 @@ function bulkDetectarColunas(linhas, temCabecalho) {
       dominio: valores.filter(pareceDominio).length / n,
       painel: valores.filter((v) => parecePainel(v) && !pareceCaso(v)).length / n,
       caso: valores.filter(pareceCaso).length / n,
-      razao: valores.filter((v) => !pareceDominio(v) && !parecePainel(v) && !pareceCaso(v) && /[a-zà-ú]/i.test(v)).length / n,
+      temporario: valores.filter(pareceTemporario).length / n,
+      razao: valores.filter((v) => !pareceDominio(v) && !parecePainel(v) && !pareceCaso(v) && !pareceTemporario(v) && /[a-zà-ú]/i.test(v)).length / n,
     };
     for (const papel of Object.keys(BULK_PAPEIS)) {
       if (BULK_PAPEIS[papel].cabecalhos.includes(cabecalho[c] || '')) p[papel] += 1; // o nome vale mais que a amostra
@@ -2017,7 +3351,7 @@ function bulkDetectarColunas(linhas, temCabecalho) {
   // que são inconfundíveis; a razão social fica com o que sobrou. O caso vem
   // antes do painel porque os dois são links e o caso é o mais específico.
   const usadas = new Set();
-  for (const papel of ['caso', 'painel', 'dominio', 'razao']) {
+  for (const papel of ['caso', 'painel', 'temporario', 'dominio', 'razao']) {
     let melhor = -1;
     let melhorPonto = papel === 'razao' ? 0.3 : 0.5;
     pontos.forEach((p, c) => {
@@ -2043,10 +3377,27 @@ function bulkMontarLinhas() {
     const dominio = normalizeDomain(cel(l, bulkMapa.dominio));
     const painel = cel(l, bulkMapa.painel);
     const caso = cel(l, bulkMapa.caso);
+    const temporarioBruto = cel(l, bulkMapa.temporario);
+    let temporario = normalizarTemporario(temporarioBruto);
+    const dominioBruto = cel(l, bulkMapa.dominio);
 
+    // O temporário na coluna do domínio publicaria o site no endereço errado
+    // e mexeria no DNS do mpitemporario: fica de fora.
+    if (dominio && pareceTemporario(dominio)) {
+      erros.push(`linha ${numero}: o domínio "${dominioBruto}" é o endereço temporário, não o do cliente. Coloque o domínio de verdade; a linha ficou de fora`);
+      return;
+    }
     if (!dominio) {
       if (razao || painel) erros.push(`linha ${numero}: sem domínio`);
       return;
+    }
+    // Na coluna do temporário, só vale endereço do mpitemporario. Outra coisa
+    // (o próprio site do cliente, por exemplo) não confere contrato nenhum.
+    if (temporarioBruto && !pareceTemporario(temporarioBruto)) {
+      erros.push(`linha ${numero}: "${temporarioBruto}" não é um link temporário (…${DOMINIO_TEMPORARIO}); ignorei. ${painel ? 'Vale o link do painel' : 'Sem ele, a linha só segue se o cliente tiver um contrato só'}`);
+      temporario = '';
+    } else if (/^https?[a-z0-9]/i.test(String(temporarioBruto).trim().replace(/^https?:\/\//i, ''))) {
+      erros.push(`linha ${numero}: o link temporário "${temporarioBruto}" começa com "http" colado no endereço. Se estiver assim na aba Publicação do painel, está certo (é o que o Hub compara); se não, corrija na planilha`);
     }
     if (vistos.has(dominio)) {
       erros.push(`linha ${numero}: ${dominio} repetido, contei só a primeira`);
@@ -2055,15 +3406,23 @@ function bulkMontarLinhas() {
     vistos.add(dominio);
 
     const painelOk = painel ? !!normalizePainelUrl(painel) : false;
+    // Sem link, mas com razão social: o Hub procura no painel (ADR-098).
+    const painelAchar = !painel && !!razao;
     rows.push({
       razao,
       dominio,
       painel,
       caso,
+      temporario,
       externalId: '',
       painelOk,
+      painelAchar,
       status: painel && !painelOk ? 'invalido' : 'pendente',
-      detalhe: painel ? (painelOk ? '' : `o link não é do ${PAINEL_MPI_HOST}`) : 'sem link do painel',
+      detalhe: painel
+        ? (painelOk ? '' : `o link não é do ${PAINEL_MPI_HOST}`)
+        : painelAchar
+          ? `painel: vou procurar pela razão social${temporario ? ' e conferir o temporário' : ''}`
+          : 'sem link do painel e sem razão social para procurar',
     });
   });
 
@@ -2085,30 +3444,57 @@ const BULK_STATUS = {
 function renderBulkTool() {
   el.leftPanel.innerHTML = `
     ${backButtonHtml()}
-    ${brandSelectHtml('bulkBrand')}
-    <label class="field">
-      <span>Planilha</span>
-      <input id="bulkFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-    </label>
-    <label class="field">
-      <span>ou cole as linhas copiadas do Excel ou do Sheets</span>
-      <textarea id="bulkTexto" rows="4" placeholder="Selecione as células na planilha, copie e cole aqui. Pode vir com cabeçalho ou sem." autocomplete="off"></textarea>
-    </label>
-    <label class="checkbox-field">
-      <input id="bulkCriar" type="checkbox" ${bulkCriar ? 'checked' : ''} />
-      <span>Criar no Google o que não existir (Analytics, Tag Manager, reCAPTCHA)</span>
-    </label>
+    <div id="bulkRetomar"></div>
+    <div class="sec anim-in">
+      <div class="sec-head"><span class="sec-title">Projeto alvo</span><span class="sec-meta dim">Motor v2.x</span></div>
+      ${brandSelectHtml('bulkBrand')}
+    </div>
+    <div class="sec anim-in">
+      <div class="sec-head"><span class="sec-title">Arquivo de entrada (.xlsx / .csv)</span><span class="sec-meta dim">Colunas: Domínio, Link do painel</span></div>
+      <label class="field">
+        <span>Planilha</span>
+        <input id="bulkFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+      </label>
+    </div>
+    <div class="sec anim-in">
+      <div class="sec-head"><span class="sec-title">Colar células diretamente (Excel / Google Sheets)</span><span class="sec-meta">Tab-separated OK</span></div>
+      <label class="field">
+        <span>Selecione as células na planilha, copie e cole aqui. Pode vir com cabeçalho ou sem.</span>
+        <textarea id="bulkTexto" rows="4" placeholder="Ex: cliente.com.br&#9;cliente-temp.mpitemporario.com.br&#9;https://painel..." autocomplete="off"></textarea>
+      </label>
+    </div>
+    <div class="sec anim-in">
+      <div class="sec-head"><span class="sec-title">Gatilhos de automação concorrente</span></div>
+      <label class="checkbox-field">
+        <input id="bulkCriar" type="checkbox" ${bulkCriar ? 'checked' : ''} />
+        <span>Criar no Google o que não existir (<strong>Analytics, Tag Manager, reCAPTCHA</strong>)</span>
+      </label>
+      <label class="checkbox-field">
+        <input id="bulkSfAuto" type="checkbox" ${state.sfTarefasAuto ? 'checked' : ''} />
+        <span>Criar no Salesforce a tarefa <strong>"Publicação V1 -&gt; V2"</strong> de cada site publicado, achando o caso sozinho (pela tarefa antiga ou razão social)</span>
+      </label>
+    </div>
     <div id="bulkPrevia"></div>
     <div id="bulkLista"></div>
     <div id="bulkDetalhe"></div>
-    <p class="hint">Cada site, na ordem que a publicação exige. Primeiro o contato técnico no Registro.br: se for nosso, o DNS entra; se não, o domínio vai para a lista dos que não estão conosco, que sai em .xlsx no fim para o atendimento. Zona que já existe na Cloudflare: só o A da raiz troca do IP antigo para o novo, e você confirma. Zona nova: a Cloudflare varre o DNS atual, o Hub completa com os autoritativos, replica tudo e troca só a raiz e o www; você confirma, e os nameservers vão para o Registro.br. Depois o painel: quem já está publicado é só vinculado; quem não está é aprovado e publicado. O SSL só é pedido quando o domínio já resolve para o servidor de produção; senão fica no aviso do fim. Por fim Analytics, Tag Manager e reCAPTCHA (reaproveita o que existe, cria o que faltar se a caixa estiver marcada), o painel (Integrações, Search Console, Relatório) e a linha na planilha. A única parada é a do DNS, uma por domínio. Se a planilha tiver uma coluna <strong>Link do caso</strong> (o link do caso no Salesforce), o Hub cria também a tarefa de publicação naquele caso, já concluída e no seu nome, sem marcar ninguém — serve para registrar os que já foram publicados. Sem essa coluna, ou com o Salesforce desconectado, ele simplesmente não cria tarefa.</p>
+    ${infoBoxHtml(`<p class="hint">Cada site, na ordem que a publicação exige. Primeiro o contato técnico no Registro.br: se for nosso, o DNS entra; se não, o domínio vai para a lista dos que não estão conosco, que sai em .xlsx no fim para o atendimento. Zona que já existe na Cloudflare: só o A da raiz troca do IP antigo para o novo, e você confirma. Zona nova: a Cloudflare varre o DNS atual, o Hub completa com os autoritativos, replica tudo e troca só a raiz e o www; você confirma, e os nameservers vão para o Registro.br. Depois o painel: quem já está publicado é só vinculado; quem não está é aprovado e publicado. O SSL só é pedido quando o domínio já resolve para o servidor de produção; senão fica no aviso do fim. Por fim Analytics, Tag Manager e reCAPTCHA (reaproveita o que existe, cria o que faltar se a caixa estiver marcada), o painel (Integrações, Search Console, Relatório) e a linha na planilha. A única parada é a do DNS, uma por domínio. Com a opção do Salesforce marcada, no fim o Hub cria a tarefa "Publicação V1 -&gt; V2" de cada site publicado, já concluída e no seu nome, sem marcar ninguém. O caso ele acha sozinho: pela tarefa de publicação antiga que cita o domínio (no assunto ou nos comentários) ou pela conta com a razão social e o caso "Ongoing CS" dela. Quem ele não achar fica listado no fim; para esses, preencha a coluna <strong>Link do caso</strong>, que sempre tem prioridade. Use "Conferir os casos" antes, para ver o que ele escolheria sem criar nada.</p>
+    <p class="hint">Sem <strong>Link do painel</strong>, o Hub procura sozinho: busca a razão social no painel, abre os projetos e contratos do cliente e fica com o contrato cujo site temporário é o da coluna <strong>Link temporário</strong> (o link do alto da aba Publicação, …mpitemporario.com.br). Isso acontece antes do DNS: se não achar, a linha falha sem mexer em nada. Sem link temporário, só segue quando o cliente tem um contrato só. Com link do painel <em>e</em> link temporário, o Hub confere que o link abre o contrato desse temporário.</p>
+    <p class="hint">Tudo o que aparece no terminal também fica gravado em Documentos\Hub\logs, um arquivo por dia, e a rodada é salva a cada site: se o Windows fechar o Hub, abra de novo e retome de onde parou.</p>`, 'Protocolo de execução técnica & dependências')}
+    <div class="action-bar"><button type="button" class="btn ghost" id="bulkLogsBtn">${NAV_ICON.bulk} Abrir pasta de logs</button><span class="spacer"></span><span class="dim mono" style="font-size:11px">a rodada é salva a cada site</span></div>
   `;
 
   document.getElementById('backToHub').addEventListener('click', goHome);
   wireBrandSelect('bulkBrand', () => renderBulkLista());
+  const logsBtn = document.getElementById('bulkLogsBtn');
+  if (logsBtn) logsBtn.addEventListener('click', async () => {
+    const r = await window.api.abrirPastaLogs().catch((e) => ({ ok: false, error: e.message }));
+    if (!r.ok) log(`Não consegui abrir a pasta de logs: ${r.error}`, 'warn');
+  });
 
   const criar = document.getElementById('bulkCriar');
   if (criar) criar.addEventListener('change', (e) => { bulkCriar = e.target.checked; renderBulkLista(); });
+  const sfAuto = document.getElementById('bulkSfAuto');
+  if (sfAuto) sfAuto.addEventListener('change', (e) => { state.sfTarefasAuto = e.target.checked; saveHubState(); renderBulkLista(); });
 
   document.getElementById('bulkFile').addEventListener('change', async (e) => {
     const arquivo = e.target.files && e.target.files[0];
@@ -2129,6 +3515,7 @@ function renderBulkTool() {
 
   renderBulkPrevia();
   renderBulkLista();
+  renderBulkRetomar();
 }
 
 function carregarBulk(linhas, origem) {
@@ -2136,6 +3523,8 @@ function carregarBulk(linhas, origem) {
     log('A rodada ainda está em andamento. Espere terminar ou pare antes de trocar a lista.', 'warn');
     return;
   }
+  bulkSfPendentes = []; // planilha nova, lista nova
+  bulkOrigem = origem || '';
   bulkLinhas = (linhas || []).filter((l) => Array.isArray(l) && l.some((c) => String(c || '').trim()));
   bulkTemCabecalho = bulkDetectarCabecalho(bulkLinhas);
   bulkMapa = bulkDetectarColunas(bulkLinhas, bulkTemCabecalho);
@@ -2157,8 +3546,13 @@ function aplicarBulkMapa() {
     const { rows, erros } = bulkMontarLinhas();
     bulkRows = rows;
     for (const e of erros) log(`Planilha: ${e}`, 'warn');
-    const semLink = rows.filter((r) => !r.painelOk).length;
-    if (semLink) log(`${semLink} linha(s) sem link válido do painel ficam de fora da rodada.`, 'warn');
+    const semLink = rows.filter((r) => !bulkTemPainel(r)).length;
+    if (semLink) log(`${semLink} linha(s) sem link válido do painel (e sem razão social para procurar) ficam de fora da rodada.`, 'warn');
+    const aProcurar = rows.filter((r) => r.painelAchar);
+    if (aProcurar.length) {
+      const semTemp = aProcurar.filter((r) => !r.temporario).length;
+      log(`${aProcurar.length} linha(s) sem link do painel: o Hub procura pela razão social no começo de cada site${semTemp ? `. ${semTemp} sem link temporário: só seguem se o cliente tiver um contrato só` : ', e o link temporário confirma o contrato'}.`, 'info');
+    }
   }
   renderBulkPrevia();
   renderBulkLista();
@@ -2187,9 +3581,13 @@ function renderBulkPrevia() {
 
   const linhasHtml = amostra.map((l) => `<tr>${Array.from({ length: nCols }, (_, c) => `<td class="${papelDe(c) ? '' : 'faint'}">${escapeHtml(String(l[c] || ''))}</td>`).join('')}</tr>`).join('');
 
-  // Razão social e Link do caso são opcionais: sem razão a planilha ainda
-  // publica; sem caso, só não cria a tarefa no Salesforce daquela linha.
-  const faltando = Object.keys(BULK_PAPEIS).filter((k) => bulkMapa[k] < 0 && k !== 'razao' && k !== 'caso').map((k) => BULK_PAPEIS[k].rotulo);
+  // Só o domínio é obrigatório. O link do painel pode faltar quando há razão
+  // social (o Hub procura, ADR-098); o temporário confirma o contrato; o link
+  // do caso é da tarefa do Salesforce.
+  const faltando = [];
+  if (bulkMapa.dominio < 0) faltando.push(BULK_PAPEIS.dominio.rotulo);
+  if (bulkMapa.painel < 0 && bulkMapa.razao < 0) faltando.push(`${BULK_PAPEIS.painel.rotulo} ou ${BULK_PAPEIS.razao.rotulo}`);
+  const semTemporario = bulkMapa.painel < 0 && bulkMapa.razao >= 0 && bulkMapa.temporario < 0;
 
   wrap.innerHTML = `
     <div class="section-label">Prévia, ${corpo.length} linha(s)</div>
@@ -2204,6 +3602,7 @@ function renderBulkPrevia() {
       <span>A primeira linha é cabeçalho</span>
     </label>
     ${faltando.length ? `<p class="hint warn-text">Falta marcar: ${faltando.join(' e ')}. Use os seletores no topo de cada coluna.</p>` : ''}
+    ${!faltando.length && bulkMapa.painel < 0 ? `<p class="hint">Sem a coluna do link do painel: o Hub procura cada cliente no painel pela razão social${semTemporario ? '. Sem a coluna do link temporário, só seguem os clientes que têm um contrato só' : ' e confirma o contrato pelo link temporário'}.</p>` : ''}
   `;
 
   wrap.querySelectorAll('[data-bulk-col]').forEach((sel) => {
@@ -2227,8 +3626,70 @@ function renderBulkPrevia() {
 // confere se falta vincular, e passa direto quando não falta (ADR-087).
 const BULK_NADA_A_FAZER = ['ok'];
 
+// Entra na rodada quem tem link válido ou dá para procurar (ADR-098).
+function bulkTemPainel(r) {
+  return !!(r.painelOk || r.painelAchar);
+}
+
 function bulkFilaAtual() {
-  return bulkRows.filter((r) => r.painelOk && !BULK_NADA_A_FAZER.includes(r.status));
+  return bulkRows.filter((r) => bulkTemPainel(r) && !BULK_NADA_A_FAZER.includes(r.status));
+}
+
+// Antes de tocar em qualquer coisa do site (DNS inclusive): o link do painel
+// tem que estar certo. Sem link, procura pela razão social e confirma pelo
+// temporário. Com link e temporário na planilha, confere se o contrato aberto
+// é o do temporário. Estoura quando não dá: a linha falha sem ter mexido em nada.
+async function garantirLinkDoPainel(row) {
+  if (!row.painelOk && row.painelAchar) {
+    const res = await withBusy(`procurando ${row.razao} no painel`, () =>
+      window.api.acharContratoNoPainel({ razao: row.razao, temporario: row.temporario, dominio: row.dominio })
+    );
+    if (res.log) for (const e of res.log) log(e.message, e.type);
+    if (!res.ok) throw new Error(`painel: ${res.error || 'não achei o contrato'}`);
+    row.painel = res.url;
+    row.painelOk = true;
+    row.painelAchado = res.url;
+    row.painelConferido = !!res.conferidoPeloTemporario;
+    return;
+  }
+  if (row.painelOk && row.temporario && !row.painelConferido) {
+    const res = await withBusy(`conferindo o contrato de ${row.dominio}`, () =>
+      window.api.publicarPainel({ url: normalizePainelUrl(row.painel), etapa: 'estado', dominio: row.dominio })
+    );
+    if (res.log) for (const e of res.log) log(e.message, e.type);
+    if (!res.ok) throw new Error(res.error || 'não consegui ler o painel');
+    conferirTemporario(row, res.estado);
+    row.painelConferido = true;
+  }
+}
+
+// O temporário do contrato aberto tem que ser o da planilha.
+function conferirTemporario(row, estado) {
+  if (!row.temporario || !estado) return;
+  const noPainel = normalizarTemporario(estado.urlTemporaria);
+  if (noPainel === row.temporario) {
+    log(`${row.dominio}: o contrato do painel é o do temporário ${row.temporario}.`, 'info');
+    return;
+  }
+  throw new Error(`o link do painel abre o contrato do temporário ${noPainel || '(nenhum)'}, e a planilha diz ${row.temporario}: é outro contrato, não mexi em nada`);
+}
+
+// O site está publicado, mas o vínculo do Google não saiu. Isso é parcial, não
+// falha: a publicação vale, a linha vai para a planilha, a tarefa do Salesforce
+// sai no fim, e o vínculo roda de novo na próxima rodada, porque parcial não
+// sai da fila (ADR-092).
+async function fecharPublicadoSemVinculo(row, motivo) {
+  row.status = 'parcial';
+  row.detalhe = `${row.publicadoDetalhe || 'publicado'} · ${motivo}`;
+  renderBulkLista();
+  try {
+    const pl = await registrarLinhaDaPlanilha(row);
+    if (pl.jaExistia) row.detalhe += ' · já estava na planilha';
+    else if (pl.onde) row.detalhe += ` · planilha ${pl.aba}`;
+  } catch (e) {
+    log(`Planilha de ${row.dominio}: ${e.message}`, 'warn');
+  }
+  renderBulkLista();
 }
 
 // Depois de publicar todos, cria automaticamente a tarefa no Salesforce de
@@ -2238,32 +3699,279 @@ function bulkFilaAtual() {
 // subiu seria mentira). Não duplica (o main confere no caso) e nunca derrubou
 // a publicação: aqui a rodada já acabou, isto é só o registro no fim.
 async function criarTarefasSalesforceNoFim() {
-  const alvo = bulkRows.filter((r) => r.caso && r.dominio && r.status !== 'falhou');
-  const pularam = bulkRows.filter((r) => r.caso && r.dominio && r.status === 'falhou');
-  if (!alvo.length && !pularam.length) return; // ninguém pediu tarefa
+  // Critério: o Hub confirmou que o site está no ar (já estava ou subiu agora).
+  // Falha de vínculo do Google não impede — a tarefa é da publicação (ADR-092).
+  // Pede tarefa: quem tem Link do caso, ou todos, com a opção ligada (ADR-097).
+  const comCaso = bulkRows.filter((r) => r.dominio && (r.caso || state.sfTarefasAuto));
+  const alvo = comCaso.filter((r) => r.publicado);
+  const pularam = comCaso.filter((r) => !r.publicado && r.status === 'falhou');
+  const foraDaRodada = comCaso.filter((r) => !r.publicado && r.status !== 'falhou');
+  if (!comCaso.length) return; // ninguém pediu tarefa
 
   if (!bulkSfConectado) {
-    log(`${alvo.length + pularam.length} linha(s) têm link do caso, mas o Salesforce não está conectado — não criei tarefa nenhuma. Conecte nas configurações e rode de novo.`, 'warn');
+    // Nada foi tentado: ficam todas pendentes, para criar depois de conectar.
+    bulkSfPendentes = alvo.slice();
+    log(`${comCaso.length} linha(s) têm link do caso, mas o Salesforce não está conectado — não criei tarefa nenhuma. Conecte nas configurações e use "Criar as tarefas pendentes".`, 'warn');
     return;
   }
-  for (const r of pularam) log(`${r.dominio}: publicação falhou, não criei a tarefa no Salesforce (para não marcar como concluída sem o site no ar).`, 'warn');
+  for (const r of pularam) log(`${r.dominio}: não consegui confirmar que o site está publicado, não criei a tarefa no Salesforce (para não marcar como concluída sem o site no ar).`, 'warn');
+  for (const r of foraDaRodada) log(`${r.dominio}: não entrou na rodada (${r.detalhe || 'sem link válido do painel'}), então não criei a tarefa no Salesforce.`, 'warn');
   if (!alvo.length) return;
 
   log(`Salesforce: criando a tarefa de ${alvo.length} site(s) publicado(s), cada uma no seu caso.`, 'cmd');
-  for (const row of alvo) {
+  await criarTarefasSalesforce(alvo);
+}
+
+// O laço de criação, usado no fim da rodada e na ação de pendentes. O que não
+// sai por um motivo que se resolve (sessão, rede) fica em bulkSfPendentes; link
+// errado não fica, porque tentar de novo não muda nada até corrigir a planilha.
+// 403 para na hora: é o token, vale para todas (ADR-093).
+async function criarTarefasSalesforce(linhas) {
+  bulkSfPendentes = [];
+  const semCaso = [];
+  let criadas = 0;
+  let jaExistiam = 0;
+  for (let i = 0; i < linhas.length; i++) {
+    const row = linhas[i];
     const res = await withBusy(`criando a tarefa no Salesforce de ${row.dominio}`, () =>
-      window.api.salesforceCriarTarefaNoCaso({ casoLink: row.caso, dominio: row.dominio })
+      window.api.salesforceCriarTarefaNoCaso({ casoLink: row.caso, dominio: row.dominio, razao: row.razao })
     );
     if (res.log) for (const e of res.log) log(e.message, e.type);
+    row.detalhe = String(row.detalhe || '').replace(/ · tarefa SF (falhou|pendente|: caso não encontrado)$/, '');
     if (res.ok) {
-      if (res.jaExistia) row.detalhe += ' · tarefa SF já existia';
-      else { row.detalhe += ` · tarefa SF no caso ${res.casoNumero || ''}`.trimEnd(); bulkSfCriadas.push(row.dominio); }
+      if (res.jaExistia) { row.detalhe += ' · tarefa SF já existia'; jaExistiam++; }
+      else { row.detalhe += ` · tarefa SF no caso ${res.casoNumero || ''}`.trimEnd(); bulkSfCriadas.push(row.dominio); criadas++; }
+    } else if (res.precisaReconectar) {
+      const resto = linhas.slice(i);
+      bulkSfPendentes.push(...resto);
+      for (const r of resto) { r.detalhe = String(r.detalhe || '').replace(/ · tarefa SF (falhou|pendente)$/, '') + ' · tarefa SF pendente'; }
+      log(`Parei as tarefas do Salesforce: ${resto.length} ficaram pendentes. Reconecte o Salesforce nas configurações e clique em "Criar as ${resto.length} tarefas pendentes".`, 'warn');
+      renderBulkLista();
+      break;
+    } else if (res.casoNaoEncontrado) {
+      // Tentar de novo não muda nada: falta o Link do caso na planilha.
+      row.detalhe += ' · tarefa SF: caso não encontrado';
+      semCaso.push({ dominio: row.dominio, motivo: res.error });
+    } else if (res.linkInvalido) {
+      row.detalhe += ' · tarefa SF: link do caso errado';
+      log(`Tarefa do Salesforce de ${row.dominio} não foi criada: ${res.error} Corrija a planilha e carregue de novo.`, 'warn');
     } else {
-      row.detalhe += ' · tarefa SF falhou';
+      row.detalhe += ' · tarefa SF pendente';
+      bulkSfPendentes.push(row);
       log(`Tarefa do Salesforce de ${row.dominio} não foi criada: ${res.error}`, 'warn');
     }
     renderBulkLista();
   }
+  if (criadas || jaExistiam) {
+    log(`Salesforce: ${criadas} tarefa(s) criada(s)${jaExistiam ? `, ${jaExistiam} já existia(m)` : ''}${bulkSfPendentes.length ? `, ${bulkSfPendentes.length} pendente(s)` : ''}.`, bulkSfPendentes.length ? 'warn' : 'success');
+  }
+  if (semCaso.length) {
+    log(`Salesforce: ${semCaso.length} site(s) sem caso encontrado, sem tarefa. Preencha o "Link do caso" deles na planilha e rode de novo:`, 'warn');
+    for (const x of semCaso) log(`  ${x.dominio}: ${x.motivo}`, 'warn');
+  }
+  renderBulkLista();
+}
+
+// Conferência só de leitura (ADR-097): para cada site da planilha, diz qual
+// caso o Hub usaria e como achou, e se a tarefa V1 -> V2 já está lá. Não cria
+// nada. Serve para validar o padrão antes de deixar criar sozinho.
+async function conferirCasosSalesforce() {
+  if (bulkRodando) return;
+  const linhas = bulkRows.filter((r) => r.dominio);
+  if (!linhas.length) return;
+  const sf = await window.api.salesforceGetConfig().catch(() => null);
+  if (!sf || !sf.ok || !sf.conectado) { log('O Salesforce não está conectado. Conecte nas configurações e tente de novo.', 'error'); return; }
+  bulkRodando = true;
+  renderBulkLista();
+  log(`Conferindo no Salesforce o caso de ${linhas.length} site(s). Só leitura: nada é criado.`, 'cmd');
+  const achados = [];
+  const semCaso = [];
+  try {
+    for (const row of linhas) {
+      const res = await withBusy(`procurando o caso de ${row.dominio}`, () =>
+        window.api.salesforceCriarTarefaNoCaso({ casoLink: row.caso, dominio: row.dominio, razao: row.razao, apenasConferir: true })
+      );
+      if (res.log) for (const e of res.log) log(e.message, e.type === 'success' ? 'info' : e.type);
+      if (res.ok) {
+        achados.push(row.dominio);
+        log(`${row.dominio} → caso ${res.casoNumero} "${res.casoAssunto}"${res.casoStatus ? ` (${res.casoStatus})` : ''}${res.conta ? `, conta ${res.conta}` : ''}, ${res.como}${res.jaExistia ? ' · a tarefa V1 -> V2 já existe nele' : ''}.`, 'success');
+      } else if (res.precisaReconectar) {
+        log('Parei a conferência: reconecte o Salesforce nas configurações e confira de novo.', 'warn');
+        break;
+      } else {
+        semCaso.push({ dominio: row.dominio, motivo: res.error });
+      }
+    }
+  } finally {
+    bulkRodando = false;
+    renderBulkLista();
+  }
+  log(`Conferência: ${achados.length} com caso encontrado, ${semCaso.length} sem.`, semCaso.length ? 'warn' : 'success');
+  for (const x of semCaso) log(`  ${x.dominio}: ${x.motivo}`, 'warn');
+}
+
+// Só aparece quando alguma tarefa não saiu: cria só as pendentes, sem refazer
+// a rodada de publicação. A criação normal continua automática (ADR-093).
+async function criarTarefasPendentes() {
+  if (bulkRodando || !bulkSfPendentes.length) return;
+  const sf = await window.api.salesforceGetConfig().catch(() => null);
+  if (!sf || !sf.ok || !sf.conectado) {
+    log('O Salesforce não está conectado. Conecte nas configurações e clique de novo.', 'error');
+    return;
+  }
+  bulkSfConectado = true;
+  const linhas = bulkSfPendentes.slice();
+  bulkRodando = true;
+  renderBulkLista();
+  log(`Salesforce: criando as ${linhas.length} tarefa(s) pendente(s).`, 'cmd');
+  try {
+    await criarTarefasSalesforce(linhas);
+  } finally {
+    bulkRodando = false;
+    renderBulkLista();
+  }
+  await fecharRodadaSalva();
+}
+
+// ---------- Rodada salva em disco (ADR-096) ----------
+
+function salvarRodada(fase) {
+  if (!window.api || !window.api.salvarRodada) return Promise.resolve();
+  const estado = {
+    versao: 1,
+    fase,
+    marca: state.brand,
+    origem: bulkOrigem,
+    linhas: bulkLinhas,
+    mapa: bulkMapa,
+    temCabecalho: bulkTemCabecalho,
+    criar: bulkCriar,
+    sites: bulkRows.map((r) => ({
+      dominio: r.dominio,
+      status: r.status,
+      detalhe: r.detalhe || '',
+      publicado: !!r.publicado,
+      publicadoDetalhe: r.publicadoDetalhe || '',
+      empresa: r.empresa || '',
+      dnsNosso: r.dnsNosso === undefined ? null : r.dnsNosso,
+      painelAchado: r.painelAchado || '',
+    })),
+    sslPendentes: bulkSslPendentes,
+    sslAtivados: bulkSslAtivados,
+    foraDeCasa: bulkForaDeCasa,
+    sfPendentes: bulkSfPendentes.map((r) => r.dominio),
+  };
+  return window.api.salvarRodada(estado).catch(() => {});
+}
+
+// Fim da rodada: sem tarefa pendente, o arquivo some; com pendente, fica, para
+// o botão das pendentes sobreviver a um reinício.
+async function fecharRodadaSalva() {
+  if (bulkSfPendentes.length) await salvarRodada('tarefas-pendentes');
+  else if (window.api && window.api.apagarRodada) await window.api.apagarRodada().catch(() => {});
+  renderBulkRetomar();
+}
+
+// Resumo de uma rodada salva, para o aviso e para o teste.
+function resumoRodada(estado) {
+  const sites = Array.isArray(estado?.sites) ? estado.sites : [];
+  const feitos = sites.filter((x) => ['ok', 'parcial'].includes(x.status)).length;
+  const publicados = sites.filter((x) => x.publicado).length;
+  const quando = estado?.salvoEm ? new Date(estado.salvoEm).toLocaleString('pt-BR', { hour12: false }) : 'antes';
+  return { total: sites.length, feitos, publicados, quando, pendentesSf: (estado?.sfPendentes || []).length };
+}
+
+// Remonta a lista da rodada salva: a planilha e o mapa de colunas voltam como
+// estavam, e cada site recupera o estado (quem já terminou, quem já está
+// publicado). Um site que estava "rodando" quando tudo fechou volta para a fila.
+function restaurarRodada(estado) {
+  bulkLinhas = Array.isArray(estado.linhas) ? estado.linhas : [];
+  bulkMapa = estado.mapa || null;
+  bulkTemCabecalho = !!estado.temCabecalho;
+  bulkOrigem = estado.origem || '';
+  if (typeof estado.criar === 'boolean') bulkCriar = estado.criar;
+  if (estado.marca && BRANDS.some((b) => b.id === estado.marca)) state.brand = estado.marca;
+  const { rows } = bulkMontarLinhas();
+  const salvos = new Map((estado.sites || []).map((x) => [x.dominio, x]));
+  for (const r of rows) {
+    const x = salvos.get(r.dominio);
+    if (!x || r.status === 'invalido') continue;
+    r.status = x.status === 'rodando' ? 'pendente' : (x.status || r.status);
+    r.detalhe = x.detalhe || r.detalhe;
+    r.publicado = !!x.publicado;
+    r.publicadoDetalhe = x.publicadoDetalhe || '';
+    if (x.empresa) r.empresa = x.empresa;
+    if (x.dnsNosso !== null && x.dnsNosso !== undefined) r.dnsNosso = x.dnsNosso;
+    // O link que o Hub achou no painel volta junto: não procura de novo.
+    if (x.painelAchado && !r.painelOk && normalizePainelUrl(x.painelAchado)) {
+      r.painel = x.painelAchado;
+      r.painelAchado = x.painelAchado;
+      r.painelOk = true;
+      r.painelConferido = !!r.temporario;
+    }
+  }
+  bulkRows = rows;
+  bulkSslPendentes = Array.isArray(estado.sslPendentes) ? estado.sslPendentes : [];
+  bulkSslAtivados = Array.isArray(estado.sslAtivados) ? estado.sslAtivados : [];
+  bulkForaDeCasa = Array.isArray(estado.foraDeCasa) ? estado.foraDeCasa : [];
+  const pend = new Set(estado.sfPendentes || []);
+  bulkSfPendentes = rows.filter((r) => pend.has(r.dominio));
+}
+
+async function retomarRodada() {
+  if (bulkRodando) return;
+  const r = await window.api.lerRodada().catch(() => null);
+  const estado = r && r.estado;
+  if (!estado) { log('Não há rodada salva para retomar.', 'warn'); renderBulkRetomar(); return; }
+  restaurarRodada(estado);
+  const res = resumoRodada(estado);
+  log(`Retomando a rodada de ${res.quando} (${bulkOrigem || 'planilha'}): ${res.feitos} de ${res.total} site(s) já tinham terminado, ${res.publicados} publicado(s).`, 'cmd');
+  renderBulkTool();
+
+  if (estado.fase === 'tarefas-pendentes') {
+    log(`Ficaram ${bulkSfPendentes.length} tarefa(s) do Salesforce pendente(s). Clique em "Criar as tarefas pendentes".`, 'warn');
+    return;
+  }
+  if (estado.fase === 'publicando' && bulkFilaAtual().length) {
+    await rodarBulk({ retomando: true });
+    return;
+  }
+  // Todos já tinham terminado; faltava só o fim (tarefas do Salesforce).
+  const sf = await window.api.salesforceGetConfig().catch(() => null);
+  bulkSfConectado = !!(sf && sf.ok && sf.conectado);
+  await criarTarefasSalesforceNoFim();
+  await fecharRodadaSalva();
+}
+
+async function descartarRodada() {
+  if (bulkRodando) return;
+  await window.api.apagarRodada().catch(() => {});
+  log('Rodada salva descartada.', 'info');
+  renderBulkRetomar();
+}
+
+// O aviso no topo do Publicar em massa, quando há rodada salva.
+async function renderBulkRetomar() {
+  const wrap = document.getElementById('bulkRetomar');
+  if (!wrap) return;
+  if (bulkRodando) { wrap.innerHTML = ''; return; }
+  const r = await window.api.lerRodada().catch(() => null);
+  const estado = r && r.estado;
+  if (!estado) { wrap.innerHTML = ''; return; }
+  const res = resumoRodada(estado);
+  const texto = estado.fase === 'tarefas-pendentes'
+    ? `A rodada de ${res.quando} terminou com ${res.pendentesSf} tarefa(s) do Salesforce pendente(s).`
+    : `A rodada de ${res.quando} (${escapeHtml(estado.origem || 'planilha')}) não terminou: ${res.feitos} de ${res.total} site(s) já feitos. Retomando, ele continua de onde parou e cria as tarefas do Salesforce no fim.`;
+  wrap.innerHTML = `
+    <div class="aviso-rodada">
+      <div>${texto}</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+        <button id="bulkRetomarBtn" type="button" class="btn primary compact">${estado.fase === 'tarefas-pendentes' ? 'Abrir as pendentes' : 'Retomar de onde parou'}</button>
+        <button id="bulkDescartarBtn" type="button" class="btn ghost compact">Descartar</button>
+      </div>
+    </div>`;
+  document.getElementById('bulkRetomarBtn').addEventListener('click', retomarRodada);
+  document.getElementById('bulkDescartarBtn').addEventListener('click', descartarRodada);
 }
 
 function renderBulkLista() {
@@ -2275,7 +3983,7 @@ function renderBulkLista() {
     return;
   }
 
-  const prontos = bulkRows.filter((r) => r.painelOk);
+  const prontos = bulkRows.filter(bulkTemPainel);
   const fila = bulkFilaAtual();
   const foraDaRodada = prontos.length - fila.length;
   const feitos = bulkRows.filter((r) => ['ok', 'parcial', 'falhou', 'pulado'].includes(r.status)).length;
@@ -2302,13 +4010,14 @@ function renderBulkLista() {
   const podeRodar = fila.length && brandUsesMpiPanel(state.brand);
 
   if (bulkRodando) {
-    html += `<button id="bulkStopBtn" class="btn caution full-width">Parar depois deste site</button>`;
+    html += `<button id="bulkStopBtn" class="btn caution full-width" ${bulkParar ? 'disabled' : ''}>${bulkParar ? 'Para depois deste site' : 'Parar depois deste site'}</button>`;
+    html += `<button id="bulkStopNowBtn" class="btn ghost full-width" style="margin-top:6px" ${paradaAgora ? 'disabled' : ''}>${paradaAgora ? 'Parando...' : 'Parar agora (no meio deste site)'}</button>`;
   } else {
     const jaPublicados = fila.filter((r) => r.status === 'publicado').length;
     const aPublicar = fila.length - jaPublicados;
     html += `<button id="bulkRunBtn" class="btn caution full-width" ${podeRodar ? '' : 'disabled'}>
          ${!prontos.length
-           ? 'Nenhuma linha com link válido'
+           ? 'Nenhuma linha com link válido ou razão social'
            : !fila.length
              ? 'Nada a fazer: todos já foram feitos'
              : jaPublicados
@@ -2326,6 +4035,16 @@ function renderBulkLista() {
     html += `<button id="bulkCheckBtn" class="btn ghost full-width" style="margin-top:6px" ${podeRodar ? '' : 'disabled'}>
         Só conferir quem já está publicado
       </button>`;
+    if (state.sfTarefasAuto && bulkRows.some((r) => r.dominio)) {
+      html += `<button id="bulkSfConfBtn" class="btn ghost full-width" style="margin-top:6px">
+        Conferir os casos no Salesforce (só leitura, não cria nada)
+      </button>`;
+    }
+    if (bulkSfPendentes.length) {
+      html += `<button id="bulkSfPendBtn" class="btn primary full-width" style="margin-top:6px">
+        Criar as ${bulkSfPendentes.length} tarefa(s) pendente(s) no Salesforce
+      </button>`;
+    }
     if (bulkForaDeCasa.length) {
       html += `<button id="bulkForaBtn" class="btn ghost full-width" style="margin-top:6px">
         Salvar .xlsx dos ${bulkForaDeCasa.length} que não estão conosco
@@ -2339,6 +4058,10 @@ function renderBulkLista() {
   if (run) run.addEventListener('click', rodarBulk);
   const check = document.getElementById('bulkCheckBtn');
   if (check) check.addEventListener('click', conferirBulkPublicacao);
+  const sfConf = document.getElementById('bulkSfConfBtn');
+  if (sfConf) sfConf.addEventListener('click', conferirCasosSalesforce);
+  const sfPend = document.getElementById('bulkSfPendBtn');
+  if (sfPend) sfPend.addEventListener('click', criarTarefasPendentes);
   const fora = document.getElementById('bulkForaBtn');
   if (fora) fora.addEventListener('click', () => exportarForaDeCasa());
   const limpar = document.getElementById('bulkLimparConf');
@@ -2356,11 +4079,21 @@ function renderBulkLista() {
     stop.addEventListener('click', () => {
       bulkParar = true;
       log('Vou parar quando este site terminar. Não corto no meio do painel.', 'warn');
+      renderBulkLista();
+    });
+  }
+  const stopNow = document.getElementById('bulkStopNowBtn');
+  if (stopNow) {
+    stopNow.addEventListener('click', async () => {
+      bulkParar = true;
+      bulkParouNoMeio = true;
+      await pararAgora();
+      renderBulkLista();
     });
   }
 }
 
-async function rodarBulk() {
+async function rodarBulk({ retomando = false } = {}) {
   if (bulkRodando) return;
   if (!state.googleSaPath) {
     log('Configure o caminho da service account antes de rodar em massa.', 'error');
@@ -2379,14 +4112,23 @@ async function rodarBulk() {
   // lista já está na tela. A parada que fica é a do DNS, uma por domínio.
   bulkRodando = true;
   bulkParar = false;
-  bulkSslPendentes = [];
-  bulkSslAtivados = [];
-  bulkForaDeCasa = [];
+  bulkParouNoMeio = false;
+  // Rodada longa: o Windows não pode suspender o app no meio (ADR-094).
+  window.api.manterAcordado(true).catch(() => {});
+  // Retomando uma rodada interrompida, as listas do fim (SSL, fora de casa)
+  // vêm do arquivo salvo e não podem ser zeradas (ADR-096).
+  if (!retomando) {
+    bulkSslPendentes = [];
+    bulkSslAtivados = [];
+    bulkForaDeCasa = [];
+  }
   bulkSfCriadas = [];
+  bulkSfPendentes = [];
+  bulkGoogleQuebrado = null;
   // Alguma linha pede tarefa no Salesforce? Só então conferimos a conexão, uma
   // vez, para não incomodar quem não usa essa coluna (ADR-090).
   bulkSfConectado = false;
-  if (bulkRows.some((r) => r.caso)) {
+  if (state.sfTarefasAuto || bulkRows.some((r) => r.caso)) {
     try {
       const sf = await window.api.salesforceGetConfig();
       bulkSfConectado = !!(sf && sf.ok && sf.conectado);
@@ -2402,7 +4144,11 @@ async function rodarBulk() {
   let parciais = 0;
   let falhas = 0;
 
+  await salvarRodada('publicando');
   for (const row of fila) {
+    // Salva antes de cada site: o que já terminou fica gravado, e se o Windows
+    // fechar tudo no meio, a rodada volta daqui (ADR-096).
+    await salvarRodada('publicando');
     if (bulkParar) {
       row.status = 'pulado';
       row.detalhe = 'parada pedida antes de começar este';
@@ -2419,6 +4165,9 @@ async function rodarBulk() {
     // contato técnico (ADR-061).
     let publicou = null;
     try {
+      // O contrato certo antes de tudo: sem ele não mexe nem no DNS (ADR-098).
+      await garantirLinkDoPainel(row);
+      await salvarRodada('publicando');
       const quem = await descobrirEmpresaDoDominio(row);
       row.empresa = quem.empresa;
       row.dnsNosso = quem.dnsNosso;
@@ -2441,9 +4190,13 @@ async function rodarBulk() {
       }
 
       publicou = await publicarSeNecessario(row, servidorId);
+      // Voltou sem erro = o site está no ar (já estava, ou acabou de subir).
+      // Daqui para frente, o que falhar é vínculo, não publicação (ADR-092).
+      row.publicado = true;
+      row.publicadoDetalhe = publicou?.jaEstava ? 'já estava publicado' : (publicou?.detalhe || 'publicado');
     } catch (e) {
       row.status = 'falhou';
-      row.detalhe = e.message;
+      row.detalhe = ehParada(e) || paradaAgora ? 'parado por você no meio; volta para a fila ao retomar' : e.message;
       falhas++;
       renderBulkLista();
       continue;
@@ -2476,6 +4229,15 @@ async function rodarBulk() {
       else log(`Não consegui conferir o vínculo de ${row.dominio} (${conf.error}). Vou sincronizar do mesmo jeito.`, 'warn');
     }
 
+    // A chave do Google já foi recusada nesta rodada: ela vale para todos os
+    // sites, então não adianta tentar de novo a cada um. O site está publicado;
+    // o vínculo fica pendente para a próxima rodada (ADR-092).
+    if (bulkGoogleQuebrado) {
+      await fecharPublicadoSemVinculo(row, 'vínculo do Google pendente (chave da service account recusada)');
+      parciais++;
+      continue;
+    }
+
     const res = await withBusy(`vinculando ${row.dominio}`, () =>
       window.api.createGoogleProject({
         domain: row.dominio,
@@ -2492,10 +4254,16 @@ async function rodarBulk() {
     if (res.log) for (const entry of res.log) log(entry.message, entry.type);
 
     if (!res.ok) {
-      row.status = 'falhou';
-      row.detalhe = res.error || 'erro ao procurar no Google';
-      falhas++;
-      renderBulkLista();
+      if (res.saInvalida && !bulkGoogleQuebrado) {
+        bulkGoogleQuebrado = res.error || 'chave da service account recusada';
+        log('Parei de chamar o Google nesta rodada: a chave da service account foi recusada, e ela é a mesma para todos os sites. Sigo publicando e registrando na planilha e no Salesforce; os vínculos ficam pendentes para rodar de novo depois de trocar a chave.', 'warn');
+      }
+      // O site está publicado (publicarSeNecessario voltou sem erro): falhou o
+      // vínculo, não a publicação. Parcial, não falha (ADR-092).
+      await fecharPublicadoSemVinculo(row, res.saInvalida
+        ? 'vínculo do Google pendente (chave da service account recusada)'
+        : `vínculo do Google falhou: ${res.error || 'erro ao procurar no Google'}`);
+      parciais++;
       continue;
     }
 
@@ -2504,12 +4272,10 @@ async function rodarBulk() {
     // Sem Measurement ID o painel não tem o que guardar, e o relatório
     // reprovaria com uma frase genérica. Melhor dizer aqui o que faltou.
     if (!v.idAnalytics) {
-      row.status = 'falhou';
-      row.detalhe = bulkCriar
+      await fecharPublicadoSemVinculo(row, bulkCriar
         ? 'sem Measurement ID: a etapa do Analytics falhou, veja o terminal'
-        : 'sem propriedade GA4, e a criação está desmarcada';
-      falhas++;
-      renderBulkLista();
+        : 'sem propriedade GA4, e a criação está desmarcada');
+      parciais++;
       continue;
     }
 
@@ -2520,9 +4286,11 @@ async function rodarBulk() {
     });
 
     if (!painel || !painel.ok) {
-      row.status = 'falhou';
-      row.detalhe = painel?.error || 'o painel não aceitou';
-      falhas++;
+      // Publicado, mas o painel não guardou o vínculo: parcial, e a planilha e
+      // o Salesforce seguem (ADR-092).
+      row.status = 'parcial';
+      row.detalhe = `${row.publicadoDetalhe || 'publicado'} · o painel não aceitou o vínculo: ${painel?.error || 'sem resposta'}`;
+      parciais++;
     } else if ((painel.falhas || []).length || (res.result.faltando || []).length) {
       row.status = 'parcial';
       const pedacos = [];
@@ -2553,6 +4321,18 @@ async function rodarBulk() {
 
   bulkRodando = false;
   bulkParar = false;
+  window.api.manterAcordado(false).catch(() => {});
+  if (bulkParouNoMeio) {
+    // Parou no meio: sem tarefas do Salesforce nem resumo do fim. A rodada
+    // fica salva, e o "Retomar" continua de onde parou e faz o fim.
+    bulkParouNoMeio = false;
+    await pararTerminou();
+    await salvarRodada('publicando');
+    renderBulkLista();
+    renderBulkRetomar();
+    log(`Publicar em massa parado por você: ${ok} completo(s), ${parciais} parcial(is). As tarefas do Salesforce não foram criadas. A rodada ficou salva: "Retomar" continua de onde parou (o site do meio volta para a fila) e faz as tarefas no fim.`, 'warn');
+    return;
+  }
   renderBulkLista();
 
   log(
@@ -2561,8 +4341,14 @@ async function rodarBulk() {
     falhas ? 'warn' : 'success'
   );
 
+  if (bulkGoogleQuebrado) {
+    log(`Os vínculos do Google ficaram pendentes nesta rodada. ${bulkGoogleQuebrado} Depois de trocar a chave, rode o Publicar em massa de novo com a mesma planilha: os parciais voltam para a fila, nada é republicado e só o vínculo é refeito.`, 'warn');
+  }
+
   // Publicou todos: agora as tarefas no Salesforce, sozinho, sem botão (ADR-090).
+  await salvarRodada('tarefas');
   await criarTarefasSalesforceNoFim();
+  await fecharRodadaSalva();
 
   // O SSL é a única etapa que depende de um relógio que não é nosso, então ele
   // tem o próprio resumo, no fim, onde não se perde no meio do log.
@@ -2574,9 +4360,6 @@ async function rodarBulk() {
   }
   if (bulkSslAtivados.length) {
     log(`SSL ativado em ${bulkSslAtivados.length} site(s): ${bulkSslAtivados.join(', ')}.`, 'success');
-  }
-  if (bulkSfCriadas.length) {
-    log(`Salesforce: ${bulkSfCriadas.length} tarefa(s) criada(s) no caso, concluída(s) e no seu nome: ${bulkSfCriadas.join(', ')}.`, 'success');
   }
   if (!bulkSslPendentes.length && !bulkSslAtivados.length) {
     log('SSL: nada a fazer nesta rodada (ninguém precisou publicar).', 'info');
@@ -2615,11 +4398,12 @@ async function exportarForaDeCasa() {
 
 async function conferirBulkPublicacao() {
   if (bulkRodando) return;
-  const fila = bulkRows.filter((r) => r.painelOk);
+  const fila = bulkRows.filter(bulkTemPainel);
   if (!fila.length) return;
 
   bulkRodando = true;
   bulkParar = false;
+  bulkParouNoMeio = false;
   renderBulkLista();
   log(`Conferindo no painel o estado de ${fila.length} site(s). Só leitura, nada muda.`, 'cmd');
 
@@ -2630,14 +4414,24 @@ async function conferirBulkPublicacao() {
     row.detalhe = '';
     renderBulkLista();
 
+    try {
+      await garantirLinkDoPainel(row);
+    } catch (e) {
+      row.status = 'falhou';
+      row.detalhe = e.message;
+      renderBulkLista();
+      continue;
+    }
     const res = await withBusy(`conferindo ${row.dominio}`, () =>
       window.api.publicarPainel({ url: normalizePainelUrl(row.painel), etapa: 'estado', dominio: row.dominio })
     );
     if (res.log) for (const e of res.log) log(e.message, e.type);
+    let divergiu = null;
+    if (res.ok) { try { conferirTemporario(row, res.estado); } catch (e) { divergiu = e.message; } }
 
-    if (!res.ok) {
+    if (!res.ok || divergiu) {
       row.status = 'falhou';
-      row.detalhe = res.error || 'não consegui ler o painel';
+      row.detalhe = divergiu || res.error || 'não consegui ler o painel';
     } else {
       // "Publicado" é o mesmo teste que o painel usa para responder jaEstava.
       const e = res.estado || {};
@@ -2655,6 +4449,7 @@ async function conferirBulkPublicacao() {
 
   bulkRodando = false;
   bulkParar = false;
+  if (bulkParouNoMeio) { bulkParouNoMeio = false; await pararTerminou(); log('Conferência parada por você.', 'warn'); }
   renderBulkLista();
   const aPublicar = bulkRows.filter((r) => r.status === 'apublicar').length;
   log(`Conferência: ${jaPublicados} já publicado(s), ${aPublicar} a publicar.`, 'info');
@@ -2868,22 +4663,58 @@ async function cuidarDoDnsEmMassa(row, empresa) {
 // A linha na planilha de publicações (ADR-062), sem duplicar o que já está lá.
 // A razão social vem da planilha de entrada; sem ela não há o que escrever.
 async function registrarLinhaDaPlanilha(row) {
+  // Sem razão social na planilha de entrada mas com o link do caso: o caso
+  // tem a conta — pega de lá em vez de pular (ADR-123).
+  if (!row.razao && row.caso) {
+    const ctx = await withBusy(`lendo a conta pelo caso de ${row.dominio}`, () => window.api.salesforceContexto({ caso: row.caso })).catch((e) => ({ ok: false, error: e.message }));
+    if (ctx?.log) for (const e of ctx.log) log(e.message, e.type);
+    if (ctx?.ok && ctx.razao) { row.razao = ctx.razao; log(`${row.dominio}: razão social pelo caso: ${ctx.razao}.`, 'info'); }
+    if (ctx?.ok && ctx.empresa && !PLANILHA_ABA_POR_EMPRESA[row.empresa]) row.empresa = ctx.empresa;
+  }
   if (!row.razao) {
-    log(`${row.dominio}: sem razão social na planilha de entrada, não registro na planilha de publicações.`, 'warn');
+    log(`${row.dominio}: sem razão social na planilha de entrada (e o caso não deu a conta), não registro na planilha de publicações.`, 'warn');
     return { pulado: true };
   }
 
   let empresa = row.empresa;
   if (!PLANILHA_ABA_POR_EMPRESA[empresa]) {
-    // Sem contato técnico nosso, não há onde ler isso (ADR-064).
-    empresa = await perguntarNoTerminal(
-      `De qual empresa é ${row.dominio}? O contato técnico no Registro.br não é nosso, então não dá para descobrir. Isso decide a aba da planilha.`,
-      [
-        { valor: 'bc', rotulo: 'Busca Cliente (aba Busca Cliente)' },
-        { valor: 'mpisolutions', rotulo: 'MPI Solutions (aba MPI)' },
-      ]
-    );
-    row.empresa = empresa;
+    // Sem contato técnico nosso, o Registro.br não diz a empresa. Mas se o site
+    // já está registrado numa das abas, a resposta está ali: procuro nas duas
+    // antes de perguntar, para a rodada não parar esperando alguém (ADR-095).
+    const busca = await withBusy(`procurando ${row.dominio} na planilha`, () =>
+      window.api.procurarNaPlanilha({ dominio: row.dominio })
+    ).catch((e) => ({ ok: false, error: e.message }));
+    if (busca?.log) for (const e of busca.log) log(e.message, e.type);
+    if (busca?.ok && busca.achado) {
+      const achouEmpresa = Object.keys(PLANILHA_ABA_POR_EMPRESA).find((k) => PLANILHA_ABA_POR_EMPRESA[k] === busca.achado.abaPedida);
+      if (achouEmpresa) row.empresa = achouEmpresa;
+      log(`${row.dominio}: já está na aba ${busca.achado.aba}, linha ${busca.achado.linha}. Não precisei perguntar a empresa nem vou duplicar.`, 'info');
+      return { jaExistia: true, onde: busca.achado.onde, aba: busca.achado.aba };
+    }
+    if (busca && !busca.ok) log(`Não consegui procurar ${row.dominio} na planilha (${busca.error}).`, 'warn');
+    // Com o link do caso na planilha de entrada, o caso diz a empresa (campo
+    // "Projeto") — sem parar a rodada perguntando (ADR-123).
+    if (row.caso) {
+      const ctx = await withBusy(`lendo a empresa pelo caso de ${row.dominio}`, () => window.api.salesforceContexto({ caso: row.caso })).catch((e) => ({ ok: false, error: e.message }));
+      if (ctx?.log) for (const e of ctx.log) log(e.message, e.type);
+      if (ctx?.ok && ctx.empresa) {
+        empresa = ctx.empresa;
+        row.empresa = empresa;
+        if (!row.razao && ctx.razao) row.razao = ctx.razao;
+        log(`${row.dominio}: empresa pelo ${ctx.via}.`, 'info');
+      }
+    }
+    if (!PLANILHA_ABA_POR_EMPRESA[empresa]) {
+      // Nem planilha nem caso disseram: aí sim pergunta (ADR-064).
+      empresa = await perguntarNoTerminal(
+        `De qual empresa é ${row.dominio}? O contato técnico no Registro.br não é nosso e o caso não diz. Isso decide a aba da planilha.`,
+        [
+          { valor: 'bc', rotulo: 'Busca Cliente (aba Busca Cliente)' },
+          { valor: 'mpisolutions', rotulo: 'MPI Solutions (aba MPI)' },
+        ]
+      );
+      row.empresa = empresa;
+    }
   }
 
   const aba = PLANILHA_ABA_POR_EMPRESA[empresa];
@@ -2917,18 +4748,17 @@ async function registrarLinhaDaPlanilha(row) {
 // diz o que falta. Então o Hub pergunta ao DNS primeiro (ADR-069).
 async function conferirApontamentoDeProducao(dominio) {
   const cfg = await window.api.getPublicacaoConfig();
-  const ip = String(cfg?.config?.hestiaIpPublico || '').trim();
-  if (!ip) return { pronto: false, motivo: 'não sei o IP de produção; configure em Publicação' };
+  const ip = String(cfg?.config?.hestiaIpPublico || '149.18.102.39').trim();
 
   const r = await window.api.conferirApontamento({ dominio, ip });
   if (!r.ok) return { pronto: false, ip, motivo: `não consegui consultar o DNS (${r.error})` };
-  if (r.apontando) return { pronto: true, ip, motivo: '', www: r.wwwApontando };
+  if (r.apontando) return { pronto: true, ip, motivo: `visto em ${(r.vistoEm || []).join(', ') || 'DNS'}`, www: r.wwwApontando };
 
   // Sem resposta é espera; resposta com outro IP é DNS que ninguém trocou. As
   // duas pulam o SSL, mas quem lê o resumo precisa saber qual das duas é.
   const motivo = r.resolveu
     ? `ainda aponta para ${r.raiz.join(', ')}, não para ${ip}`
-    : 'ainda não resolve; a troca no Registro.br leva até 2 horas para publicar';
+    : 'ainda não resolve nos DNS públicos; a troca no Registro.br leva até 2 horas para publicar';
   return { pronto: false, ip, motivo };
 }
 
@@ -2952,6 +4782,7 @@ async function publicarSeNecessario(row, servidorId) {
   };
 
   const antes = await passo('estado', 'conferindo');
+  conferirTemporario(row, antes);
   // O mesmo teste que o painel usa para responder "já estava".
   if (antes.concluido && !antes.falhou) {
     log(`${row.dominio} já está publicado, vou direto para o vínculo.`, 'info');
@@ -3017,6 +4848,7 @@ const PUB_ETAPAS = [
   { id: 'ssl', nome: 'Ativar o SSL de produção' },
   { id: 'tags', nome: 'Criar as propriedades e sincronizar as tags' },
   { id: 'planilha', nome: 'Registrar na planilha de publicações' },
+  { id: 'salesforce', nome: 'Fechar a tarefa no Salesforce e comentar marcando quem criou' },
 ];
 
 // As etapas que só fazem sentido quando o DNS do domínio é nosso (ADR-061).
@@ -3028,7 +4860,7 @@ const PUB_ETAPAS_DNS = ['dns', 'cloudflare', 'registro', 'propagacao', 'ssl'];
 // a conferência do contato (o DNS passa a ser tratado como nosso) e a troca de
 // nameservers (a zona já está na Cloudflare, a troca pode ser feita depois).
 // A pergunta é feita no terminal, só na falha; não há botão fixo (ADR-072).
-const PUB_PULAVEIS = ['contato', 'registro'];
+const PUB_PULAVEIS = ['contato', 'registro', 'salesforce'];
 
 // Estado de uma publicação. Fora do hub-state: é de um projeto só, agora.
 let pub = null;
@@ -3039,6 +4871,9 @@ function pubNovo() {
     dominio: '',
     razao: '',
     painelUrl: '',
+    temporario: '',      // link temporário: confirma o contrato do painel (ADR-098)
+    painelConferido: '', // o link do painel que já foi achado/conferido
+    painelAchado: false, // o link veio da busca (não colado): refaz se mudar a razão ou o temporário
     sfTarefa: '',        // link da tarefa no Salesforce (ADR-089)
     hostsExtras: '',
     etapa: 'contato',       // a próxima a rodar
@@ -3058,14 +4893,20 @@ function pubNovo() {
     transicaoAte: null,     // quando o Registro.br publica a troca de NS (ADR-080)
     sslAdiado: null,        // { ate } quando propagação e SSL ficaram para o fim
     apontando: false,
+    scPendente: false,      // Search Console e relatório esperando o SSL (ADR-100)
+    sfAdiado: false,        // a tarefa do Salesforce esperando o SSL adiado (ADR-101)
     v: null,                // o que o createGoogleProject devolveu
   };
 }
 
 function renderPublishTool() {
   if (!pub) pub = pubNovo();
+  if (!pub.aba) pub.aba = Object.keys(pub.feitas || {}).length || pub.emAndamento ? 'etapas' : 'parametros';
+  const abas = toolTabsHtml([{ id: 'parametros', nome: 'Parâmetros' }, { id: 'etapas', nome: 'Etapas', n: PUB_ETAPAS.length }], pub.aba, 'pub-aba');
   el.leftPanel.innerHTML = `
-    ${backButtonHtml()}
+    ${backButtonHtml({ tabs: abas })}
+    <div class="pub-tab ${pub.aba === 'parametros' ? 'active' : ''}" id="pubTabParametros">
+    <div class="sec anim-in">
     <label class="field">
       <span>Empresa (decide a conta da Cloudflare e do Registro.br, e a aba da planilha)</span>
       <select id="pubEmpresa">
@@ -3081,11 +4922,11 @@ function renderPublishTool() {
       <input id="pubRazao" type="text" placeholder="ex: KAROLLINE FIGUEIREDO DERMATOLOGIA LTDA" value="${escapeHtml(pub.razao)}" autocomplete="off" />
     </label>
     <label class="field">
-      <span>Link do painel do projeto</span>
-      <input id="pubPainel" type="text" placeholder="https://${PAINEL_MPI_HOST}/clientes/.../hub?projeto=...&tab=publicacao" value="${escapeHtml(pub.painelUrl)}" autocomplete="off" />
+      <span>Link temporário (o do alto da aba Publicação; confirma o contrato certo)</span>
+      <input id="pubTemporario" type="text" placeholder="ex: http://cliente-migra.mpitemporario.com.br" value="${escapeHtml(pub.temporario || '')}" autocomplete="off" />
     </label>
     <label class="field">
-      <span>Link da tarefa no Salesforce (opcional; fecha a tarefa e comenta no feed)</span>
+      <span>Link da tarefa no Salesforce (no fim da publicação, o Hub assume, conclui e comenta no feed marcando quem criou)</span>
       <input id="pubSfTarefa" type="text" placeholder="cole o link da tarefa de publicação" value="${escapeHtml(pub.sfTarefa || '')}" autocomplete="off" />
     </label>
     <div class="field" style="gap:6px">
@@ -3100,20 +4941,43 @@ function renderPublishTool() {
       <span>Outros hosts do DNS para conferir (opcional; pode separar por linha, vírgula ou ponto e vírgula)</span>
       <textarea id="pubHosts" rows="2" placeholder="ex: correio, erp, vpn" autocomplete="off">${escapeHtml(pub.hostsExtras)}</textarea>
     </label>
+    <button id="pubIrEtapas" class="btn primary full-width">Continuar para validação de etapas →</button>
+    </div>
+    </div>
+    <div class="pub-tab ${pub.aba === 'etapas' ? 'active' : ''}" id="pubTabEtapas">
+    <div id="pubEsperas"></div>
     <div id="pubEtapas"></div>
     <div id="pubDetalhe"></div>
-    <p class="hint">Um botão, uma parada. O Hub procura o domínio nas duas contas do Registro.br (contato técnico BCTDL é Busca Cliente, MPSOL83 é MPI Solutions), cria a zona na Cloudflare e deixa a própria Cloudflare varrer o DNS atual, completa com a fotografia dos autoritativos e monta a zona final: tudo replicado, só a raiz e o www vão para o servidor novo, e-mail e o resto ficam onde estão. Aí ele para e mostra o antes e o depois; você confirma e o resto segue sozinho: nameservers, aprovar, publicar, SSL quando o DNS apontar, tags e planilha. Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto e pergunta a empresa antes da planilha. Domínio fora do .br (.com, por exemplo): não há Registro.br para perguntar; o Hub confere se a raiz já aponta para o servidor de produção e segue para aprovar e publicar; se não aponta, avisa em destaque para você pedir o apontamento ao analista. O campo de hosts é para subdomínio que só aquele cliente usa e nenhuma varredura adivinharia.</p>
+    </div>
+    ${infoBoxHtml(`<p>Um botão, uma parada. O Hub procura o domínio nas duas contas do Registro.br (contato técnico BCTDL é Busca Cliente, MPSOL83 é MPI Solutions), cria a zona na Cloudflare e deixa a própria Cloudflare varrer o DNS atual, completa com a fotografia dos autoritativos e monta a zona final: tudo replicado, só a raiz e o www vão para o servidor novo, e-mail e o resto ficam onde estão. Aí ele para e mostra o antes e o depois; você confirma e o resto segue sozinho: nameservers, aprovar, publicar, SSL quando o DNS apontar, tags e planilha. Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto e pergunta a empresa antes da planilha. Domínio fora do .br (.com, por exemplo): não há Registro.br para perguntar; o Hub confere se a raiz já aponta para o servidor de produção e segue para aprovar e publicar; se não aponta, avisa em destaque para você pedir o apontamento ao analista. O campo de hosts é para subdomínio que só aquele cliente usa e nenhuma varredura adivinharia. Antes de tudo o Hub procura o cliente no painel pela razão social e fica com o contrato do link temporário; não achando, pede o link do painel no terminal e segue por ele. Com o link da tarefa, a última etapa assume e conclui a tarefa no seu nome e comenta "Site publicado" no caso, marcando quem criou. Quando o Registro.br só publica a troca de DNS daqui a horas, o site vai para a lista "Aguardando a propagação" com o que falta, e a tela fica livre para outro site; o Hub termina cada um sozinho quando o DNS apontar, um de cada vez, primeiro o de previsão mais cedo.</p>`)}
   `;
 
   document.getElementById('backToHub').addEventListener('click', goHome);
+  const trocarAba = (aba) => { pub.aba = aba; el.leftPanel.querySelectorAll('[data-pub-aba]').forEach((b) => b.classList.toggle('active', b.dataset.pubAba === aba)); document.getElementById('pubTabParametros').classList.toggle('active', aba === 'parametros'); document.getElementById('pubTabEtapas').classList.toggle('active', aba === 'etapas'); };
+  el.leftPanel.querySelectorAll('[data-pub-aba]').forEach((b) => b.addEventListener('click', () => trocarAba(b.dataset.pubAba)));
+  document.getElementById('pubIrEtapas').addEventListener('click', () => {
+    const d = normalizeDomain(document.getElementById('pubDominio').value);
+    if (!d) { log('Preencha o domínio antes de ir para as etapas.', 'warn'); document.getElementById('pubDominio').focus(); return; }
+    if (d !== pub.dominio) document.getElementById('pubDominio').dispatchEvent(new Event('change'));
+    trocarAba('etapas');
+  });
   document.getElementById('pubEmpresa').addEventListener('change', (e) => { pub.empresa = e.target.value; });
   document.getElementById('pubDominio').addEventListener('change', (e) => {
     const limpo = normalizeDomain(e.target.value);
     if (limpo && limpo !== e.target.value.trim()) { e.target.value = limpo; log(`Domínio normalizado: ${limpo}`, 'info'); }
-    if (limpo !== pub.dominio && !pub.emAndamento) { pub = { ...pubNovo(), empresa: pub.empresa, razao: pub.razao, painelUrl: pub.painelUrl, sfTarefa: pub.sfTarefa, hostsExtras: pub.hostsExtras, dominio: limpo }; renderPubEtapas(); renderPubDetalhe(); }
+    if (limpo !== pub.dominio && !pub.emAndamento) { pub = { ...pubNovo(), empresa: pub.empresa, razao: pub.razao, temporario: pub.temporario, sfTarefa: pub.sfTarefa, hostsExtras: pub.hostsExtras, dominio: limpo, aba: pub.aba }; renderPubEtapas(); renderPubDetalhe(); }
+    renderAtalhosTerminal();
+  });
+  document.getElementById('pubTemporario').addEventListener('input', (e) => {
+    pub.temporario = e.target.value.trim();
+    // Outro temporário é outro contrato: o link achado antes não vale mais.
+    if (!pub.emAndamento && pub.painelAchado) { pub.painelUrl = ''; pub.painelAchado = false; }
+    pub.painelConferido = '';
+  });
+  document.getElementById('pubRazao').addEventListener('change', () => {
+    if (!pub.emAndamento && pub.painelAchado) { pub.painelUrl = ''; pub.painelAchado = false; pub.painelConferido = ''; }
   });
   document.getElementById('pubRazao').addEventListener('input', (e) => { pub.razao = e.target.value.trim(); });
-  document.getElementById('pubPainel').addEventListener('input', (e) => { pub.painelUrl = e.target.value.trim(); });
   const sfT = document.getElementById('pubSfTarefa');
   if (sfT) sfT.addEventListener('input', (e) => { pub.sfTarefa = e.target.value.trim(); });
   wireTesteSalesforce();
@@ -3121,6 +4985,7 @@ function renderPublishTool() {
 
   renderPubEtapas();
   renderPubDetalhe();
+  renderEsperas();
 }
 
 // Os dois botões de teste do fechamento da tarefa no Salesforce (ADR-089).
@@ -3165,7 +5030,7 @@ async function irParaPublicar({ dominio, razao, painelUrl, iniciar = false }) {
   }
   pub = { ...pubNovo(), dominio: normalizeDomain(dominio) || '', razao: (razao || '').trim(), painelUrl: (painelUrl || '').trim() };
   await openTool('publish');
-  if (iniciar && pub.dominio && normalizePainelUrl(pub.painelUrl)) {
+  if (iniciar && pub.dominio && (normalizePainelUrl(pub.painelUrl) || pub.razao)) {
     log(`Publicar MPI+: ${pub.dominio}, vindo do Criar propriedades. Começando.`, 'cmd');
     pubRodarTudo();
   } else if (iniciar) {
@@ -3212,6 +5077,13 @@ function renderPubEtapas() {
   if (atual) {
     const b = pubRotuloBotao(atual);
     html += `<button id="pubProximo" class="btn ${b.classe} full-width" style="margin-top:10px" ${b.desabilitado ? 'disabled' : ''}>${escapeHtml(b.texto)}</button>`;
+    // Parar no meio (ADR-102): enquanto roda. Parado ou com algo feito,
+    // dá para descartar a publicação e começar outra.
+    if (pub.emAndamento || pub.rodando) {
+      html += `<button id="pubParar" class="btn caution full-width" style="margin-top:6px" ${paradaAgora ? 'disabled' : ''}>${paradaAgora ? 'Parando...' : 'Parar agora'}</button>`;
+    } else if (Object.keys(pub.feitas).length) {
+      html += `<button id="pubDescartar" class="btn ghost full-width" style="margin-top:6px">Descartar esta publicação e começar de novo</button>`;
+    }
   } else {
     html += `<div class="card card--result"><div class="card__title">Publicação concluída para ${escapeHtml(pub.dominio)}</div>
       ${pub.foraDoBr && !pub.foraDoBr.apontando ? `<div class="pick-empty">AVISE O ANALISTA: ${escapeHtml(pub.dominio)} não é .br e ainda não aponta para o servidor de produção (${escapeHtml(pub.foraDoBr.motivo)}). O cliente precisa apontar o A da raiz para 149.18.102.39; depois disso, ative o SSL de produção no painel.</div>` : ''}
@@ -3228,6 +5100,14 @@ function renderPubEtapas() {
   });
   const rein = document.getElementById('pubReiniciar');
   if (rein) rein.addEventListener('click', () => { pub = pubNovo(); renderPublishTool(); });
+  const parar = document.getElementById('pubParar');
+  if (parar) parar.addEventListener('click', async () => { await pararAgora(); renderPubEtapas(); });
+  const descartar = document.getElementById('pubDescartar');
+  if (descartar) descartar.addEventListener('click', () => {
+    log(`Publicação de ${pub.dominio || 'este projeto'} descartada. O que já tinha sido feito (DNS, painel, tags) não é desfeito.`, 'warn');
+    pub = pubNovo();
+    renderPublishTool();
+  });
 }
 
 function pubAvancar(id, ok, detalhe, extra = {}) {
@@ -3244,6 +5124,7 @@ function pubPular(id) {
   const motivo = {
     contato: 'Conferência do contato pulada: vou tratar o DNS como nosso e seguir para a zona.',
     registro: 'Registro.br pulado: os nameservers não foram trocados por aqui. Troque à mão quando puder; o SSL só sai depois disso.',
+    salesforce: 'Tarefa do Salesforce pulada: o site está publicado; feche a tarefa à mão ou pelos botões de teste.',
   }[id] || `${id} pulada.`;
   log(motivo, 'warn');
   if (id === 'contato') pub.dnsNosso = true;
@@ -3258,10 +5139,103 @@ function pubPrecisa() {
 
 function pubPrecisaPainel() {
   if (!normalizePainelUrl(pub.painelUrl)) {
-    log(pub.painelUrl ? `O link do painel não é do ${PAINEL_MPI_HOST}.` : 'Cole o link do painel do projeto.', 'error');
+    log(pub.painelUrl ? `O link do painel não é do ${PAINEL_MPI_HOST}.` : 'Sem o link do painel do projeto.', 'error');
     return false;
   }
   return true;
+}
+
+// Antes da primeira etapa (o DNS inclusive): o link do painel tem que ser o
+// do contrato certo. O Hub procura pela razão social e confirma pelo
+// temporário (ADR-098); não achando, pede o link no terminal. Link que chegou
+// pronto (do Criar propriedades) é conferido pelo temporário, se houver.
+// Sem link certo, não começa nada.
+async function pubGarantirPainel() {
+  pub.temporario = (document.getElementById('pubTemporario')?.value || pub.temporario || '').trim();
+  pub.razao = (document.getElementById('pubRazao')?.value || pub.razao || '').trim();
+  const temp = normalizarTemporario(pub.temporario);
+  if (pub.temporario && !pareceTemporario(pub.temporario)) {
+    log(`"${pub.temporario}" não é um link temporário (…${DOMINIO_TEMPORARIO}). Copie o link do alto da aba Publicação do painel.`, 'error');
+    return false;
+  }
+  if (pub.painelUrl && pub.painelConferido === pub.painelUrl) return true;
+
+  // O temporário do contrato que o link abre tem que ser o informado.
+  const conferirLink = async (url) => {
+    if (!temp) return '';
+    const res = await withBusy('conferindo o contrato no painel', () =>
+      window.api.publicarPainel({ url: normalizePainelUrl(url), etapa: 'estado', dominio: pub.dominio })
+    );
+    logTudo(res);
+    if (!res.ok) return `não consegui ler o painel nesse link: ${res.error}`;
+    const noPainel = normalizarTemporario(res.estado?.urlTemporaria);
+    if (noPainel !== temp) return `esse link abre o contrato do temporário ${noPainel || '(nenhum)'}, e o informado é ${temp}: é outro contrato`;
+    log(`O link do painel é o do contrato do temporário ${temp}.`, 'info');
+    return '';
+  };
+
+  if (normalizePainelUrl(pub.painelUrl)) {
+    const problema = await conferirLink(pub.painelUrl);
+    if (!problema) { pub.painelConferido = pub.painelUrl; return true; }
+    log(`O link do painel que veio junto: ${problema}.`, 'warn');
+    pub.painelUrl = '';
+  }
+
+  // Sem razão social mas com o link da tarefa: a tarefa está pendurada no caso,
+  // e o caso tem a conta — pega de lá em vez de parar (ADR-123). Guarda também
+  // a empresa do caso/fila para a planilha não precisar perguntar.
+  if (!pub.razao && pub.sfTarefa) {
+    const ctx = await withBusy('lendo a conta pela tarefa no Salesforce', () => window.api.salesforceContexto({ tarefa: pub.sfTarefa })).catch((e) => ({ ok: false, error: e.message }));
+    logTudo(ctx);
+    if (ctx?.ok && ctx.razao) {
+      pub.razao = ctx.razao;
+      const inp = document.getElementById('pubRazao'); if (inp) inp.value = ctx.razao;
+      log(`Razão social pela tarefa → caso: ${ctx.razao}.`, 'success');
+    }
+    if (ctx?.ok && ctx.empresa) pub.empresaDoCaso = ctx.empresa;
+  }
+
+  let motivo = '';
+  if (!pub.razao) {
+    motivo = 'sem razão social para procurar';
+  } else {
+    if (!temp) log('Sem link temporário: só uso o que achar se o cliente tiver um contrato só no painel.', 'warn');
+    const res = await withBusy(`procurando ${pub.razao} no painel`, () =>
+      window.api.acharContratoNoPainel({ razao: pub.razao, temporario: temp, dominio: pub.dominio })
+    );
+    logTudo(res);
+    if (res.ok) {
+      pub.painelUrl = res.url;
+      pub.painelConferido = res.url;
+      pub.painelAchado = true;
+      log(`Link do painel: ${res.url}`, 'success');
+      return true;
+    }
+    motivo = res.error || 'não achei o contrato';
+  }
+
+  // Não achou: pede o link, confere e segue por ele.
+  let pergunta = `Não achei o contrato de ${pub.dominio} no painel (${motivo}). Cole o link do painel do projeto:`;
+  while (true) {
+    const link = await perguntarTextoNoTerminal(pergunta, {
+      placeholder: `https://${PAINEL_MPI_HOST}/clientes/.../hub?projeto=...`,
+      rotuloOk: 'Usar este link',
+      validar: (t) => (!t ? 'Cole o link.' : normalizePainelUrl(t) ? '' : `Esse link não é do ${PAINEL_MPI_HOST}.`),
+    });
+    if (link === null) {
+      log('Sem o link do painel, não comecei nada. Clique em Publicar de novo quando tiver o link.', 'warn');
+      return false;
+    }
+    const problema = await conferirLink(link);
+    if (!problema) {
+      pub.painelUrl = normalizePainelUrl(link);
+      pub.painelConferido = pub.painelUrl;
+      pub.painelAchado = false;
+      log(`Vou pelo link colado: ${pub.painelUrl}`, 'success');
+      return true;
+    }
+    pergunta = `Esse link não serve: ${problema}. Cole outro link do painel:`;
+  }
 }
 
 // O encadeamento: roda as etapas em sequência a partir de onde a publicação
@@ -3271,14 +5245,15 @@ function pubPrecisaPainel() {
 async function pubRodarTudo() {
   if (pub.rodando || pub.emAndamento) return;
   if (!pubPrecisa()) return;
-  // O painel entra na etapa 5, mas sem o link ninguém quer descobrir isso lá.
-  if (!pubPrecisaPainel()) return;
   if (!state.googleSaPath) { log('Configure o caminho da service account do Google antes: as tags precisam dela.', 'error'); return; }
 
   pub.emAndamento = true;
   renderPubEtapas();
   try {
+    // O painel entra na etapa 5, mas o contrato errado não pode nem começar.
+    if (!(await pubGarantirPainel())) return;
     while (pub.etapa) {
+      if (paradaAgora) return;
       const etapa = PUB_ETAPAS.find((e) => e.id === pub.etapa);
       if (etapa.parada && pub.zona && !pub.confirmado) {
         log(`Zona de ${pub.dominio} pronta para revisão. Confira o antes e o depois ao lado e clique em "Confirmar e aplicar o DNS na Cloudflare".`, 'warn');
@@ -3290,7 +5265,7 @@ async function pubRodarTudo() {
 
       // Não avançou: falhou (feitas[antes].ok === false) ou parou de propósito.
       const falha = pub.feitas[antes];
-      if (!falha || falha.ok) return;
+      if (!falha || falha.ok || paradaAgora) return;
       if (PUB_PULAVEIS.includes(antes)) {
         const r = await perguntarNoTerminal(
           `${etapa.nome} falhou: ${falha.detalhe}. O que faço?`,
@@ -3310,14 +5285,272 @@ async function pubRodarTudo() {
       return;
     }
     if (pub.sslAdiado) {
-      await pubEsperarSslAdiado();
+      // Não prende a tela por horas (ADR-103): anota o que falta, põe na lista
+      // de espera e libera para publicar outro site.
+      pubMandarParaEspera();
+      return;
     }
+    if (pub.etapa || paradaAgora) return; // a tarefa adiada falhou, ou parou: o botão está na tela
+    if (pub.scPendente) log(`${pub.dominio}: o Search Console e o relatório do painel ficaram sem fazer porque o SSL de produção não foi ativado. Ative o SSL e use "Sincronizar no painel".`, 'warn');
     log(`Publicação de ${pub.dominio} concluída.`, 'success');
+  } catch (e) {
+    if (!ehParada(e)) throw e;
   } finally {
+    const parou = paradaAgora;
     pub.emAndamento = false;
+    await pararTerminou();
+    if (parou) log(`Publicação de ${pub.dominio} parada. O que já foi feito continua feito; "Continuar" retoma da etapa em que parou, ou descarte e comece de novo.`, 'warn');
     renderPubEtapas();
     renderPubDetalhe();
   }
+}
+
+// ----- Sites esperando a propagação (ADR-103) -----
+//
+// Quando o Registro.br publica a troca de DNS só daqui a horas, o site sai da
+// tela e entra nesta lista com o que falta: o SSL, o Search Console e o
+// relatório (se ficaram para depois dele) e a tarefa do Salesforce. A tela fica
+// livre para outro site. O vigia confere o DNS de todos a cada minuto e, quando
+// um aponta, termina esse site; com vários prontos, um de cada vez, primeiro o
+// que o Registro.br previa para mais cedo. A lista sobrevive a fechar o app
+// (só campos sem segredo: a chave secreta do reCAPTCHA não vai para o disco).
+const ESPERAS_CHAVE = 'hub.esperasPropagacao.v1';
+const ESPERA_FOLGA_MS = 30 * 60 * 1000;   // depois da previsão do Registro.br
+const ESPERA_PASSO_MS = 60 * 1000;
+let esperas = [];
+let vigiaRodando = false;
+let vigiaTimer = null;
+
+// O que o Search Console e o relatório precisam, sem segredo nenhum.
+function vSemSegredos(v) {
+  if (!v) return null;
+  const campos = ['domain', 'siteUrl', 'idAnalytics', 'analyticsAccountId', 'analyticsPropertyId', 'googleSearchConsole', 'searchConsolePainel', 'tagmanager', 'idProjetoBusca'];
+  const out = {};
+  for (const c of campos) if (v[c] !== undefined) out[c] = v[c];
+  return out;
+}
+
+function salvarEsperas() {
+  try { localStorage.setItem(ESPERAS_CHAVE, JSON.stringify(esperas)); } catch (e) {}
+}
+
+function carregarEsperas() {
+  try {
+    const lidas = JSON.parse(localStorage.getItem(ESPERAS_CHAVE) || '[]');
+    esperas = Array.isArray(lidas) ? lidas : [];
+  } catch (e) {
+    esperas = [];
+  }
+  // Quem estava no meio quando o app fechou volta a esperar.
+  for (const e of esperas) if (e.status === 'rodando') e.status = 'esperando';
+  if (esperas.some((e) => e.status === 'esperando')) {
+    log(`${esperas.filter((e) => e.status === 'esperando').length} site(s) esperando a propagação: ${esperas.filter((e) => e.status === 'esperando').map((e) => e.dominio).join(', ')}. Continuo conferindo.`, 'info');
+    vigiarEsperas();
+  }
+}
+
+function pubMandarParaEspera() {
+  const falta = ['o SSL de produção'];
+  if (pub.scPendente) falta.push('o Search Console e o relatório do painel');
+  if (pub.sfTarefa) falta.push('fechar a tarefa do Salesforce');
+  const e = {
+    id: `${pub.dominio}-${Date.now()}`,
+    dominio: pub.dominio,
+    painelUrl: pub.painelUrl,
+    sfTarefa: pub.sfTarefa || '',
+    ate: pub.sslAdiado.ate,
+    scPendente: !!pub.scPendente,
+    sslFeito: false,
+    v: vSemSegredos(pub.v),
+    falta,
+    status: 'esperando',
+    detalhe: '',
+    desde: Date.now(),
+  };
+  esperas = esperas.filter((x) => x.dominio !== e.dominio);
+  esperas.push(e);
+  salvarEsperas();
+  const hora = new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  log(`${e.dominio} foi para a lista de espera: o Registro.br publica a troca de DNS por volta de ${hora}. Falta ${falta.join(', ')}; faço sozinho quando o DNS apontar. Pode publicar outro site.`, 'success');
+  const empresa = pub.empresa;
+  pub = { ...pubNovo(), empresa };
+  if (state.view === 'publish' || document.getElementById('pubEtapas')) renderPublishTool();
+  vigiarEsperas();
+}
+
+function renderEsperas() {
+  const wrap = document.getElementById('pubEsperas');
+  if (!wrap) return;
+  if (!esperas.length) { wrap.innerHTML = ''; return; }
+  const badge = { esperando: ['neutral', 'esperando'], rodando: ['neutral', 'terminando'], concluido: ['ok', 'concluído'], falhou: ['err', 'falta algo'] };
+  let html = `<div class="section-label">Aguardando a propagação (${esperas.filter((e) => e.status !== 'concluido').length})</div><div class="rows">`;
+  for (const e of [...esperas].sort((a, b) => a.ate - b.ate)) {
+    const [cls, texto] = badge[e.status] || badge.esperando;
+    const hora = new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const sub = e.status === 'concluido' ? (e.detalhe || 'tudo feito') : `${e.status === 'esperando' ? `previsto ~${hora} · ` : ''}falta ${e.falta.join(', ')}${e.detalhe ? ` · ${e.detalhe}` : ''}`;
+    html += `<div class="row ${e.status === 'concluido' ? 'is-ok' : e.status === 'falhou' ? 'is-err' : e.status === 'rodando' ? 'is-running' : ''}">
+      <div class="row__main"><div class="row__title">${escapeHtml(e.dominio)}</div><div class="row__sub">${escapeHtml(sub)}</div></div>
+      <span class="badge ${cls}">${texto}</span>
+      ${e.status === 'falhou' ? `<button class="btn ghost compact" data-espera-tentar="${escapeHtml(e.id)}">Tentar de novo</button>` : ''}
+      ${e.status !== 'rodando' ? `<button class="btn ghost compact" data-espera-remover="${escapeHtml(e.id)}">${e.status === 'concluido' ? 'Tirar da lista' : 'Remover'}</button>` : ''}
+    </div>`;
+  }
+  html += '</div>';
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('[data-espera-tentar]').forEach((b) => b.addEventListener('click', () => {
+    const e = esperas.find((x) => x.id === b.dataset.esperaTentar);
+    if (!e) return;
+    e.status = 'esperando';
+    e.detalhe = 'tentando de novo';
+    // Nova chance: a folga recomeça a contar agora.
+    e.ate = Math.max(e.ate, Date.now());
+    salvarEsperas();
+    renderEsperas();
+    vigiarEsperas({ agora: true });
+  }));
+  wrap.querySelectorAll('[data-espera-remover]').forEach((b) => b.addEventListener('click', () => {
+    const e = esperas.find((x) => x.id === b.dataset.esperaRemover);
+    if (!e) return;
+    if (e.status !== 'concluido') log(`${e.dominio} saiu da lista de espera sem terminar: falta ${e.falta.join(', ')}. Faça à mão.`, 'warn');
+    esperas = esperas.filter((x) => x.id !== e.id);
+    salvarEsperas();
+    renderEsperas();
+  }));
+}
+
+// O vigia: um só, confere todos, termina um de cada vez (o de previsão mais
+// cedo primeiro). Não atrapalha o Publicar em massa: enquanto ele roda, espera.
+// Dorme no máximo isto de uma vez, mesmo com a previsão mais longe: dá para
+// reavaliar a lista e mostrar que está vivo (ADR-124).
+const ESPERA_DORMIR_MAX_MS = 30 * 60 * 1000;
+
+async function vigiarEsperas({ agora = false } = {}) {
+  if (vigiaRodando) { if (agora) { clearTimeout(vigiaTimer); vigiaTimer = null; vigiaAcordar?.(); } return; }
+  vigiaRodando = true;
+  try {
+    while (esperas.some((e) => e.status === 'esperando')) {
+      const t = Date.now();
+      if (!bulkRodando) {
+        // Só confere quem JÁ passou da previsão do Registro.br (e.ate). Quem
+        // ainda está na janela das ~2h espera sem gastar DNS a cada minuto:
+        // conferir antes não adianta nada e deixa a máquina lenta (ADR-124).
+        const fila = esperas.filter((e) => e.status === 'esperando' && !(e.ate > t)).sort((a, b) => a.ate - b.ate);
+        for (const e of fila) {
+          if (bulkRodando) break;
+          // Um erro numa espera não pode matar o vigia das outras (ADR-104).
+          try {
+            await vigiarUma(e);
+          } catch (err) {
+            e.detalhe = `erro ao conferir (${err && err.message}); tento de novo no próximo minuto`;
+            log(`Aguardando ${e.dominio}: ${e.detalhe}`, 'warn');
+          }
+        }
+        // Quem ainda espera a previsão: avisa uma vez quando é a primeira conferência.
+        for (const e of esperas.filter((x) => x.status === 'esperando' && x.ate > t)) {
+          if (!e.avisouAdiado) {
+            e.avisouAdiado = true;
+            e.detalhe = `aguardando a previsão do Registro.br (${new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`;
+            log(`Aguardando ${e.dominio}: o Registro.br publica a troca por volta de ${new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Não confiro antes disso; a primeira conferência é nessa hora.`, 'info');
+          }
+        }
+        salvarEsperas();
+        renderEsperas();
+      }
+      if (!esperas.some((e) => e.status === 'esperando')) break;
+      // Quanto dormir: 1 min se alguma já passou da previsão (está sendo
+      // conferida); senão, até a previsão mais próxima (no máximo 30 min).
+      const agora2 = Date.now();
+      const esperando = esperas.filter((e) => e.status === 'esperando');
+      const algumaVencida = esperando.some((e) => !(e.ate > agora2));
+      let dormir = ESPERA_PASSO_MS;
+      if (!algumaVencida) {
+        const proxima = Math.min(...esperando.map((e) => e.ate));
+        dormir = Math.max(ESPERA_PASSO_MS, Math.min(proxima - agora2, ESPERA_DORMIR_MAX_MS));
+      }
+      await new Promise((r) => { vigiaAcordar = r; vigiaTimer = setTimeout(r, dormir); });
+      vigiaAcordar = null;
+    }
+  } finally {
+    vigiaRodando = false;
+  }
+}
+let vigiaAcordar = null;
+
+async function vigiarUma(e) {
+  const ap = await conferirApontamentoDeProducao(e.dominio);
+  // Aviso na primeira conferência, quando o motivo muda, e a cada 10 min, para
+  // dar para ver que o vigia está vivo sem encher o terminal (ADR-104).
+  const agora = Date.now();
+  const mudou = e.ultimoMotivo !== ap.motivo;
+  if (!ap.pronto && (mudou || !e.ultimoAviso || agora - e.ultimoAviso > 10 * 60 * 1000)) {
+    log(`Aguardando ${e.dominio}: ${ap.motivo}. Confiro de novo em 1 min.`, 'info');
+    e.ultimoAviso = agora;
+  }
+  e.ultimoMotivo = ap.motivo;
+  if (!ap.pronto) {
+    if (agora > e.ate + ESPERA_FOLGA_MS) {
+      e.status = 'falhou';
+      e.detalhe = `não apontou até 30 min depois da previsão (${ap.motivo})`;
+      log(`${e.dominio}: ${e.detalhe}. Confira o DNS e use "Tentar de novo" na lista de espera.`, 'warn');
+    } else {
+      e.detalhe = ap.motivo;
+    }
+    return;
+  }
+  e.status = 'rodando';
+  e.detalhe = `aponta para ${ap.ip}`;
+  renderEsperas();
+  log(`${e.dominio} aponta para ${ap.ip}: terminando o que faltava.`, 'cmd');
+  const r = await terminarEspera(e, {
+    ativarSsl: () => window.api.publicarPainel({ url: normalizePainelUrl(e.painelUrl), etapa: 'ssl', dominio: e.dominio }),
+    verificarSc: () => verificarScERelatorio(e.v, null, { painelUrl: normalizePainelUrl(e.painelUrl), brand: 'mpiplus' }),
+    fecharTarefa: () => window.api.salesforceFecharTarefa({ link: e.sfTarefa, assumir: true, concluir: true, comentar: true, texto: 'Site publicado' }),
+  });
+  if (r.ok) log(`${e.dominio}: ${r.detalhe}.`, 'success');
+  else log(`${e.dominio}: ${r.detalhe}. Use "Tentar de novo" na lista de espera quando quiser.`, 'warn');
+}
+
+// O que falta, na ordem, com a regra de sempre: a tarefa só fecha com tudo
+// concluído (ADR-101). Recebe as ações para dar para testar sem o app.
+async function terminarEspera(e, acoes) {
+  const feitos = [];
+  if (!e.sslFeito) {
+    const ssl = await acoes.ativarSsl();
+    if (ssl?.log) for (const x of ssl.log) log(x.message, x.type);
+    if (!ssl || !ssl.ok) {
+      e.status = 'falhou';
+      e.detalhe = `o SSL não ficou ativo: ${ssl?.error || 'sem resposta'}`;
+      return { ok: false, detalhe: e.detalhe };
+    }
+    e.sslFeito = true;
+    e.falta = e.falta.filter((f) => f !== 'o SSL de produção');
+    feitos.push('SSL ativo');
+  }
+  if (e.scPendente) {
+    const sc = e.v ? await acoes.verificarSc() : { ok: false, error: 'sem os dados das propriedades' };
+    if (!sc || !sc.ok) {
+      e.status = 'falhou';
+      e.detalhe = `${feitos.length ? feitos.join(', ') + '; ' : ''}o Search Console não verificou: ${sc?.error || 'veja o log'}`;
+      return { ok: false, detalhe: e.detalhe };
+    }
+    e.scPendente = false;
+    e.falta = e.falta.filter((f) => f !== 'o Search Console e o relatório do painel');
+    feitos.push('Search Console e relatório');
+  }
+  if (e.sfTarefa && e.falta.includes('fechar a tarefa do Salesforce')) {
+    const t = await acoes.fecharTarefa();
+    if (t?.log) for (const x of t.log) log(x.message, x.type);
+    if (!t || !t.ok) {
+      e.status = 'falhou';
+      e.detalhe = `${feitos.length ? feitos.join(', ') + '; ' : ''}a tarefa não fechou: ${t?.precisaReconectar ? 'o Salesforce recusou o acesso (403), reconecte' : t?.error || 'sem resposta'}`;
+      return { ok: false, detalhe: e.detalhe };
+    }
+    e.falta = e.falta.filter((f) => f !== 'fechar a tarefa do Salesforce');
+    feitos.push(t.comentado && typeof t.comentado === 'object' ? `tarefa fechada, comentário marcando ${t.comentado.pessoa}` : 'tarefa fechada (sem comentário)');
+  }
+  e.status = 'concluido';
+  e.detalhe = feitos.length ? feitos.join(', ') : 'nada faltava';
+  return { ok: true, detalhe: `concluído: ${e.detalhe}` };
 }
 
 // A espera adiada: até o fim da transição (mais 30 min de folga), conferindo
@@ -3349,6 +5582,7 @@ async function pubEsperarSslAdiado() {
       pub.sslAdiado = null;
       pub.etapa = null;
       renderPubEtapas();
+      await pubFecharTarefaAdiada();
       return;
     }
     if (Date.now() - ultimoAviso > 10 * 60 * 1000) {
@@ -3356,7 +5590,7 @@ async function pubEsperarSslAdiado() {
       const falta = Math.ceil((ate - Date.now()) / 60000);
       log(`Ainda não aponta (A ${c.ips.join(', ') || 'sem resposta'}). ${falta > 0 ? `O Registro.br previa publicar em ~${falta} min.` : 'O prazo do Registro.br passou; sigo conferindo por mais um pouco.'}`, 'info');
     }
-    await new Promise((r) => setTimeout(r, 60000));
+    await esperarOuParar(60000);
   }
   pub.sslPendente = 'o DNS não apontou para o servidor novo nem 30 min depois do prazo do Registro.br';
   pub.feitas.propagacao = { ok: true, pulada: true, detalhe: 'não propagou no prazo' };
@@ -3365,6 +5599,18 @@ async function pubEsperarSslAdiado() {
   pub.etapa = null;
   log(`${pub.dominio} não apontou no prazo. Ative o SSL de produção no painel quando apontar.`, 'warn');
   renderPubEtapas();
+  await pubFecharTarefaAdiada();
+}
+
+// A tarefa que esperou o SSL adiado: roda a etapa agora. Com algo pendente,
+// ela falha dizendo o quê, e o botão vira "Tentar de novo" (ADR-101).
+async function pubFecharTarefaAdiada() {
+  if (!pub || !pub.sfAdiado) return;
+  pub.sfAdiado = false;
+  delete pub.feitas.salesforce;
+  pub.etapa = 'salesforce';
+  renderPubEtapas();
+  await pubRodarEtapa('salesforce');
 }
 
 // A conferência que a propagação e a espera adiada usam: NS (informativo) e
@@ -3384,6 +5630,8 @@ async function pubRodarEtapa(id) {
   if (pub.rodando) return;
   if (!pubPrecisa()) return;
   pub.rodando = true;
+  // Enquanto a etapa roda, a janela não desacelera em segundo plano (ADR-126).
+  window.api.manterAcordado(true, 'publicacao').catch(() => {});
   renderPubEtapas();
   try {
     if (id === 'planilha') await pubEtapaPlanilha();
@@ -3396,11 +5644,14 @@ async function pubRodarEtapa(id) {
     else if (id === 'propagacao') await pubEtapaPropagacao();
     else if (id === 'ssl') await pubEtapaPainel('ssl');
     else if (id === 'tags') await pubEtapaTags();
+    else if (id === 'salesforce') await pubEtapaSalesforce();
   } catch (e) {
-    log(`${PUB_ETAPAS.find((x) => x.id === id)?.nome}: ${e.message}`, 'error');
-    pubAvancar(id, false, e.message);
+    const parado = ehParada(e) || paradaAgora;
+    log(`${PUB_ETAPAS.find((x) => x.id === id)?.nome}: ${parado ? 'parado por você' : e.message}`, parado ? 'warn' : 'error');
+    pubAvancar(id, false, parado ? 'parado por você' : e.message);
   } finally {
     pub.rodando = false;
+    window.api.manterAcordado(false, 'publicacao').catch(() => {});
     renderPubEtapas();
   }
 }
@@ -3618,7 +5869,7 @@ async function pubEtapaPropagacao() {
       return;
     }
     log(`Ainda não: A ${ips.join(', ') || 'sem resposta'}, NS ${conf.propagado ? 'já são os da Cloudflare' : `ainda ${(conf.atuais || []).join(', ') || 'sem resposta'}`}${conf.fonte ? ` (${conf.fonte})` : ''}. Tento de novo em 30s.`, 'info');
-    await new Promise((res) => setTimeout(res, 30000));
+    await esperarOuParar(30000);
     if (!pub || pub.etapa !== 'propagacao') return;
   }
   // Meia hora é o que vale a pena esperar olhando; o .br leva até 2 horas para
@@ -3663,6 +5914,7 @@ async function pubEtapaPainel(etapa) {
   }
   if (etapa === 'ssl') pub.sslPendente = null;
   pubAvancar(etapa, true, etapa === 'aprovar' ? `status ${res.estado?.siteStatus || 'approved'}` : 'SSL ativo');
+  if (etapa === 'ssl') await pubVerificarScPendente();
 }
 
 async function pubEtapaPublicar() {
@@ -3699,10 +5951,33 @@ async function pubEtapaTags() {
   logTudo(res);
   if (!res.ok) throw new Error(res.error);
   pub.v = { ...res.result, idProjetoBusca: '' };
-  const painel = await publicarMpiPlus(pub.v, null, { painelUrl: normalizePainelUrl(pub.painelUrl), brand: 'mpiplus' });
-  if (!painel || !painel.ok) throw new Error(painel?.error || 'o painel não aceitou as tags');
-  if ((painel.falhas || []).length) throw new Error(`não entraram no painel: ${painel.falhas.map((f) => f.bloco).join(', ')}`);
-  pubAvancar('tags', true, `GA ${pub.v.idAnalytics || '?'}, GTM ${pub.v.tagmanager || '?'}`);
+  // O Search Console só verifica com o SSL de produção ativo. Quando ele ficou
+  // para depois (adiado para a propagação, ou pulado), as tags entram no
+  // painel agora e a verificação roda quando o SSL sair (ADR-100).
+  const sslAtivo = !!(pub.feitas.ssl && pub.feitas.ssl.ok && !pub.feitas.ssl.pulada) && !pub.sslPendente && !pub.sslAdiado;
+  const painel = await publicarMpiPlus(pub.v, null, { painelUrl: normalizePainelUrl(pub.painelUrl), brand: 'mpiplus', semVerificar: !sslAtivo });
+  if (painel && !painel.ok && painel.sslPendente) {
+    pub.scPendente = true;
+  } else {
+    if (!painel || !painel.ok) throw new Error(painel?.error || 'o painel não aceitou as tags');
+    if ((painel.falhas || []).length) throw new Error(`não entraram no painel: ${painel.falhas.map((f) => f.bloco).join(', ')}`);
+    pub.scPendente = !!painel.scAdiado;
+  }
+  if (pub.scPendente) log(`Tags de ${pub.dominio} no painel. O Search Console e o relatório esperam o SSL de produção: rodam sozinhos quando ele for ativado.`, 'info');
+  pubAvancar('tags', true, `GA ${pub.v.idAnalytics || '?'}, GTM ${pub.v.tagmanager || '?'}${pub.scPendente ? ' · Search Console depois do SSL' : ''}`);
+}
+
+// Depois do SSL: a verificação do Search Console e o relatório que ficaram
+// esperando por ele. Falhar aqui não desfaz nada: fica o aviso.
+async function pubVerificarScPendente() {
+  if (!pub.scPendente || !pub.v) return;
+  const r = await verificarScERelatorio(pub.v, null, { painelUrl: normalizePainelUrl(pub.painelUrl), brand: 'mpiplus' });
+  if (r && r.ok) {
+    pub.scPendente = false;
+    log(`Search Console e relatório de ${pub.dominio} feitos depois do SSL.`, 'success');
+  } else {
+    log(`O Search Console de ${pub.dominio} continua sem verificar: ${r?.error || 'veja acima'}. Use "Sincronizar no painel" no Criar propriedades quando der.`, 'warn');
+  }
 }
 
 // Do "Criar propriedades": a mesma linha, na aba da marca. Aqui o Hub não
@@ -3764,14 +6039,95 @@ function montarLinhaPlanilha({ dominio, razao, marca, desenvolvedor, servidor, d
   ];
 }
 
+// Última etapa: o site está publicado, a tarefa de publicação é fechada no
+// nome de quem roda, e o comentário "Site publicado" vai embaixo da linha
+// "Tarefa criada" do caso, marcando quem criou (ADR-089). Sem link, pula.
+async function pubEtapaSalesforce() {
+  const link = (document.getElementById('pubSfTarefa')?.value || '').trim() || pub.sfTarefa || '';
+  if (!link) {
+    pubAvancar('salesforce', true, 'sem link da tarefa, nada a fechar', { pulada: true });
+    return;
+  }
+  pub.sfTarefa = link;
+  // A tarefa só fecha com tudo concluído (ADR-101). SSL esperando a
+  // propagação: a etapa volta depois dele, sozinha.
+  if (pub.sslAdiado) {
+    pub.sfAdiado = true;
+    log('A tarefa do Salesforce fica para depois do SSL e do Search Console: fecho quando eles terminarem.', 'info');
+    pubAvancar('salesforce', true, 'fica para depois do SSL', { pulada: true });
+    return;
+  }
+  // O que ficou pendente, tenta de novo agora (é o que o "Tentar de novo"
+  // desta etapa faz): o SSL, se o domínio já aponta, e depois o Search Console.
+  if (pub.sslPendente) {
+    const ap = await withBusy(`conferindo o apontamento de ${pub.dominio}`, () => conferirApontamentoDeProducao(pub.dominio));
+    if (ap.pronto) {
+      log(`O SSL de ${pub.dominio} estava pendente e o domínio aponta para ${ap.ip}: tentando ativar de novo.`, 'cmd');
+      const r = await withBusy('ativando o SSL', () =>
+        window.api.publicarPainel({ url: normalizePainelUrl(pub.painelUrl), etapa: 'ssl', dominio: pub.dominio })
+      );
+      logTudo(r);
+      if (r.ok) {
+        pub.sslPendente = null;
+        pub.feitas.ssl = { ok: true, detalhe: 'SSL ativo (na nova tentativa)' };
+      } else {
+        pub.sslPendente = r.error || pub.sslPendente;
+      }
+    } else {
+      pub.sslPendente = ap.motivo || pub.sslPendente;
+    }
+  }
+  if (!pub.sslPendente && pub.scPendente) await pubVerificarScPendente();
+  const faltando = [];
+  if (pub.sslPendente) faltando.push(`o SSL de produção (${pub.sslPendente})`);
+  if (pub.scPendente) faltando.push('a verificação do Search Console e o relatório do painel');
+  if (faltando.length) {
+    throw new Error(`não fechei a tarefa: falta ${faltando.join(' e ')}. Ela só é fechada com tudo concluído; "Tentar de novo" tenta o que falta outra vez`);
+  }
+  const res = await withBusy('fechando a tarefa no Salesforce', () =>
+    window.api.salesforceFecharTarefa({ link, assumir: true, concluir: true, comentar: true, texto: 'Site publicado' })
+  );
+  logTudo(res);
+  if (!res.ok) {
+    throw new Error(res.precisaReconectar
+      ? 'o Salesforce recusou o acesso (403): reconecte nas configurações e tente de novo'
+      : (res.error || 'não consegui fechar a tarefa'));
+  }
+  const comentou = res.comentado && typeof res.comentado === 'object';
+  const partes = [
+    res.assumido === 'já era' ? 'já era sua' : res.assumido ? 'assumida' : null,
+    res.concluido ? 'concluída' : null,
+    comentou ? `comentário marcando ${res.comentado.pessoa}` : `sem comentário (${res.comentado || 'não comentei'})`,
+  ].filter(Boolean);
+  if (!comentou) log(`A tarefa ${res.assunto || ''} foi fechada, mas o comentário não saiu: ${res.comentado || 'motivo no log acima'}. Comente à mão no caso.`, 'warn');
+  pubAvancar('salesforce', true, partes.join(', '));
+}
+
 async function pubEtapaPlanilha() {
   const cfg = await window.api.getPublicacaoConfig();
   const razao = pub.razao || document.getElementById('pubRazao')?.value.trim() || '';
   if (!razao) throw new Error('preencha a razão social antes de registrar na planilha');
   let aba = PLANILHA_ABA_POR_EMPRESA[pub.empresa];
   if (!aba) {
-    // O Registro.br não disse de quem é o projeto e não há outro lugar
-    // confiável para ler isso (ADR-064). Então pergunta, aqui no terminal.
+    // O Registro.br não disse de quem é o projeto (fora do .br, DNS do cliente).
+    // Antes de perguntar, lê no Salesforce: o caso da tarefa tem o campo
+    // "Projeto" (Busca Cliente / MPI Solutions) e a fila da tarefa também diz
+    // (ADR-123). Só pergunta se nada disso existir.
+    let doCaso = pub.empresaDoCaso || null;
+    if (!doCaso && pub.sfTarefa) {
+      const ctx = await withBusy('lendo a empresa pela tarefa no Salesforce', () => window.api.salesforceContexto({ tarefa: pub.sfTarefa })).catch((e) => ({ ok: false, error: e.message }));
+      logTudo(ctx);
+      if (ctx?.ok && ctx.empresa) { doCaso = ctx.empresa; log(`${pub.dominio}: empresa pelo ${ctx.via}.`, 'info'); }
+    }
+    if (doCaso) {
+      pub.empresa = doCaso;
+      const sel = document.getElementById('pubEmpresa');
+      if (sel) sel.value = doCaso;
+      aba = PLANILHA_ABA_POR_EMPRESA[doCaso];
+    }
+  }
+  if (!aba) {
+    // Nem o caso nem a fila disseram: aí sim pergunta, aqui no terminal (ADR-064).
     const escolha = await perguntarNoTerminal(
       `De qual empresa é ${pub.dominio}? O contato técnico no Registro.br não é nosso, então não dá para descobrir. Isso decide a aba da planilha.`,
       [{ valor: 'bc', rotulo: 'Busca Cliente (aba Busca Cliente)' }, { valor: 'mpisolutions', rotulo: 'MPI Solutions (aba MPI)' }]
@@ -3887,8 +6243,10 @@ async function handleReauth(res) {
 
 function renderGrantAccessTool() {
   const alvo = grantTarget();
-  el.leftPanel.innerHTML = `
-    ${backButtonHtml()}
+  const mount = document.getElementById('cfgGrant');
+  if (!mount) return;
+  mount.innerHTML = `
+    <div class="sec"><div class="sec-head"><span class="sec-title">Conceder acesso da service account</span><span class="sec-meta">Analytics / Tag Manager</span></div>
     <div id="gaStatus"></div>
     <label class="field">
       <span>Onde conceder</span>
@@ -3912,9 +6270,9 @@ function renderGrantAccessTool() {
     </label>
     <button id="gaGrantBtn" class="btn primary full-width">Conceder acesso da service account</button>
     <p class="hint">Contorna o bug do Google em que a tela normal de "adicionar usuário" rejeita e-mails de service account, vale para o Analytics e para o Tag Manager. "Carregar contas do projeto" busca os IDs da marca escolhida; se preferir, cole à mão, o ID é ${alvo.idHint}. Analytics e Tag Manager são hierarquias separadas: conceder numa não concede na outra, então rode uma vez para cada.</p>
+    </div>
   `;
 
-  document.getElementById('backToHub').addEventListener('click', goHome);
   renderOauthStatus();
 
   // Trocar de superfície troca os papéis e o rótulo, e invalida os IDs, são
@@ -4329,44 +6687,54 @@ function renderSuspendTool() {
   // recebe e-mail é a mesma, mas o pedido não.
   if (suspendCheck && suspendCheck.modo !== state.view) suspendCheck = null;
 
+  const ehSsl = state.view === 'ssl';
   el.leftPanel.innerHTML = `
     ${backButtonHtml()}
+    <div class="sec anim-in">
+    <div class="sec-head"><span class="sec-title">${ehSsl ? 'Ativação SSL &amp; e-mails de apontamento' : 'Suspensão de sites &amp; e-mails'}</span><span class="sec-meta">DNS_PROBE / MS_GRAPH</span></div>
+    <div class="tool-sub" style="margin:0 0 12px">M3 Solutions (faixa 149.18.x) · Graph API v1.0 · envio pela sua caixa</div>
     <div id="msStatus"></div>
+    <div class="grid-2">
     ${modo.projeto
       ? `<label class="field">
-      <span>Projeto (vira <code>{projeto}</code> no assunto)</span>
+      <span>Projeto <span class="tag">{projeto}</span></span>
       <select id="mailProjeto">
         ${SSL_PROJETOS.map((p) => `<option value="${escapeHtml(p)}" ${(state.sslProjeto || SSL_PROJETOS[0]) === p ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}
       </select>
     </label>`
       : ''}
     <label class="field">
-      <span>Para</span>
+      <span>Destinatário (Para) <span class="tag">dest</span></span>
       <input id="mailTo" type="text" value="${escapeHtml(m.to)}" autocomplete="off" />
     </label>
     <label class="field">
-      <span>Cc</span>
+      <span>Cópia (Cc) <span class="tag">cc</span></span>
       <input id="mailCc" type="text" value="${escapeHtml(m.cc)}" autocomplete="off" />
     </label>
     <label class="field">
-      <span>Assunto</span>
+      <span>Template de assunto <span class="tag">tags</span></span>
       <input id="mailSubject" type="text" value="${escapeHtml(m.subject)}" autocomplete="off" />
     </label>
     <label class="field">
-      <span>Corpo</span>
-      <textarea id="mailBody" rows="3">${escapeHtml(m.body)}</textarea>
+      <span>Corpo do e-mail <span class="tag">plain text</span></span>
+      <textarea id="mailBody" rows="5">${escapeHtml(m.body)}</textarea>
     </label>
     <label class="field">
-      <span>Domínios (um por linha)</span>
-      <textarea id="mailDomains" rows="7" placeholder="cliente1.com.br&#10;cliente2.com.br" autocomplete="off"></textarea>
+      <span>Domínios (um por linha) <span class="tag" id="mailContagem"></span></span>
+      <textarea id="mailDomains" rows="5" placeholder="cliente1.com.br&#10;cliente2.com.br" autocomplete="off"></textarea>
     </label>
-    <button id="mailCheckBtn" class="btn primary full-width">Verificar apontamento</button>
+    </div>
+    <button id="mailCheckBtn" class="btn primary full-width">${ICONS.ssl} Verificar apontamento e preparar e-mails</button>
+    <div class="btn-meta"><span>timeout: 30s</span><span>safe dispatch (MS Graph API)</span></div>
+    </div>
     <div id="mailCheck"></div>
-    <p class="hint">O app consulta o DNS de cada domínio e separa por onde ele está hospedado. Só o que está na M3 Solutions já vem marcado para envio; o resto você decide. <code>{dominio}</code> vira o domínio da vez, no assunto e no corpo${modo.projeto ? ', e <code>{projeto}</code> vira o que está no seletor' : ''}.</p>
+    ${infoBoxHtml(`<p>O Hub consulta o DNS autoritativo de cada domínio na fila, checa se o registro A aponta para o servidor da <strong>M3 Solutions</strong> e marca automaticamente como seguro. IPs externos (Google, Vesta, terceiros) são desmarcados por segurança; o resto você decide.</p><div class="destaque">As tags <code>{dominio}</code>${modo.projeto ? ' e <code>{projeto}</code>' : ''} são interpoladas para cada destinatário individual antes da transmissão via Microsoft Graph API.</div>`)}
+    <div class="stat-grid" id="mailStats"></div>
   `;
 
   document.getElementById('backToHub').addEventListener('click', goHome);
   renderMsStatus();
+  renderMailStats();
 
   const guardar = async () => {
     state[modo.chaveEstado] = {
@@ -4394,6 +6762,10 @@ function renderSuspendTool() {
   // Mexeu na lista? O resultado anterior deixa de valer, mas só se a lista
   // realmente mudou, senão cada tecla apagaria a verificação.
   document.getElementById('mailDomains').addEventListener('input', () => {
+    const cont = document.getElementById('mailContagem');
+    const n = parseDomains(document.getElementById('mailDomains').value).length;
+    if (cont) cont.textContent = n ? `${n} domínio${n > 1 ? 's' : ''}` : '';
+    renderAtalhosTerminal();
     if (!suspendCheck) return;
     const agora = parseDomains(document.getElementById('mailDomains').value).join('\n');
     if (agora !== suspendCheck.lista.join('\n')) {
@@ -4454,7 +6826,24 @@ async function checkApontamento() {
   renderSuspendResults();
 }
 
+// Os cartões "status do envio" e "última fila" do mockup.
+function renderMailStats() {
+  const wrap = document.getElementById('mailStats');
+  if (!wrap) return;
+  const ms = state.ms || {};
+  const envio = statCardHtml({ rotulo: 'Status do envio', titulo: ms.connected ? 'Microsoft Graph pronto' : 'Microsoft desconectado', dot: ms.connected ? '' : 'off', sub: ms.connected ? `sessão de ${ms.email || 'sua conta'}` : 'conecte a conta acima para enviar', subCls: ms.connected ? '' : 'warn', foot: 'escopo Mail.Send' });
+  let fila;
+  if (!suspendCheck) fila = statCardHtml({ rotulo: 'Última fila', titulo: 'Nenhuma verificação ainda', dot: 'off', sub: 'cole os domínios e verifique o apontamento', subCls: 'dim' });
+  else {
+    const prontas = suspendCheck.marcados.size;
+    const total = suspendCheck.resultados.length;
+    fila = statCardHtml({ rotulo: 'Última fila', titulo: `${prontas} pronta(s), ${total - prontas} com ressalva`, dot: total - prontas ? 'warn' : '', sub: `${total} domínio(s) verificado(s)`, foot: 'via DNS_PROBE' });
+  }
+  wrap.innerHTML = envio + fila;
+}
+
 function renderSuspendResults() {
+  renderMailStats();
   const wrap = document.getElementById('mailCheck');
   if (!wrap) return;
   if (!suspendCheck) {
@@ -4880,7 +7269,13 @@ async function diagnosticoSalesforce(btn) {
   log('Conexão com o Salesforce conferida. O resumo acima é o que o Hub vai usar.', 'success');
 }
 
-function openSettings() {
+function openSettings(tab) {
+  // Abre a tela primeiro: se qualquer preenchimento abaixo falhar (uma API do
+  // preload ausente num build antigo, por exemplo), a tela ainda abre e os
+  // campos continuam editáveis, em vez de as configurações não abrirem (ADR-106).
+  if (tab) state.cfgTab = tab;
+  if (state.view !== 'config') { state.viewAnterior = state.view; state.view = 'config'; }
+  render();
   el.emailInput.value = state.creds?.email || '';
   el.tokenInput.value = state.creds?.token || '';
   el.strategySelect.value = state.strategy;
@@ -4901,6 +7296,14 @@ function openSettings() {
     el.painelEmailInput.value = r.email || '';
     el.painelSenhaInput.placeholder = r.configured ? 'Já configurada, digite para trocar' : '••••••••';
   });
+  el.doutorSenhaInput.value = '';
+  if (window.api.doutorStatus) {
+    window.api.doutorStatus().then((r) => {
+      el.doutorEmailMpiInput.value = r.emailMpi || '';
+      el.doutorEmailBuscaInput.value = r.emailBusca || '';
+      el.doutorSenhaInput.placeholder = r.temSenha ? 'Já configurada, digite para trocar' : '••••••••';
+    }).catch(() => {});
+  }
 
   // Publicação MPI+: o que é segredo só diz se existe (ADR-058).
   window.api.getPublicacaoConfig().then((r) => {
@@ -4931,14 +7334,17 @@ function openSettings() {
       : 'Opcional, só para consultar para onde o domínio já apontou';
   });
   renderBrandOauth();
-  el.settingsModal.classList.remove('hidden');
 }
 
 function closeSettings() {
-  el.settingsModal.classList.add('hidden');
+  if (state.view !== 'config') return;
+  const volta = state.viewAnterior && !['config', 'grantaccess', 'findproject'].includes(state.viewAnterior) ? state.viewAnterior : 'home';
+  state.viewAnterior = null;
+  state.view = volta;
+  render();
 }
 
-el.settingsBtn.addEventListener('click', openSettings);
+el.settingsBtn.addEventListener('click', () => openSettings());
 el.cancelSettingsBtn.addEventListener('click', closeSettings);
 
 el.saveSettingsBtn.addEventListener('click', async () => {
@@ -5000,6 +7406,23 @@ el.saveSettingsBtn.addEventListener('click', async () => {
       return;
     }
     log('Login do painel salvo, criptografado nesta máquina.', 'success');
+  }
+
+  {
+    // /doutor: a senha nunca volta do processo, então gravar exige digitá-la.
+    // Trocar só os e-mails também pede a senha de novo (grava tudo junto).
+    const emailMpi = el.doutorEmailMpiInput.value.trim();
+    const emailBusca = el.doutorEmailBuscaInput.value.trim();
+    const senha = el.doutorSenhaInput.value;
+    const st = await window.api.doutorStatus();
+    const emailMudou = emailMpi !== (st.emailMpi || '') || emailBusca !== (st.emailBusca || '');
+    if (senha) {
+      const res = await window.api.doutorSetCreds({ senha, emailMpi, emailBusca });
+      if (!res.ok) { log(`Erro ao salvar o /doutor: ${res.error}`, 'error'); return; }
+      log('Credenciais do /doutor salvas, criptografadas nesta máquina.', 'success');
+    } else if (emailMudou) {
+      log('Para trocar o e-mail do /doutor, digite a senha de novo (ela não fica guardada em texto para reenviar sozinha).', 'warn');
+    }
   }
 
   {
@@ -5085,6 +7508,15 @@ el.clearCredsBtn.addEventListener('click', async () => {
 
 async function init() {
   log('Hub iniciado.', 'info');
+  // Rodada em massa que ficou pela metade (o Windows fechou tudo, por exemplo).
+  window.api.lerRodada().then((r) => {
+    const estado = r && r.estado;
+    if (!estado) return;
+    const res = resumoRodada(estado);
+    log(estado.fase === 'tarefas-pendentes'
+      ? `Da rodada em massa de ${res.quando} ficaram ${res.pendentesSf} tarefa(s) do Salesforce pendente(s). Abra o Publicar em massa para criar.`
+      : `A rodada em massa de ${res.quando} não terminou (${res.feitos} de ${res.total} site(s) feitos). Abra o Publicar em massa e clique em "Retomar de onde parou".`, 'warn');
+  }).catch(() => {});
 
   const hubRes = await window.api.getHubState();
   if (hubRes.ok && hubRes.state) {
@@ -5096,6 +7528,7 @@ async function init() {
     if (BRANDS.some((b) => b.id === hubRes.state.brand)) state.brand = hubRes.state.brand;
     // Só as chaves conhecidas, e sempre booleano: hub-state velho ou editado à
     // mão não pode injetar etapa que não existe nem valor estranho.
+    if (typeof hubRes.state.sfTarefasAuto === 'boolean') state.sfTarefasAuto = hubRes.state.sfTarefasAuto;
     if (hubRes.state.npSteps && typeof hubRes.state.npSteps === 'object') {
       for (const e of NP_STEPS) {
         if (e.id in hubRes.state.npSteps) state.npSteps[e.id] = !!hubRes.state.npSteps[e.id];
@@ -5142,6 +7575,17 @@ async function init() {
   }
 
   render();
+  carregarEsperas();
+  iniciarTopbarLive();
+  iniciarTerminalComando();
+  el.copyLogBtn?.addEventListener('click', copiarTerminal);
+  el.tbSearch?.addEventListener('keydown', (e) => { if (e.key === 'Enter') buscarNoTopo(el.tbSearch.value); });
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); el.tbSearch?.focus(); el.tbSearch?.select(); }
+    if (e.ctrlKey && (e.key === 's' || e.key === 'S') && state.view === 'config') { e.preventDefault(); el.saveSettingsBtn.click(); }
+  });
+  // As filas do Salesforce entram na home assim que a sessão for confirmada.
+  setTimeout(() => { if (hubSfConectado && state.view === 'home') carregarTarefasSf(false); }, 1200);
 }
 
 init();

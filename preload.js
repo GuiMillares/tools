@@ -47,6 +47,13 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('ms:url', handler);
   },
   // Salesforce (ADR-086)
+  // motivo: 'rodada' (o padrão, a rodada em massa), 'automacao' ou 'publicacao' (ADR-126)
+  manterAcordado: (ligar, motivo) => ipcRenderer.invoke('energia:manterAcordado', { ligar, motivo }),
+  gravarLog: (linhas) => ipcRenderer.invoke('log:gravar', { linhas }),
+  abrirPastaLogs: () => ipcRenderer.invoke('log:abrirPasta'),
+  salvarRodada: (estado) => ipcRenderer.invoke('rodada:salvar', estado),
+  lerRodada: () => ipcRenderer.invoke('rodada:ler'),
+  apagarRodada: () => ipcRenderer.invoke('rodada:apagar'),
   salesforceGetConfig: () => ipcRenderer.invoke('salesforce:getConfig'),
   salesforceSetConfig: (payload) => ipcRenderer.invoke('salesforce:setConfig', payload),
   salesforceConectar: () => ipcRenderer.invoke('salesforce:conectar'),
@@ -76,15 +83,59 @@ contextBridge.exposeInMainWorld('api', {
   fotografarDns: (payload) => ipcRenderer.invoke('dns:fotografar', payload),
   conferirNs: (payload) => ipcRenderer.invoke('dns:conferirNs', payload),
   conferirApontamento: (payload) => ipcRenderer.invoke('dns:apontando', payload),
+  resolverMarca: (payload) => ipcRenderer.invoke('dns:marca', payload),
+  backupDns: (payload) => ipcRenderer.invoke('dns:backup', payload),
   verificarCloudflare: (payload) => ipcRenderer.invoke('cloudflare:verificar', payload),
   montarZonaCloudflare: (payload) => ipcRenderer.invoke('cloudflare:montarZona', payload),
   aplicarCloudflare: (payload) => ipcRenderer.invoke('cloudflare:aplicar', payload),
   exportarPlanilha: (payload) => ipcRenderer.invoke('planilha:exportar', payload),
   publicarPainel: (payload) => ipcRenderer.invoke('painel:publicar', payload),
+  acharContratoNoPainel: (payload) => ipcRenderer.invoke('painel:acharContrato', payload),
+  pararProcesso: () => ipcRenderer.invoke('processo:parar'),
+  doutorSetCreds: (payload) => ipcRenderer.invoke('doutor:setCreds', payload),
+  doutorStatus: () => ipcRenderer.invoke('doutor:status'),
+  doutorBloquear: (payload) => ipcRenderer.invoke('doutor:bloquear', payload),
+  bloquearPainel: (payload) => ipcRenderer.invoke('painel:bloquear', payload),
+  salesforceContaPorDominio: (payload) => ipcRenderer.invoke('salesforce:contaPorDominio', payload),
+  salesforceContexto: (payload) => ipcRenderer.invoke('salesforce:contexto', payload),
+  checarOuvidoria: (payload) => ipcRenderer.invoke('salesforce:ouvidoria', payload),
+  whois: (payload) => ipcRenderer.invoke('dns:whois', payload),
+  usuarioLogado: () => ipcRenderer.invoke('sistema:usuario'),
+  recursos: () => ipcRenderer.invoke('sistema:recursos'),
+  liberarProcesso: () => ipcRenderer.invoke('processo:liberar'),
   registrobrTrocarNs: (payload) => ipcRenderer.invoke('registrobr:trocarNs', payload),
   registrobrConsultar: (payload) => ipcRenderer.invoke('registrobr:consultar', payload),
   registrarPlanilha: (payload) => ipcRenderer.invoke('planilha:registrar', payload),
+  procurarNaPlanilha: (payload) => ipcRenderer.invoke('planilha:procurar', payload),
   prepareSearchConsole: (payload) => ipcRenderer.invoke('searchconsole:prepare', payload),
   listGtmBrandAccounts: (payload) => ipcRenderer.invoke('tagmanager:listBrandAccounts', payload),
   grantGtmAccessBulk: (payload) => ipcRenderer.invoke('tagmanager:grantAccessBulk', payload),
+  // Redesign v2.4 (ADR-115): telemetria, terminal com comando, filas e auditoria
+  telemetria: () => ipcRenderer.invoke('sistema:telemetria'),
+  executarComando: (payload) => ipcRenderer.invoke('terminal:executar', payload),
+  pararComando: () => ipcRenderer.invoke('terminal:parar'),
+  onComandoSaida: (callback) => {
+    const handler = (_event, dados) => callback(dados);
+    ipcRenderer.on('terminal:saida', handler);
+    return () => ipcRenderer.removeListener('terminal:saida', handler);
+  },
+  // Git Bash dentro do Hub (ADR-128): um bash de verdade num pseudoterminal.
+  bashAbrir: (payload) => ipcRenderer.invoke('bash:abrir', payload),
+  bashEscrever: (dados) => ipcRenderer.invoke('bash:escrever', dados),
+  bashTamanho: (payload) => ipcRenderer.invoke('bash:tamanho', payload),
+  bashFechar: () => ipcRenderer.invoke('bash:fechar'),
+  onBashDados: (callback) => {
+    const handler = (_event, dados) => callback(dados);
+    ipcRenderer.on('bash:dados', handler);
+    return () => ipcRenderer.removeListener('bash:dados', handler);
+  },
+  onBashSaiu: (callback) => {
+    const handler = (_event, dados) => callback(dados);
+    ipcRenderer.on('bash:saiu', handler);
+    return () => ipcRenderer.removeListener('bash:saiu', handler);
+  },
+  salesforceTarefas: () => ipcRenderer.invoke('salesforce:tarefas'),
+  salesforceMoverTarefa: (payload) => ipcRenderer.invoke('salesforce:moverTarefa', payload),
+  statusCredenciais: () => ipcRenderer.invoke('sistema:credenciais'),
+  abrirLink: (payload) => ipcRenderer.invoke('sistema:abrirLink', payload),
 });
