@@ -62,6 +62,9 @@ function fakeBb({ repos = {}, arquivos = {}, commits = {}, diffs = {} } = {}) {
     check('introduzChaves: linha adicionada com GTM-', Q.introduzChaves("--- a\n+++ b\n-$tagmanager = '';\n+$tagmanager = 'GTM-ABC123';"));
     check('introduzChaves: G- no idAnalytics', Q.introduzChaves("+$idAnalytics = 'G-7HQ2M4XKPL';"));
     check('introduzChaves: chave vazia ou removida não conta', !Q.introduzChaves("+$tagmanager = '';\n-$tagmanager = 'GTM-OLD';") && !Q.introduzChaves(''));
+    check('introduzChaves: siteKey do reCAPTCHA conta (o caso soarestr, 14/11)', Q.introduzChaves("-$siteKey = '';\n+$siteKey = '6LfQ8wwsAAAAAPHJecfwxubSUuWc6Gw_IHZq7M4D';"));
+    check('introduzChaves: token do Search Console conta', Q.introduzChaves("+$googleSearchConsole = 'XLZGe5GxJW4Da76ZBSt0EKlnadOiL4VmiF5AfJX7_zU';"));
+    check('introduzChaves: siteKey curta/placeholder não conta', !Q.introduzChaves("+$siteKey = '6Lxxxx';") && !Q.introduzChaves("+$googleSearchConsole = 'xxxx';"));
     (async () => {})();
   }
   {
@@ -141,8 +144,17 @@ function fakeBb({ repos = {}, arquivos = {}, commits = {}, diffs = {} } = {}) {
     ] } };
     const bb3 = fakeBb({ repos, arquivos: { 'y.com.br': { 'geral.php': 'inc/geral.php' } }, commits: cs, diffs: { p1: "+$tagmanager = 'GTM-PERINI';\n+$idAnalytics = 'G-123';", m1: "+$leads = true;" } });
     const r3 = await Q.quandoPublicou('y.com.br', { sf: fakeSf({ soql: () => [] }), bb: bb3 });
-    check('manutenção de 22/09 por cima: vale o commit que pôs o GTM (25/03)', r3.quando === '25/03/2026' && r3.criterio === 'chaves' && /pôs as chaves/.test(r3.detalhe), JSON.stringify(r3));
+    check('manutenção de 22/09 por cima: vale o commit que pôs o GTM (25/03)', r3.quando === '25/03/2026' && r3.criterio === 'chaves' && /pôs chave de verdade/.test(r3.detalhe), JSON.stringify(r3));
     check('  parou de ler diffs ao achar (c0, p1)', bb3.chamadas.diffDoCommit.join() === 'c0,p1', bb3.chamadas.diffDoCommit.join());
+    // soarestr.com.br de verdade: "[Feat] Publicação" (14/11) pôs só a siteKey; o GTM veio em 27/11.
+    const cs4 = { 'y.com.br': { 'inc/geral.php': [
+      { hash: 'g1', date: '2025-11-27T10:00:00+00:00', message: 'geral.php edited online with Bitbucket' },
+      { hash: 'f1', date: '2025-11-14T10:00:00+00:00', message: '[Feat] Publicação' },
+      { hash: 'b0', date: '2025-10-13T10:00:00+00:00', message: 'feat: reposotorio temporario busca' },
+    ] } };
+    const bb4 = fakeBb({ repos, arquivos: { 'y.com.br': { 'geral.php': 'inc/geral.php' } }, commits: cs4, diffs: { b0: "+$tagmanager = '';\n+$siteKey = '';", f1: "-$siteKey = '';\n+$siteKey = '6LfQ8wwsAAAAAPHJecfwxubSUuWc6Gw_IHZq7M4D';", g1: "-$tagmanager = '';\n+$tagmanager = 'GTM-TD3FGHL5';" } });
+    const r4 = await Q.quandoPublicou('y.com.br', { sf: fakeSf({ soql: () => [] }), bb: bb4 });
+    check('soarestr: o commit da siteKey (14/11) é a publicação, não o do GTM (27/11)', r4.quando === '14/11/2025' && r4.criterio === 'chaves', JSON.stringify(r4));
   }
 
   console.log('\n=== Sem repositório / não encontrado ===');

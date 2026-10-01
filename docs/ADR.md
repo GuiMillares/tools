@@ -5917,10 +5917,16 @@ mesma consulta sem abrir o Hub:
    domínio nas workspaces das marcas (`busca-clientes`, `mpi-solutions`, do
    hub-state), os arquivos `geral.php` e `client.inc.php` onde estiverem (até
    3 níveis) e os commits que mexeram neles (`/commits?path=`). Entre eles,
-   **o que pôs as chaves de verdade no arquivo** — o diff do commit
-   (`/diff/{hash}?path=`) com uma linha adicionada `$tagmanager = 'GTM-…'` ou
-   `$idAnalytics = 'G-…'`/`'UA-…'` —, lido do mais antigo para o mais novo e
-   parando no primeiro. Sem nenhum, o mais antigo cuja mensagem fala em
+   **o primeiro que pôs uma chave de verdade no arquivo** — o diff do commit
+   (`/diff/{hash}?path=`) com uma linha adicionada `$tagmanager = 'GTM-…'`,
+   `$idAnalytics = 'G-…'`/`'UA-…'`, `$siteKey = '6L…'` ou
+   `$googleSearchConsole = '<token>'` —, lido do mais antigo para o mais novo
+   e parando no primeiro. Qualquer chave, não só GTM/GA: no `soarestr.com.br`
+   o "[Feat] Publicação" de 14/11/2025 (a data anotada à mão) pôs só a
+   siteKey, e o GTM entrou em 27/11. Essa data é a do commit que **preparou**
+   a publicação; a troca de DNS costuma vir dias depois (`paromawork`: chaves
+   em 28/11, no ar em 03/12; `perinilocacoes`: 10/03 e 25/03), e o detalhe
+   diz isso. Sem nenhum, o mais antigo cuja mensagem fala em
    publicação ("Ajustes para publicação", "[Feat] Publicação"); sem nenhum,
    um **palpite** (a primeira mudança no arquivo depois da criação), dito
    como palpite na resposta e no detalhe. Tarefa aberta no Salesforce entra
