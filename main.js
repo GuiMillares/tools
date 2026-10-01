@@ -6509,10 +6509,7 @@ ipcMain.handle('salesforce:diagnostico', async (event, { dominioExemplo, tarefaL
 // ligado por uma flag para o teste rodar um de cada vez sem publicar nada e
 // sem cutucar colega à toa (ADR-089). O comentário nunca marca você mesmo.
 ipcMain.handle('salesforce:fecharTarefa', async (event, opcoes = {}) => {
-  // `marcar: false` comenta sem mencionar quem criou a tarefa: é o caso do
-  // registro parcial da Busca One (ADR-132), que não é notícia para o
-  // atendimento — "Site publicado" é.
-  const { link, texto, assumir = false, concluir = false, comentar = false, marcar = true } = opcoes || {};
+  const { link, texto, assumir = false, concluir = false, comentar = false } = opcoes || {};
   const log = [];
   const push = (message, type = 'info') => log.push({ message, type });
   const id = idDoLink(link);
@@ -6568,8 +6565,8 @@ ipcMain.handle('salesforce:fecharTarefa', async (event, opcoes = {}) => {
         // "Tarefa criada" desta tarefa aparece lá. Comento embaixo dela; se
         // não achar ou não deixar, posto no feed do caso. Nos dois casos marco
         // quem criou — e nunca a mim mesmo.
-        const marcarId = marcar && t.CreatedById !== eu.id ? t.CreatedById : null;
-        if (!marcarId) push(marcar ? 'Quem criou a tarefa é você — vou comentar sem menção.' : 'Comentário sem menção (registro, não aviso).', marcar ? 'warn' : 'info');
+        const marcarId = t.CreatedById === eu.id ? null : t.CreatedById;
+        if (!marcarId) push('Quem criou a tarefa é você — vou comentar sem menção.', 'warn');
         const caseId = t.WhatId;
         if (!caseId) {
           push('A tarefa não está ligada a um caso e o feed da própria tarefa está desativado — não há onde comentar marcando.', 'error');

@@ -120,7 +120,7 @@ function fakeDeps(over = {}) {
     const dados = {
       instancia: 'https://sf', filas,
       tarefas: [
-        { id: 'o1', fila: 'Q_MPI', assunto: 'Publicação (Troca de DNS) - c.com.br', descricao: 'link temporário - http://producao.mpitemporario.com.br/c/\nID 321', fechada: false },
+        { id: 'o1', fila: 'Q_MPI', assunto: 'Publicação (Troca de DNS) - c.com.br', descricao: 'link temporário - http://producao.mpitemporario.com.br/c.com/\nID 321', fechada: false },
         { id: 'o2', assunto: 'Publicação (Troca de DNS) - Padaria do Zé', descricao: 'Apontado via registro.', fechada: false }, // sem domínio
         { id: 'p1', assunto: 'Publicação (Troca de DNS) MPI+ - b.com.br', descricao: 'http://b.mpitemporario.com.br/ https://b.com.br/', fechada: false },
       ],
@@ -131,7 +131,7 @@ function fakeDeps(over = {}) {
     deps.ligado = { bloqueio: false, publicacao: false, buscaone: true };
     let processados = new Set();
     let res = await A.varrerFila(dados, deps, { processados });
-    check('Busca One ligada: chama o driver dela com domínio, ID do painel, temporário e empresa da fila', chamadas.publicarBuscaOne.length === 1 && chamadas.publicarBuscaOne[0].dominio === 'c.com.br' && chamadas.publicarBuscaOne[0].idPainel === '321' && chamadas.publicarBuscaOne[0].temporario === 'producao.mpitemporario.com.br' && chamadas.publicarBuscaOne[0].empresa === 'mpisolutions' && chamadas.publicarBuscaOne[0].empresaSugerida === 'mpisolutions', JSON.stringify(chamadas.publicarBuscaOne));
+    check('Busca One ligada: chama o driver dela com domínio, repositório, ID do painel, temporário, empresa do temporário e da fila', chamadas.publicarBuscaOne.length === 1 && chamadas.publicarBuscaOne[0].dominio === 'c.com.br' && chamadas.publicarBuscaOne[0].repositorio === 'c.com' && chamadas.publicarBuscaOne[0].idPainel === '321' && chamadas.publicarBuscaOne[0].temporario === 'producao.mpitemporario.com.br' && chamadas.publicarBuscaOne[0].empresa === 'mpisolutions' && chamadas.publicarBuscaOne[0].empresaTemporario === 'mpisolutions', JSON.stringify(chamadas.publicarBuscaOne));
     check('  leva id e link da tarefa', chamadas.publicarBuscaOne[0].id === 'o1' && chamadas.publicarBuscaOne[0].link === 'https://sf/lightning/r/Task/o1/view');
     check('  a MPI+ não roda com só a Busca One ligada', chamadas.publicar.length === 0 && !processados.has('p1'));
     check('  sucesso marca a tarefa como processada', processados.has('o1') && res.some((r) => r.id === 'o1' && r.ok));

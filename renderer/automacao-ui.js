@@ -204,8 +204,9 @@
   // Busca Cliente / MPI Solutions: o site mora num repositório do Bitbucket e
   // é posto no ar por um humano. O que dá para fazer sozinho está em
   // lib/busca-one.js (puro, testado): propriedades no Google, geral.php
-  // commitado, e-mail de vhost ao suporte, e a tarefa em "Em andamento" com o
-  // registro do que foi feito — ela fica aberta. Aqui é só a cola: as funções
+  // commitado, e-mail de vhost ao suporte, e a tarefa em "Em andamento"; o
+  // resumo com as chaves sai no terminal, não no Salesforce (ADR-134) — ela
+  // fica aberta. Aqui é só a cola: as funções
   // reais (window.api.*) e o que o app.js sabe (service account, credenciais
   // do Bitbucket, workspace da marca, $idProjetoBusca fixo da marca). Tudo
   // que pode faltar é conferido ANTES de qualquer efeito.
@@ -229,25 +230,29 @@
     const email = emailVhostConfig();
     if (!window.BuscaOne.listaEmails(email.to).length) return { ok: false, motivo: 'destinatário do e-mail de vhost em branco (painel da automação)' };
 
-    // Empresa e razão social pelo caso da tarefa (ADR-123); a fila e o
-    // temporário são reservas, nessa ordem.
+    // A empresa é a do TEMPORÁRIO (deploy.buscacliente = Busca Cliente,
+    // producao.mpitemporario = MPI Solutions, ADR-133). Sem temporário
+    // ("Apontado via registro."), vale o caso da tarefa (ADR-123) e depois a
+    // fila. A razão social vem do caso de qualquer jeito.
     const nome = window.BuscaOne.nomeEmpresa;
-    let empresa = null, razao = '', via = '';
+    let empresa = null, razao = '', via = '', doCaso = null, viaCaso = '';
     if (p.link) {
       const ctx = await window.api.salesforceContexto({ tarefa: p.link }).catch((e) => ({ ok: false, error: e.message }));
       if (ctx && ctx.log) ctx.log.forEach((l) => log(l.message, l.type));
       if (ctx && ctx.ok) {
         razao = ctx.razao || '';
-        if (ctx.empresa) { empresa = ctx.empresa; via = ctx.via || 'caso da tarefa'; }
+        if (ctx.empresa) { doCaso = ctx.empresa; viaCaso = ctx.via || 'caso da tarefa'; }
       } else if (ctx && ctx.reauth) {
         return { ok: false, motivo: 'Salesforce pede reconexão (Configurações); tento de novo depois' };
       }
     }
+    if (p.empresaTemporario === 'bc' || p.empresaTemporario === 'mpisolutions') { empresa = p.empresaTemporario; via = 'temporário ' + (p.temporario || ''); }
+    if (!empresa && doCaso) { empresa = doCaso; via = viaCaso; }
     if (!empresa && (p.empresa === 'bc' || p.empresa === 'mpisolutions')) { empresa = p.empresa; via = 'fila da tarefa'; }
-    if (!empresa && (p.empresaSugerida === 'bc' || p.empresaSugerida === 'mpisolutions')) { empresa = p.empresaSugerida; via = 'temporário ' + (p.temporario || ''); }
     if (empresa) {
-      log(`${dom}: empresa ${nome(empresa)} (pelo ${via})${razao ? '; razão social ' + razao : ''}.`, 'info');
-      if (p.empresaSugerida && p.empresaSugerida !== empresa) log(`${dom}: o temporário ${p.temporario || ''} sugere ${nome(p.empresaSugerida)}, mas o ${via} diz ${nome(empresa)}; seguindo pelo ${via}.`, 'warn');
+      log(`${dom}: empresa ${nome(empresa)} (pelo ${via})${razao ? '; razão social ' + razao : ''}${p.repositorio && p.repositorio !== dom ? '; repositório ' + p.repositorio : ''}.`, 'info');
+      const outra = doCaso && doCaso !== empresa ? `o ${viaCaso} diz ${nome(doCaso)}` : (p.empresa && p.empresa !== empresa ? `a fila da tarefa diz ${nome(p.empresa)}` : '');
+      if (outra) log(`${dom}: ${outra}, mas o ${via} é da ${nome(empresa)}; seguindo pelo ${via}.`, 'warn');
     }
 
     // As respostas do processo principal trazem o log de cada chamada: vai
@@ -256,12 +261,14 @@
     const deps = {
       log,
       email,
+      // O freio do painel (e o do Hub) param ENTRE as etapas desta tarefa:
+      // nada de e-mail depois de alguém ter apertado "Parar".
+      parar: () => !!estado.parar || (typeof paradaAgora !== 'undefined' && !!paradaAgora),
       idPainelFixo: (emp) => (typeof fixedPanelId === 'function' ? fixedPanelId(emp) : ''),
       criarPropriedades: (q) => window.api.createGoogleProject({ domain: q.domain, saPath: state.googleSaPath, brand: q.brand, steps: q.steps }).then(encaminha),
       commitGeral: (q) => window.api.commitGeralPhp({ repo: q.repo, brand: q.brand, workspace: workspaceForBrand(q.brand), values: q.values, creds: state.creds }).then(encaminha),
       enviarEmail: (q) => window.api.sendMailBatch(q).then(encaminha),
       moverTarefa: (q) => window.api.salesforceMoverTarefa(q).then(encaminha),
-      comentarTarefa: (q) => window.api.salesforceFecharTarefa(q).then(encaminha),
     };
     try {
       return await window.BuscaOne.publicarBuscaOne({ ...p, dominio: dom, empresa, razao }, deps);
@@ -379,7 +386,7 @@
       '<div id="autoBody">',
       '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="autoBloq"><span>Bloqueio de contatos automático</span></label>',
       '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer" title="Tarefa de publicação MPI+ na fila: acha o contrato no painel, faz backup do DNS do cliente, aplica DNS, aprova, publica, SSL, tags, planilha e fecha a tarefa"><input type="checkbox" id="autoPub"><span>Publicação MPI+ automática <em style="color:#e9b84a;font-style:normal">(beta)</em></span></label>',
-      '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer" title="Tarefa de publicação Busca One (Busca Cliente / MPI Solutions) na fila: cria ou acha as propriedades no Google, commita o geral.php no Bitbucket (ID do painel pelo “ID xxxx” da tarefa), manda o e-mail de vhost ao suporte e registra na tarefa, que vai para Em andamento e fica aberta: vhost, clone no servidor e DNS continuam manuais"><input type="checkbox" id="autoBuscaOne"><span>Publicação Busca One automática <em style="color:#e9b84a;font-style:normal">(beta)</em></span></label>',
+      '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer" title="Tarefa de publicação Busca One (Busca Cliente / MPI Solutions) na fila: cria ou acha as propriedades no Google, commita o geral.php no repositório do Bitbucket (ID do painel pelo “ID do painel xxxx” da tarefa), manda o e-mail de vhost ao suporte e move a tarefa para Em andamento no seu nome; as chaves saem no terminal. A tarefa fica aberta: vhost, clone no servidor e DNS continuam manuais"><input type="checkbox" id="autoBuscaOne"><span>Publicação Busca One automática <em style="color:#e9b84a;font-style:normal">(beta)</em></span></label>',
       '  <div id="autoVhost" style="margin:0 0 4px 24px;display:grid;gap:4px;color:#9fb9ad" title="Para quem vai o pedido de vhost e banco da Busca One. Fica gravado nesta máquina.">',
       '    <label style="display:flex;align-items:center;gap:6px"><span style="width:62px;flex:none">Vhost para</span><input id="autoVhostPara" type="text" spellcheck="false" style="flex:1;min-width:0;background:#07130f;border:1px solid rgba(94,233,112,.25);color:#dcefe4;border-radius:6px;padding:3px 6px;font:11px ui-monospace,Consolas,monospace"></label>',
       '    <label style="display:flex;align-items:center;gap:6px"><span style="width:62px;flex:none">Cc</span><input id="autoVhostCc" type="text" spellcheck="false" style="flex:1;min-width:0;background:#07130f;border:1px solid rgba(94,233,112,.25);color:#dcefe4;border-radius:6px;padding:3px 6px;font:11px ui-monospace,Consolas,monospace"></label>',
@@ -400,7 +407,7 @@
     painel.querySelector('#autoBuscaOne').addEventListener('change', (e) => {
       estado.ligado.buscaone = e.target.checked; revisarTimer(); atualizarPainel();
       const cfg = emailVhostConfig();
-      log(`Publicação Busca One automática ${e.target.checked ? `LIGADA (beta): tarefas de publicação Busca Cliente / MPI Solutions da fila ganham propriedades no Google, geral.php commitado e e-mail de vhost para ${cfg.to || '(destinatário em branco!)'}; a tarefa vai para Em andamento e fica aberta` : 'desligada'}.`, e.target.checked ? 'success' : 'info');
+      log(`Publicação Busca One automática ${e.target.checked ? `LIGADA (beta): tarefas de publicação Busca Cliente / MPI Solutions da fila ganham propriedades no Google, geral.php commitado e e-mail de vhost para ${cfg.to || '(destinatário em branco!)'}; a tarefa vai para Em andamento e fica aberta; as chaves saem aqui no terminal` : 'desligada'}.`, e.target.checked ? 'success' : 'info');
       if (e.target.checked) rodarVarredura(false);
     });
     const vhostPara = painel.querySelector('#autoVhostPara');

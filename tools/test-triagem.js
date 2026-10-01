@@ -61,37 +61,59 @@ console.log('\n=== Publicação MPI+ (tarefas reais) ===');
   check('as MPI+ vêm com plataforma mpiplus', r1.plataforma === 'mpiplus' && r2.plataforma === 'mpiplus');
 }
 
-console.log('\n=== Publicação Busca One (fase 2, ADR-132) ===');
+console.log('\n=== Publicação Busca One (fase 2, ADR-132/133) ===');
 {
-  // Apontado via registro: domínio no assunto, sem temporário, sem ID.
+  // Apontado via registro: domínio no assunto, sem temporário, sem ID, sem empresa.
   const r3 = T.triar({ assunto: 'Publicação (Troca de DNS) - www.cuidarecia.com.br', descricao: 'Apontado via registro.' });
   check('"Apontado via registro." = Busca One elegível', r3.plataforma === 'buscaone' && r3.elegivel === true, JSON.stringify(r3));
   check('  domínio do assunto (sem www)', r3.dominio === 'cuidarecia.com.br', r3.dominio);
-  check('  sem temporário, sem ID, sem empresa sugerida', r3.temporario === '' && r3.idPainel === '' && r3.empresaSugerida === null, JSON.stringify(r3));
+  check('  sem temporário, sem repositório, sem ID, sem empresa', r3.temporario === '' && r3.repositorio === '' && r3.idPainel === '' && r3.marca === null, JSON.stringify(r3));
 
-  // producao.mpitemporario → sugere MPI Solutions; "ID 1234" no comentário.
-  const r4 = T.triar({ assunto: 'Publicação (Troca de DNS) - exemplo.com.br', descricao: 'link temporário - http://producao.mpitemporario.com.br/exemplo/\nID 1234' });
-  check('producao.mpitemporario = Busca One, sugere MPI Solutions', r4.elegivel === true && r4.empresaSugerida === 'mpisolutions' && r4.temporario === 'producao.mpitemporario.com.br', JSON.stringify(r4));
-  check('  "ID 1234" lido do comentário', r4.idPainel === '1234', r4.idPainel);
+  // O modelo combinado com o atendimento (01/10/2026): temporário com o
+  // caminho, o domínio a usar e "ID do painel".
+  const r4 = T.triar({ assunto: 'Publicação (Troca de DNS) - Ecolife Ambiental', descricao: '- link temporário: https://deploy.buscaclientes.com.br/ecolifeambiental.eco.br/\n\necolifeambiental.eco.br - domínio para ser usado\nID do painel 4521' });
+  check('modelo padrão: temporário deploy.buscaclientes = Busca Cliente', r4.elegivel === true && r4.marca === 'bc' && r4.temporario === 'deploy.buscaclientes.com.br', JSON.stringify(r4));
+  check('  repositório = o que vem depois da barra do temporário', r4.repositorio === 'ecolifeambiental.eco.br', r4.repositorio);
+  check('  domínio .eco.br do comentário (o assunto não tem domínio)', r4.dominio === 'ecolifeambiental.eco.br', r4.dominio);
+  check('  "ID do painel 4521" lido', r4.idPainel === '4521', r4.idPainel);
+  check('  "ID do painel xxxx" (modelo sem preencher) = sem ID', T.triar({ assunto: 'Publicação (Troca de DNS) - a.com.br', descricao: 'ID do painel xxxx' }).idPainel === '');
 
-  // deploy.buscacliente → sugere Busca Cliente; "ID: 587"; domínio só no comentário.
-  const r5 = T.triar({ assunto: 'Publicação (Troca de DNS) - Cliente Novo Ltda', descricao: 'Domínio: https://www.clientenovo.com.br/\nTemporário: http://deploy.buscacliente.com.br/clientenovo\nID: 587' });
-  check('assunto sem domínio: pega do comentário', r5.dominio === 'clientenovo.com.br', r5.dominio);
-  check('  deploy.buscacliente sugere Busca Cliente', r5.empresaSugerida === 'bc' && r5.temporario === 'deploy.buscacliente.com.br');
-  check('  "ID: 587" lido', r5.idPainel === '587', r5.idPainel);
+  // producao.mpitemporario → MPI Solutions; "ID 1234"; repositório diferente
+  // do domínio real; e-mail no comentário não é domínio.
+  const r5 = T.triar({ assunto: 'Publicação (Troca de DNS) - clientex.com.br', descricao: 'link temporário - http://producao.mpitemporario.com.br/clientex.com/\nDomínio: https://www.clientex.com.br/\nID 1234\ncontato: joao@empresaqualquer.com.br' });
+  check('producao.mpitemporario = MPI Solutions', r5.marca === 'mpisolutions' && r5.temporario === 'producao.mpitemporario.com.br', JSON.stringify(r5));
+  check('  repositório clientex.com (do caminho); domínio real clientex.com.br (o outro)', r5.repositorio === 'clientex.com' && r5.dominio === 'clientex.com.br', JSON.stringify(r5));
+  check('  "ID 1234" lido do comentário', r5.idPainel === '1234', r5.idPainel);
+  check('  e-mail no comentário não vira domínio', r5.dominio !== 'empresaqualquer.com.br');
+
+  // Assunto repete o repositório e o comentário traz o domínio real: o outro vence.
+  const r6 = T.triar({ assunto: 'Publicação (Troca de DNS) - antigo.com.br', descricao: 'http://deploy.buscacliente.com.br/antigo.com.br/ https://www.novo.com.br/' });
+  check('assunto = repositório e o comentário tem outro: o outro é o domínio real', r6.repositorio === 'antigo.com.br' && r6.dominio === 'novo.com.br' && r6.marca === 'bc', JSON.stringify(r6));
+  check('  grafia sem "s" (deploy.buscacliente) também vale', r6.temporario === 'deploy.buscacliente.com.br');
+
+  // Só um domínio, igual ao repositório: é ele.
+  const r7 = T.triar({ assunto: 'Publicação (Troca de DNS) - x.com.br', descricao: 'http://deploy.buscaclientes.com.br/x.com.br/ https://www.x.com.br/' });
+  check('único domínio = repositório: usa ele', r7.dominio === 'x.com.br' && r7.repositorio === 'x.com.br', JSON.stringify(r7));
+
+  // Caminho que não parece domínio, ou temporário sem caminho: sem repositório
+  // (o commit vai para o domínio).
+  const r8 = T.triar({ assunto: 'Publicação (Troca de DNS) - y.com.br', descricao: 'http://deploy.buscaclientes.com.br/pasta/ https://y.com.br' });
+  check('caminho que não parece domínio: repositório vazio', r8.repositorio === '' && r8.dominio === 'y.com.br' && r8.marca === 'bc', JSON.stringify(r8));
+  const r9 = T.triar({ assunto: 'Publicação (Troca de DNS) - exemplo.com.br', descricao: 'link temporário - http://producao.mpitemporario.com.br/' });
+  check('temporário sem caminho: empresa sim, repositório não', r9.marca === 'mpisolutions' && r9.repositorio === '' && r9.dominio === 'exemplo.com.br', JSON.stringify(r9));
 
   // ID no assunto; "id=" de URL, número de caso e links de infra não enganam.
-  const r6 = T.triar({ assunto: 'Publicação (Troca de DNS) ID 42 - loja.com', descricao: 'Caso 00087159 https://x.lightning.force.com/lightning/r/Case/500bL000/view?id=999 https://bitbucket.org/bc/loja.com' });
-  check('ID do assunto vale quando o comentário não tem', r6.idPainel === '42', r6.idPainel);
-  check('  domínio .com do assunto; links de infra ignorados', r6.dominio === 'loja.com', r6.dominio);
+  const r10 = T.triar({ assunto: 'Publicação (Troca de DNS) ID 42 - loja.com', descricao: 'Caso 00087159 https://x.lightning.force.com/lightning/r/Case/500bL000/view?id=999 https://bitbucket.org/bc/loja.com' });
+  check('ID do assunto vale quando o comentário não tem', r10.idPainel === '42', r10.idPainel);
+  check('  domínio .com do assunto; links de infra ignorados', r10.dominio === 'loja.com', r10.dominio);
 
   // Comentário primeiro: o ID do comentário vence o do assunto.
-  const r7 = T.triar({ assunto: 'Publicação (Troca de DNS) ID 1 - a.com.br', descricao: 'ID 2' });
-  check('ID do comentário tem prioridade sobre o do assunto', r7.idPainel === '2', r7.idPainel);
+  const r11 = T.triar({ assunto: 'Publicação (Troca de DNS) ID 1 - a.com.br', descricao: 'ID 2' });
+  check('ID do comentário tem prioridade sobre o do assunto', r11.idPainel === '2', r11.idPainel);
 
   // Sem domínio em lugar nenhum → não elegível, com motivo.
-  const r8 = T.triar({ assunto: 'Publicação (Troca de DNS) - Padaria do Zé', descricao: 'ID 10' });
-  check('sem domínio = Busca One não elegível, com motivo', r8.plataforma === 'buscaone' && r8.elegivel === false && /domínio/.test(r8.motivo), JSON.stringify(r8));
+  const r12 = T.triar({ assunto: 'Publicação (Troca de DNS) - Padaria do Zé', descricao: 'ID 10' });
+  check('sem domínio = Busca One não elegível, com motivo', r12.plataforma === 'buscaone' && r12.elegivel === false && /domínio/.test(r12.motivo), JSON.stringify(r12));
 
   check('idPainelDoTexto: "Id do painel: 77"', T.idPainelDoTexto('Id do painel: 77') === '77');
   check('idPainelDoTexto: "ID#9"', T.idPainelDoTexto('ID#9') === '9');
@@ -99,8 +121,9 @@ console.log('\n=== Publicação Busca One (fase 2, ADR-132) ===');
   check('idPainelDoTexto ignora número de caso (8 dígitos)', T.idPainelDoTexto('ID 00087159') === '');
   check('idPainelDoTexto ignora "ID xxxx" sem número', T.idPainelDoTexto('ID xxxx') === '');
   check('idPainelDoTexto não casa "id" dentro de palavra', T.idPainelDoTexto('Valid 123') === '');
-  check('pareceDominio', T.pareceDominio('a.com') && T.pareceDominio('a.com.br') && !T.pareceDominio('cliente novo ltda') && !T.pareceDominio('semponto'));
-  check('ehHostInfra', T.ehHostInfra('deploy.buscacliente.com.br') && T.ehHostInfra('bitbucket.org') && !T.ehHostInfra('cliente.com.br'));
+  check('pareceDominio', T.pareceDominio('a.com') && T.pareceDominio('a.com.br') && T.pareceDominio('ecolifeambiental.eco.br') && !T.pareceDominio('cliente novo ltda') && !T.pareceDominio('semponto'));
+  check('ehHostInfra', T.ehHostInfra('deploy.buscaclientes.com.br') && T.ehHostInfra('deploy.buscacliente.com.br') && T.ehHostInfra('bitbucket.org') && !T.ehHostInfra('cliente.com.br'));
+  check('empresaPeloTemporario', T.empresaPeloTemporario('deploy.buscaclientes.com.br') === 'bc' && T.empresaPeloTemporario('producao.mpitemporario.com.br') === 'mpisolutions' && T.empresaPeloTemporario('x.mpitemporario.com.br') === null);
 }
 
 console.log('\n=== Bloqueio de contatos (tarefas reais) ===');

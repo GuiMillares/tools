@@ -5671,7 +5671,11 @@ derrubar a busca, casar só pelo nome, não gravar o cache), os quatro pegos.
 (`test-automacao-browser`) e no `index.html` inteiro com `window.api` falso
 (`test-busca-one-browser`). A primeira rodada contra Google, Bitbucket, Graph
 e Salesforce de verdade fica para o Guilherme ligar o interruptor com uma
-tarefa real na fila.
+tarefa real na fila. **Os itens 1 e 4 (como se lê o domínio e de onde vem a
+empresa) foram substituídos pela ADR-133** no mesmo dia, e **o comentário na
+tarefa (item 3.iv) pela ADR-134**: a tarefa só muda de status, as chaves
+saem no terminal. A opção `marcar: false` do `salesforce:fecharTarefa`,
+criada para esse comentário, foi removida com ele.
 
 **Contexto.** A fase 1 da automação (ADR-119, 120, 122) publica sozinha as
 tarefas MPI+ e deixava as de Busca One — `Publicação (Troca de DNS) -
@@ -5765,6 +5769,122 @@ corpo da Busca Cliente lista `everton.lima` duas vezes porque o modelo da
 equipe veio assim. A automação não ouve o "ID xxxx" quando ele está só no caso
 (não na tarefa); nesse caso o `geral.php` fica com `'xxxx'` e a pendência diz
 isso.
+
+---
+
+## ADR-133 — Busca One: o temporário diz a empresa e o repositório; o domínio real é o outro domínio da tarefa
+
+**Status:** aceita (substitui os itens 1 e 4 da ADR-132).
+
+**Contexto.** A ADR-132 lia o domínio pelo assunto e tratava o temporário
+como "sugestão" de empresa, abaixo do caso e da fila. Em 01/10/2026 o
+Guilherme explicou como a tarefa de publicação Busca One é escrita: no
+comentário há **dois domínios**, um é o **temporário com o caminho** —
+`deploy.buscaclientes.com.br/{domínio}/` (Busca Cliente) ou
+`producao.mpitemporario.com.br/{domínio}/` (MPI Solutions) —, e o que vem
+**depois da barra é, na maioria das vezes, o repositório do Bitbucket**; o
+**outro domínio** da tarefa é o que será usado de verdade. Ele vai padronizar
+a abertura com o atendimento neste modelo:
+
+```
+- link temporário: https://deploy.buscaclientes.com.br/ecolifeambiental.eco.br/
+
+ecolifeambiental.eco.br - domínio para ser usado
+ID do painel xxxx
+```
+
+O host real é `deploy.buscaclientes.com.br` (com "s"; resolve para
+`149.18.103.99`); `deploy.buscacliente.com.br`, a grafia da ADR-119, não
+resolve. As duas valem na triagem, porque as duas aparecem em tarefa.
+
+**Decisão.**
+
+1. **Empresa pelo temporário, primeiro**: `deploy.buscaclientes` → Busca
+   Cliente, `producao.mpitemporario` → MPI Solutions. O caso da tarefa e a
+   fila (ADR-123) só decidem quando não há temporário ("Apontado via
+   registro."). Se o caso ou a fila discordarem do temporário, o terminal
+   avisa e o temporário manda.
+2. **Repositório = o segmento depois da barra do temporário**, quando parece
+   domínio (o slug do Bitbucket é o domínio, PRD §9); sem ele, o slug é o
+   próprio domínio real. O commit do `geral.php` vai para esse repositório;
+   propriedades, e-mail de vhost e registro usam o domínio real, e o registro
+   na tarefa diz qual repositório recebeu (ou não recebeu) o commit quando
+   difere.
+3. **Domínio real = o outro domínio da tarefa**: o do assunto, depois os do
+   comentário, tirando os hosts da infraestrutura e os e-mails
+   (`joao@empresa.com.br` não é domínio); o primeiro que **não for o do
+   caminho do temporário**. Só quando não há outro, é o mesmo do caminho.
+   `.eco.br` e afins passam.
+4. `ID do painel 4521` vale como `ID 4521`; `ID do painel xxxx` (o modelo sem
+   preencher) é "sem ID", pendência.
+
+**O que aconteceu em 01/10/2026, das 11:32 às 11:37, e as duas travas.** Com
+o Hub 1.0.55 instalado (ADR-132, sem o "s" na lista de hosts nossos), o
+interruptor foi ligado com a tarefa `00TbL00000fX8X7UAK` (caso 00017497,
+ECOLIFE SERVICOS E NEGOCIOS AMBIENTAIS LTDA) na fila. O assunto não trazia
+domínio e o primeiro host do comentário era `deploy.buscaclientes.com.br`,
+que a triagem tomou por domínio do cliente. O freio de emergência foi
+apertado 10 s depois, mas o fluxo estava dentro do `google:createProject`
+(4,5 min varrendo 2.643 propriedades) e seguiu até o fim: criou a propriedade
+GA4 `properties/556986609` (G-YC76NMLGS1, conta "Busca Cliente 16"), o
+container GTM-NJHC88QT (conta "Busca Cliente - Clientes", publicado) e a
+chave reCAPTCHA `6LezydgtAAAAAKCrJUfzqIXbEt7EoCaiNWm5WQp0`, todos com o nome
+`deploy.buscaclientes.com.br`; o commit falhou (sem "Workspace do Bitbucket"
+configurada, o token não lista workspaces); o **e-mail "Criação de Vhost e
+Banco - Busca Cliente - deploy.buscaclientes.com.br" saiu** para o suporte da
+M3 às 11:37:01; a tarefa foi para "Em andamento" com o registro disso no feed
+do caso. Tudo está no `hub-2026-10-01.txt`. Duas travas, as duas testadas:
+
+- **Host nosso nunca é domínio de cliente**: `publicarBuscaOne` desiste
+  antes de qualquer efeito quando o domínio é um host da infraestrutura
+  (`ehHostInfra`: mpitemporario, buscacliente(s), idealtrends, bitbucket,
+  salesforce…), venha de onde vier.
+- **O freio vale entre as etapas da tarefa**, não só entre tarefas:
+  `deps.parar()` é conferido antes de começar, antes do commit e antes do
+  e-mail; apertado, nada mais sai (ao religar, as propriedades são
+  reaproveitadas). Depois do e-mail o registro na tarefa ainda é feito,
+  porque o e-mail saiu e a tarefa tem que dizer.
+
+A limpeza do que foi criado é manual (o Hub não gerencia o ciclo de vida das
+propriedades, PRD §5): apagar ou renomear a propriedade, o container e a
+chave; avisar a M3; apagar o comentário que foi parar no feed do caso; e
+preencher a "Workspace do Bitbucket" da marca antes da próxima rodada.
+
+**Consequências.** A tarefa escrita no modelo acima sai inteira pela triagem
+(`test-triagem` tem o exemplo); tarefa antiga sem temporário continua
+dependendo do caso/fila para a empresa. O domínio do assunto deixou de ser
+soberano: se ele repetir o repositório e o comentário trouxer outro domínio,
+o outro vence — é o que o modelo pede. Um terceiro domínio solto no
+comentário (uma referência, por exemplo) poderia ser tomado por domínio real;
+o terminal diz qual foi escolhido, e o modelo padronizado evita o caso.
+
+---
+
+## ADR-134 — Busca One: as chaves saem no terminal, não em comentário no Salesforce
+
+**Status:** aceita (substitui o item 3.iv da ADR-132).
+
+**Contexto.** A ADR-132 mandava, no fim da parte automática, um comentário
+no feed do caso com o resumo (GA, GTM, site key, token, commit, e-mail).
+Depois da rodada de 01/10/2026 (ADR-133), que deixou esse comentário com os
+IDs errados no caso 00017497, o Guilherme foi direto: "por que ele comentou
+as tags no Salesforce? Não é para fazer isso, as tags são apenas para eu ver
+e colocar no código; no Salesforce não tem necessidade."
+
+**Decisão.** A publicação Busca One **não escreve nada no Salesforce além do
+status**: a tarefa vai para "Em andamento" no nome de quem está logado
+(`salesforce:moverTarefa`, confirmado na ADR-132) e só. O resumo — chaves
+públicas, ID do painel e origem, repositório e resultado do commit, e-mail
+enviado, pendências e o que falta — sai **no terminal do Hub**, linha a
+linha, e por isso também no arquivo de log do dia (ADR-096/109). O texto
+continua em `feito.tarefa.texto` no resultado, para quem quiser usar. A
+opção `marcar: false` do `salesforce:fecharTarefa` (ADR-132) saiu junto: não
+tinha outro uso.
+
+**Consequências.** Quem publica vê as chaves onde já olha (o terminal) e as
+põe no código; o atendimento não recebe ruído no caso. O comentário de
+fechamento "Site publicado" do Publicar MPI+ (ADR-089) não muda: aquele é
+aviso, este era registro.
 
 ---
 

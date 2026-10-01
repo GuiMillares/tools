@@ -60,40 +60,46 @@ const STUB = `
     check('o campo "Vhost para" do painel mostra o destinatário do hub-state', await page.evaluate(() => document.getElementById('autoVhostPara').value === 'infra@m3.test'), await page.evaluate(() => document.getElementById('autoVhostPara').value));
     check('pré-requisitos do driver no state (service account, Bitbucket, Microsoft)', await page.evaluate(() => !!state.googleSaPath && !!state.creds && state.ms.connected === true), await page.evaluate(() => JSON.stringify({ sa: state.googleSaPath, creds: !!state.creds, ms: state.ms })));
 
-    // 1) Busca Cliente: o caso diz bc, o temporário sugere MPI Solutions → o caso vence, com aviso.
+    // 1) Busca Cliente pelo temporário (deploy.buscaclientes), com o caso e a
+    //    fila dizendo MPI Solutions → o temporário vence, com aviso (ADR-133).
+    //    O repositório (x.com) vem do caminho do temporário; o domínio real é
+    //    x.com.br.
     const r1 = await page.evaluate(async () => {
+      window.__ctx = { ok: true, razao: 'CLIENTE X LTDA', empresa: 'mpisolutions', via: 'projeto do caso (MPI Solutions)', log: [] };
       window.__calls.length = 0; window.__logs2 = [];
       const antes = window.log; window.log = (m, t) => { window.__logs2.push([m, t]); };
-      const r = await window.hubPublicarBuscaOneAuto({ id: '00T1', link: 'https://sf/lightning/r/Task/00T1/view', assunto: 'Publicação (Troca de DNS) - x.com.br', dominio: 'https://www.x.com.br/', empresa: 'mpisolutions', empresaSugerida: 'mpisolutions', idPainel: '12', temporario: 'producao.mpitemporario.com.br' });
+      const r = await window.hubPublicarBuscaOneAuto({ id: '00T1', link: 'https://sf/lightning/r/Task/00T1/view', assunto: 'Publicação (Troca de DNS) - x.com.br', dominio: 'https://www.x.com.br/', repositorio: 'x.com', empresa: 'mpisolutions', empresaTemporario: 'bc', idPainel: '12', temporario: 'deploy.buscaclientes.com.br' });
       window.log = antes;
       return { r, calls: window.__calls, logs: window.__logs2 };
     });
     const nomes = r1.calls.map((c) => c.name);
     check('BC: driver devolve ok', r1.r.ok === true, JSON.stringify(r1.r));
-    check('BC: ordem contexto → propriedades → commit → e-mail → mover → comentar', nomes.join(',') === 'salesforceContexto,createGoogleProject,commitGeralPhp,sendMailBatch,salesforceMoverTarefa,salesforceFecharTarefa', nomes.join(','));
+    check('BC: ordem contexto → propriedades → commit → e-mail → mover a tarefa (sem comentar no Salesforce, ADR-134)', nomes.join(',') === 'salesforceContexto,createGoogleProject,commitGeralPhp,sendMailBatch,salesforceMoverTarefa', nomes.join(','));
     const g = (r1.calls.find((c) => c.name === 'createGoogleProject') || { args: [{}] }).args[0];
-    check('BC: createGoogleProject com o saPath do state, marca bc (o caso vence o temporário), domínio normalizado', g.saPath === 'C:/sa.json' && g.brand === 'bc' && g.domain === 'x.com.br' && (g.steps || []).join() === 'analytics,gtm,recaptcha,searchconsole', JSON.stringify(g));
+    check('BC: createGoogleProject com o saPath do state, marca bc (o temporário vence caso e fila), domínio real normalizado', g.saPath === 'C:/sa.json' && g.brand === 'bc' && g.domain === 'x.com.br' && (g.steps || []).join() === 'analytics,gtm,recaptcha,searchconsole', JSON.stringify(g));
     const c = (r1.calls.find((c) => c.name === 'commitGeralPhp') || { args: [{}] }).args[0];
-    check('BC: commit com a workspace da marca, as credenciais do state e $idProjetoBusca = 12', c.workspace === 'bcws' && c.creds && c.creds.token === 'tok' && c.brand === 'bc' && c.values && c.values.idProjetoBusca === '12' && c.values.idAnalytics === 'G-1', JSON.stringify(c));
+    check('BC: commit no repositório do temporário (x.com), workspace da marca, credenciais do state, $idProjetoBusca = 12', c.repo === 'x.com' && c.workspace === 'bcws' && c.creds && c.creds.token === 'tok' && c.brand === 'bc' && c.values && c.values.idProjetoBusca === '12' && c.values.idAnalytics === 'G-1', JSON.stringify(c));
     const m = (r1.calls.find((c) => c.name === 'sendMailBatch') || { args: [{}] }).args[0];
-    check('BC: e-mail para o destinatário do hub-state, modelo Busca Cliente, 1 domínio', (m.to || []).join() === 'infra@m3.test' && (m.cc || []).length === 0 && /Busca Cliente - \{dominio\}/.test(m.subjectTemplate) && (m.domains || []).join() === 'x.com.br', JSON.stringify(m));
+    check('BC: e-mail para o destinatário do hub-state, modelo Busca Cliente, com o domínio real', (m.to || []).join() === 'infra@m3.test' && (m.cc || []).length === 0 && /Busca Cliente - \{dominio\}/.test(m.subjectTemplate) && (m.domains || []).join() === 'x.com.br', JSON.stringify(m));
     const mv = (r1.calls.find((c) => c.name === 'salesforceMoverTarefa') || { args: [{}] }).args[0];
-    const ft = (r1.calls.find((c) => c.name === 'salesforceFecharTarefa') || { args: [{}] }).args[0];
-    check('BC: tarefa movida para andamento e comentada sem marcar, sem concluir', mv.id === '00T1' && mv.coluna === 'andamento' && ft.marcar === false && ft.concluir === false && ft.comentar === true && /G-1/.test(ft.texto || ''), JSON.stringify({ mv, ft }));
-    check('BC: avisou que o temporário discorda do caso', r1.logs.some((l) => l[1] === 'warn' && /sugere MPI Solutions, mas o projeto do caso/.test(l[0])), JSON.stringify(r1.logs.filter((l) => l[1] === 'warn')));
+    check('BC: tarefa movida para andamento; nenhum comentário no Salesforce', mv.id === '00T1' && mv.coluna === 'andamento' && !r1.calls.some((c) => c.name === 'salesforceFecharTarefa' || c.name === 'salesforceCriarTarefaNoCaso'), JSON.stringify(mv));
+    check('BC: o resumo com as chaves saiu no terminal', r1.logs.some((l) => /Analytics \(GA4\): G-1/.test(l[0])) && r1.logs.some((l) => /Tag Manager: GTM-1/.test(l[0])), JSON.stringify(r1.logs.map((l) => l[0]).filter((m) => /GA4|Tag Manager:/.test(m))));
+    check('BC: avisou que o caso discorda do temporário, e seguiu pelo temporário', r1.logs.some((l) => l[1] === 'warn' && /diz MPI Solutions, mas o temporário deploy\.buscaclientes\.com\.br é da Busca Cliente; seguindo pelo temporário/.test(l[0])), JSON.stringify(r1.logs.filter((l) => l[1] === 'warn')));
     check('BC: o log do processo principal foi para o terminal', r1.logs.some((l) => /fake google bc/.test(l[0])));
 
-    // 2) MPI Solutions: ID fixo 39 pelo BRANDS do app.js e workspace mpiws.
+    // 2) Sem temporário ("Apontado via registro."): a empresa vem do caso →
+    //    MPI Solutions, ID fixo 39 pelo BRANDS do app.js, workspace mpiws,
+    //    commit no próprio domínio.
     const r2 = await page.evaluate(async () => {
       window.__ctx = { ok: true, razao: 'CLIENTE Y', empresa: 'mpisolutions', via: 'projeto do caso (MPI Solutions)', log: [] };
       window.__calls.length = 0;
-      const r = await window.hubPublicarBuscaOneAuto({ id: '00T2', link: 'https://sf/lightning/r/Task/00T2/view', dominio: 'y.com.br', empresa: null, empresaSugerida: null, idPainel: '777', temporario: '' });
+      const r = await window.hubPublicarBuscaOneAuto({ id: '00T2', link: 'https://sf/lightning/r/Task/00T2/view', dominio: 'y.com.br', repositorio: '', empresa: null, empresaTemporario: null, idPainel: '777', temporario: '' });
       return { r, calls: window.__calls };
     });
     const c2 = (r2.calls.find((c) => c.name === 'commitGeralPhp') || { args: [{}] }).args[0];
     const m2 = (r2.calls.find((c) => c.name === 'sendMailBatch') || { args: [{}] }).args[0];
     check('MPI: ok', r2.r.ok === true, JSON.stringify(r2.r));
-    check('MPI: $idProjetoBusca = 39 (fixedPanelId do app.js vence o 777 da tarefa), workspace mpiws', c2.values && c2.values.idProjetoBusca === '39' && c2.workspace === 'mpiws' && c2.brand === 'mpisolutions', JSON.stringify(c2));
+    check('MPI: empresa pelo caso, $idProjetoBusca = 39 (fixedPanelId do app.js vence o 777 da tarefa), workspace mpiws, commit no domínio', c2.repo === 'y.com.br' && c2.values && c2.values.idProjetoBusca === '39' && c2.workspace === 'mpiws' && c2.brand === 'mpisolutions', JSON.stringify(c2));
     check('MPI: modelo "MPI" no assunto', /- MPI - \{dominio\}/.test(m2.subjectTemplate || ''));
 
     // 3) Sem conta Microsoft: nada é feito (nem as propriedades).

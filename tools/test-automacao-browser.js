@@ -99,7 +99,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     await page.waitForFunction(() => (window.__logs || []).some((l) => /c\.com\.br: pulei — app\.js não carregado/.test(l[0])), { timeout: 5000 });
     check('ligar Busca One chama o driver dela, que pula sem exceção quando o app.js não está', erros.length === 0, erros.join(' | '));
     check('a Busca One não mexeu no Salesforce (nada fechado, nada movido)', (await page.evaluate(() => window.__chamadas.salesforceFecharTarefa.length)) === 1);
-    check('o log da varredura anuncia a Busca One com ID do painel e temporário', await page.evaluate(() => (window.__logs || []).some((l) => /Publicação Busca One: c\.com\.br \(temporário producao\.mpitemporario\.com\.br\); ID do painel 321/.test(l[0]))));
+    check('o log da varredura anuncia a Busca One com temporário, empresa e ID do painel', await page.evaluate(() => (window.__logs || []).some((l) => /Publicação Busca One: c\.com\.br \(temporário producao\.mpitemporario\.com\.br, MPI Solutions\); ID do painel 321/.test(l[0]))), await page.evaluate(() => (window.__logs || []).filter((l) => /Busca One:/.test(l[0])).map((l) => l[0]).join(' | ')));
 
     // Editar o destinatário do vhost não quebra sem o app.js (sem state, só memória).
     await page.fill('#autoVhostPara', 'infra@exemplo.test');

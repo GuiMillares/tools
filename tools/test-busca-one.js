@@ -1,5 +1,6 @@
-// ADR-132: a publicação Busca One automática (propriedades → geral.php →
-// e-mail de vhost → registro na tarefa), com dependências falsas, sem Electron.
+// ADR-132/133/134: a publicação Busca One automática (propriedades → geral.php
+// → e-mail de vhost → tarefa em andamento, resumo no terminal), com
+// dependências falsas, sem Electron.
 //
 //     node tools/test-busca-one.js
 
@@ -17,10 +18,10 @@ const RESULTADO_GOOGLE = {
   },
 };
 
-// Fábrica de deps falsas, registrando as chamadas na ordem.
+// Fábrica de deps falsas, registrando as chamadas na ordem e o log.
 function fakeDeps(over = {}) {
   const ordem = [];
-  const chamadas = { criarPropriedades: [], commitGeral: [], enviarEmail: [], moverTarefa: [], comentarTarefa: [] };
+  const chamadas = { criarPropriedades: [], commitGeral: [], enviarEmail: [], moverTarefa: [] };
   const logs = [];
   const grava = (nome, p, r) => { ordem.push(nome); chamadas[nome].push(p); return r; };
   const deps = {
@@ -31,13 +32,19 @@ function fakeDeps(over = {}) {
     commitGeral: async (p) => grava('commitGeral', p, over.commit || { ok: true, workspace: 'bc', repo: p.repo, branch: 'main', applied: Object.keys(p.values) }),
     enviarEmail: async (p) => grava('enviarEmail', p, over.mail || { ok: true, enviados: p.domains, falhas: [], total: 1 }),
     moverTarefa: async (p) => grava('moverTarefa', p, over.mover || { ok: true }),
-    comentarTarefa: async (p) => grava('comentarTarefa', p, over.comentar || { ok: true }),
     ...(over.deps || {}),
   };
   return { deps, chamadas, ordem, logs };
 }
+// O resumo que o fluxo escreve no terminal (as linhas 'info' depois de
+// "Publicação Busca One (…) — parte automática").
+const resumoDoLog = (logs) => {
+  const linhas = logs.map((l) => l[0]);
+  const i = linhas.findIndex((l) => /parte automática feita pelo Hub/.test(l));
+  return i < 0 ? '' : linhas.slice(i).join('\n');
+};
 
-const TAREFA_BC = { id: '00T1', link: 'https://sf/lightning/r/Task/00T1/view', assunto: 'Publicação (Troca de DNS) - x.com.br', dominio: 'x.com.br', empresa: 'bc', idPainel: '1234', temporario: 'deploy.buscacliente.com.br' };
+const TAREFA_BC = { id: '00T1', link: 'https://sf/lightning/r/Task/00T1/view', assunto: 'Publicação (Troca de DNS) - x.com.br', dominio: 'x.com.br', empresa: 'bc', idPainel: '1234', temporario: 'deploy.buscaclientes.com.br' };
 
 (async () => {
   console.log('\n=== Modelos do e-mail de vhost ===');
@@ -59,7 +66,7 @@ const TAREFA_BC = { id: '00T1', link: 'https://sf/lightning/r/Task/00T1/view', a
     const { deps, chamadas, ordem, logs } = fakeDeps();
     const r = await B.publicarBuscaOne(TAREFA_BC, deps);
     check('resultado ok com mensagem', r.ok === true && /e-mail de vhost enviado/.test(r.mensagem), JSON.stringify(r));
-    check('ordem: propriedades → commit → e-mail → mover → comentar', ordem.join(',') === 'criarPropriedades,commitGeral,enviarEmail,moverTarefa,comentarTarefa', ordem.join(','));
+    check('ordem: propriedades → commit → e-mail → mover a tarefa', ordem.join(',') === 'criarPropriedades,commitGeral,enviarEmail,moverTarefa', ordem.join(','));
     const g = chamadas.criarPropriedades[0];
     check('propriedades pedidas na marca bc, as 4 etapas', g.domain === 'x.com.br' && g.brand === 'bc' && g.steps.join() === 'analytics,gtm,recaptcha,searchconsole', JSON.stringify(g));
     const c = chamadas.commitGeral[0];
@@ -68,25 +75,26 @@ const TAREFA_BC = { id: '00T1', link: 'https://sf/lightning/r/Task/00T1/view', a
     const m = chamadas.enviarEmail[0];
     check('e-mail para o destinatário e cc configurados, 1 domínio', m.to.join() === 'suporte@m3solutions.com.br' && m.cc.join() === 'everton.lima@buscacliente.com.br' && m.domains.join() === 'x.com.br', JSON.stringify(m));
     check('e-mail com o modelo da Busca Cliente', /Busca Cliente - \{dominio\}/.test(m.subjectTemplate) && /empresa Busca Cliente/.test(m.bodyTemplate));
-    check('tarefa movida para "Em andamento"', chamadas.moverTarefa[0].id === '00T1' && chamadas.moverTarefa[0].coluna === 'andamento');
-    const t = chamadas.comentarTarefa[0];
-    check('registro na tarefa: comenta sem marcar, não conclui', t.link === TAREFA_BC.link && t.comentar === true && t.marcar === false && t.concluir === false && t.assumir === false, JSON.stringify(t));
-    check('o registro traz GA, GTM, ID do painel, commit e e-mail', /G-ABC123/.test(t.texto) && /GTM-XYZ/.test(t.texto) && /1234 \(da tarefa\)/.test(t.texto) && /commitado em bc\/x\.com\.br/.test(t.texto) && /Criação de Vhost e Banco - Busca Cliente - x\.com\.br/.test(t.texto), t.texto);
-    check('o registro marca o Analytics como reaproveitado', /G-ABC123 \(já existia, reaproveitado\)/.test(t.texto));
-    check('o registro NUNCA leva a secretKey do reCAPTCHA', !/6Lsecret/.test(t.texto));
-    check('o registro diz o que falta (manual)', /Falta \(manual\): vhost e banco/.test(t.texto));
-    check('sem pendências', r.pendencias.length === 0 && !/Pendências/.test(t.texto));
-    check('nada de erro no log', !logs.some((l) => l[1] === 'error' || l[1] === 'warn'), JSON.stringify(logs.filter((l) => l[1] === 'warn' || l[1] === 'error')));
+    check('tarefa movida para "Em andamento" (e nada mais no Salesforce)', chamadas.moverTarefa[0].id === '00T1' && chamadas.moverTarefa[0].coluna === 'andamento' && !('comentarTarefa' in chamadas));
+    const t = resumoDoLog(logs);
+    check('o resumo no terminal traz GA, GTM, ID do painel, commit e e-mail', /G-ABC123/.test(t) && /GTM-XYZ/.test(t) && /1234 \(da tarefa\)/.test(t) && /commitado em bc\/x\.com\.br/.test(t) && /Criação de Vhost e Banco - Busca Cliente - x\.com\.br/.test(t), t);
+    check('o resumo marca o Analytics como reaproveitado', /G-ABC123 \(já existia, reaproveitado\)/.test(t));
+    check('o resumo NUNCA leva a secretKey do reCAPTCHA', !/6Lsecret/.test(t));
+    check('o resumo diz o que falta (manual)', /Falta \(manual\): vhost e banco/.test(t));
+    // No terminal as linhas em branco do texto não são logadas.
+    check('o resumo é igual ao texto guardado em feito.tarefa.texto', r.feito.tarefa.texto.split('\n').filter((l) => l.trim()).join('\n') === t, t);
+    check('sem pendências', r.pendencias.length === 0 && !/Pendências/.test(t));
+    check('nada de erro nem aviso no log', !logs.some((l) => l[1] === 'error' || l[1] === 'warn'), JSON.stringify(logs.filter((l) => l[1] === 'warn' || l[1] === 'error')));
   }
 
   console.log('\n=== MPI Solutions: ID fixo 39 e modelo MPI ===');
   {
-    const { deps, chamadas } = fakeDeps();
+    const { deps, chamadas, logs } = fakeDeps();
     const r = await B.publicarBuscaOne({ ...TAREFA_BC, empresa: 'mpisolutions', idPainel: '555' }, deps);
     check('ok', r.ok === true);
     check('o fixo da marca (39) vence o ID da tarefa', chamadas.commitGeral[0].values.idProjetoBusca === '39' && chamadas.commitGeral[0].brand === 'mpisolutions');
     check('e-mail com o modelo MPI', /- MPI - \{dominio\}/.test(chamadas.enviarEmail[0].subjectTemplate) && /empresa MPI Solutions/.test(chamadas.enviarEmail[0].bodyTemplate));
-    check('registro diz "fixo da marca"', /39 \(fixo da marca\)/.test(chamadas.comentarTarefa[0].texto));
+    check('resumo diz "fixo da marca"', /39 \(fixo da marca\)/.test(resumoDoLog(logs)));
 
     // deps.idPainelFixo (o BRANDS do renderer) manda, quando vem.
     const f2 = fakeDeps({ deps: { idPainelFixo: (e) => (e === 'mpisolutions' ? '40' : '') } });
@@ -101,27 +109,53 @@ const TAREFA_BC = { id: '00T1', link: 'https://sf/lightning/r/Task/00T1/view', a
     check('segue (ok) com pendência do ID', r.ok === true && r.pendencias.some((p) => /ID do painel/.test(p)), JSON.stringify(r.pendencias));
     check('$idProjetoBusca vai vazio (o commit não mexe nele)', chamadas.commitGeral[0].values.idProjetoBusca === '');
     check('avisa no terminal', logs.some((l) => l[1] === 'warn' && /ID do painel/.test(l[0])));
-    check('o registro na tarefa diz que não estava', /não estava na tarefa/.test(chamadas.comentarTarefa[0].texto) && /Pendências:/.test(chamadas.comentarTarefa[0].texto));
+    check('o resumo diz que não estava', /não estava na tarefa/.test(resumoDoLog(logs)) && /Pendências:/.test(resumoDoLog(logs)));
   }
 
-  console.log('\n=== Empresa: caso/fila, temporário como reserva, nada → desiste ===');
+  console.log('\n=== Empresa: a resolvida pelo driver, o temporário como reserva, nada → desiste ===');
   {
     let f = fakeDeps();
-    let r = await B.publicarBuscaOne({ ...TAREFA_BC, empresa: null, empresaSugerida: null }, f.deps);
+    let r = await B.publicarBuscaOne({ ...TAREFA_BC, empresa: null, empresaTemporario: null }, f.deps);
     check('sem empresa: desiste sem fazer nada', r.ok === false && r.desistir === true && f.ordem.length === 0, JSON.stringify(r));
     f = fakeDeps();
-    r = await B.publicarBuscaOne({ ...TAREFA_BC, empresa: null, empresaSugerida: 'mpisolutions' }, f.deps);
-    check('só o temporário: usa a sugestão', r.ok === true && f.chamadas.criarPropriedades[0].brand === 'mpisolutions');
+    r = await B.publicarBuscaOne({ ...TAREFA_BC, empresa: null, empresaTemporario: 'mpisolutions' }, f.deps);
+    check('só o temporário: usa ele', r.ok === true && f.chamadas.criarPropriedades[0].brand === 'mpisolutions');
     f = fakeDeps();
-    r = await B.publicarBuscaOne({ ...TAREFA_BC, empresa: 'bc', empresaSugerida: 'mpisolutions' }, f.deps);
-    check('caso/fila vence o temporário', f.chamadas.criarPropriedades[0].brand === 'bc');
+    r = await B.publicarBuscaOne({ ...TAREFA_BC, empresa: 'bc', empresaTemporario: 'mpisolutions' }, f.deps);
+    check('a empresa já resolvida pelo driver vence a reserva', f.chamadas.criarPropriedades[0].brand === 'bc');
     f = fakeDeps();
     r = await B.publicarBuscaOne({ ...TAREFA_BC, dominio: '' }, f.deps);
     check('sem domínio: desiste sem fazer nada', r.ok === false && r.desistir === true && f.ordem.length === 0);
   }
 
+  console.log('\n=== Repositório pelo caminho do temporário (ADR-133) ===');
+  {
+    // Repositório diferente do domínio real: o commit vai para o repositório;
+    // propriedades, e-mail e resumo usam o domínio real.
+    let f = fakeDeps();
+    let r = await B.publicarBuscaOne({ ...TAREFA_BC, repositorio: 'x.com' }, f.deps);
+    check('commit no repositório do temporário (x.com), marca bc', r.ok === true && f.chamadas.commitGeral[0].repo === 'x.com' && f.chamadas.commitGeral[0].brand === 'bc', JSON.stringify(f.chamadas.commitGeral));
+    check('propriedades e e-mail com o domínio real (x.com.br)', f.chamadas.criarPropriedades[0].domain === 'x.com.br' && f.chamadas.enviarEmail[0].domains.join() === 'x.com.br');
+    check('o resumo diz qual repositório recebeu o commit', /geral\.php \(repositório x\.com, do temporário\): commitado em bc\/x\.com/.test(resumoDoLog(f.logs)), resumoDoLog(f.logs));
+    check('avisa no terminal que o repositório não é o domínio', f.logs.some((l) => /o repositório é x\.com \(do caminho do temporário\)/.test(l[0])));
+    // Sem repositório na tarefa: o slug é o próprio domínio.
+    f = fakeDeps();
+    r = await B.publicarBuscaOne({ ...TAREFA_BC, repositorio: '' }, f.deps);
+    check('sem repositório na tarefa: commit no domínio', f.chamadas.commitGeral[0].repo === 'x.com.br' && !/\(repositório/.test(resumoDoLog(f.logs)), resumoDoLog(f.logs));
+    // Commit falha com repositório diferente: a linha diz onde tentou.
+    f = fakeDeps({ commit: { ok: false, error: 'repositório não encontrado' } });
+    r = await B.publicarBuscaOne({ ...TAREFA_BC, repositorio: 'x.com' }, f.deps);
+    check('commit falha: o resumo diz o repositório tentado', /NÃO commitado em x\.com \(repositório não encontrado\)/.test(resumoDoLog(f.logs)), resumoDoLog(f.logs));
+  }
+
   console.log('\n=== Pré-requisitos antes de qualquer efeito ===');
   {
+    // O caso real de 01/10/2026: host nosso lido como domínio do cliente.
+    for (const h of ['deploy.buscaclientes.com.br', 'deploy.buscacliente.com.br', 'producao.mpitemporario.com.br', 'x.mpitemporario.com.br']) {
+      const f0 = fakeDeps();
+      const r0 = await B.publicarBuscaOne({ ...TAREFA_BC, dominio: h }, f0.deps);
+      check(`host nosso como domínio (${h}): desiste sem fazer nada`, r0.ok === false && r0.desistir === true && /host nosso/.test(r0.motivo) && f0.ordem.length === 0, JSON.stringify(r0));
+    }
     let f = fakeDeps({ email: { to: '', cc: 'x@y.com' } });
     let r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
     check('sem destinatário: erro (tenta de novo), nada feito', r.ok === false && !r.desistir && /destinatário/.test(r.motivo) && f.ordem.length === 0, JSON.stringify(r));
@@ -144,43 +178,67 @@ const TAREFA_BC = { id: '00T1', link: 'https://sf/lightning/r/Task/00T1/view', a
     f = fakeDeps({ commit: { ok: false, error: 'Não encontrei o geral.php' } });
     r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
     check('commit falha: segue, e-mail enviado, ok com pendência', r.ok === true && f.chamadas.enviarEmail.length === 1 && r.pendencias.some((p) => /commit do geral\.php/.test(p)), JSON.stringify(r));
-    check('  o registro na tarefa diz NÃO commitado', /NÃO commitado \(Não encontrei o geral\.php\)/.test(f.chamadas.comentarTarefa[0].texto));
+    check('  o resumo diz NÃO commitado', /NÃO commitado em x\.com\.br \(Não encontrei o geral\.php\)/.test(resumoDoLog(f.logs)), resumoDoLog(f.logs));
     check('  a mensagem diz NÃO commitado', /NÃO commitado/.test(r.mensagem));
 
     // Commit pulado (já estava igual): não é pendência.
     f = fakeDeps({ commit: { ok: true, skipped: true, workspace: 'bc', repo: 'x.com.br', branch: 'main' } });
     r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
-    check('geral.php já estava igual: ok, sem pendência', r.ok === true && r.pendencias.length === 0 && /já estava igual/.test(r.mensagem) && /já estava com esses valores/.test(f.chamadas.comentarTarefa[0].texto));
+    check('geral.php já estava igual: ok, sem pendência', r.ok === true && r.pendencias.length === 0 && /já estava igual/.test(r.mensagem) && /já estava com esses valores/.test(resumoDoLog(f.logs)));
 
     // E-mail falha: erro (tenta de novo), sem mexer na tarefa.
     f = fakeDeps({ mail: { ok: false, error: 'sessão expirada', reauth: true } });
     r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
-    check('e-mail falha: erro, tarefa não é movida nem comentada', r.ok === false && !r.desistir && /e-mail de vhost não saiu/.test(r.motivo) && f.chamadas.moverTarefa.length === 0 && f.chamadas.comentarTarefa.length === 0, JSON.stringify(r));
+    check('e-mail falha: erro, tarefa não é movida', r.ok === false && !r.desistir && /e-mail de vhost não saiu/.test(r.motivo) && f.chamadas.moverTarefa.length === 0, JSON.stringify(r));
     check('  reauth pede para reconectar a Microsoft', /reconecte a conta Microsoft/.test(r.motivo));
     check('  o que já foi feito vem no resultado', r.feito.propriedades && r.feito.commit && r.feito.commit.ok === true);
     f = fakeDeps({ mail: { ok: true, enviados: [], falhas: [{ dominio: 'x.com.br', erro: 'caixa cheia' }], total: 1 } });
     r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
     check('e-mail com falha por domínio também é erro', r.ok === false && /caixa cheia/.test(r.motivo));
 
-    // Tarefa falha: só aviso.
-    f = fakeDeps({ mover: { ok: false, error: 'sem permissão' }, comentar: { ok: false, error: 'feed fechado' } });
+    // Mover a tarefa falha: só aviso, e o resumo sai do mesmo jeito.
+    f = fakeDeps({ mover: { ok: false, error: 'sem permissão' } });
     r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
-    check('mover/comentar falham: continua ok, com aviso', r.ok === true && f.logs.filter((l) => l[1] === 'warn').length === 2 && r.feito.tarefa.movida === false && r.feito.tarefa.comentada === false, JSON.stringify(f.logs));
+    check('mover falha: continua ok, com aviso, resumo no terminal', r.ok === true && f.logs.filter((l) => l[1] === 'warn').length === 1 && r.feito.tarefa.movida === false && /G-ABC123/.test(resumoDoLog(f.logs)), JSON.stringify(f.logs.filter((l) => l[1] === 'warn')));
     check('  a mensagem não promete "Em andamento"', !/Em andamento/.test(r.mensagem));
 
-    // Sem id/link de tarefa: não tenta mover nem comentar, e é ok.
+    // Sem id de tarefa: não tenta mover, e é ok.
     f = fakeDeps();
     r = await B.publicarBuscaOne({ ...TAREFA_BC, id: '', link: '' }, f.deps);
-    check('sem tarefa: não mexe no Salesforce', r.ok === true && f.chamadas.moverTarefa.length === 0 && f.chamadas.comentarTarefa.length === 0);
+    check('sem tarefa: não mexe no Salesforce', r.ok === true && f.chamadas.moverTarefa.length === 0);
+  }
+
+  console.log('\n=== Freio de emergência entre as etapas (ADR-133) ===');
+  {
+    // Apertado antes de começar: nada.
+    let f = fakeDeps({ deps: { parar: () => true } });
+    let r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
+    check('freio antes de começar: pula sem fazer nada', r.ok === false && r.pulou === true && f.ordem.length === 0, JSON.stringify(r));
+    // Apertado enquanto as propriedades eram criadas (o caso de 01/10): sem
+    // commit e, principalmente, SEM e-mail.
+    f = fakeDeps();
+    f.deps.parar = () => f.chamadas.criarPropriedades.length > 0;
+    r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
+    check('freio durante as propriedades: nada commitado, nenhum e-mail, tarefa intocada', r.ok === false && r.pulou === true && f.ordem.join() === 'criarPropriedades' && /nenhum e-mail/.test(r.motivo), JSON.stringify({ r, ordem: f.ordem }));
+    // Apertado depois do commit: o e-mail não sai, e o motivo diz que o commit foi.
+    f = fakeDeps();
+    f.deps.parar = () => f.chamadas.commitGeral.length > 0;
+    r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
+    check('freio depois do commit: e-mail não sai, motivo avisa do commit', r.pulou === true && f.ordem.join() === 'criarPropriedades,commitGeral' && /geral\.php já foi commitado/.test(r.motivo), JSON.stringify({ r, ordem: f.ordem }));
+    // Apertado depois do e-mail: a tarefa ainda é movida e o resumo sai (o e-mail saiu; tem que ficar dito).
+    f = fakeDeps();
+    f.deps.parar = () => f.chamadas.enviarEmail.length > 0;
+    r = await B.publicarBuscaOne(TAREFA_BC, f.deps);
+    check('freio depois do e-mail: a tarefa ainda é movida e o resumo sai', r.ok === true && f.chamadas.moverTarefa.length === 1 && /e-mail de vhost enviado/.test(r.mensagem) && /Criação de Vhost/.test(resumoDoLog(f.logs)), JSON.stringify(r));
   }
 
   console.log('\n=== Propriedade que faltou vira pendência ===');
   {
     const google = { ok: true, result: { ...RESULTADO_GOOGLE.result, tagmanager: '', faltando: ['Tag Manager'], reaproveitados: [] } };
-    const { deps, chamadas } = fakeDeps({ google });
+    const { deps, logs } = fakeDeps({ google });
     const r = await B.publicarBuscaOne(TAREFA_BC, deps);
     check('Tag Manager faltando: ok com pendência', r.ok === true && r.pendencias.some((p) => /Tag Manager/.test(p)));
-    check('o registro diz "não criado"', /Tag Manager: não criado \(NÃO criado\)/.test(chamadas.comentarTarefa[0].texto), chamadas.comentarTarefa[0].texto);
+    check('o resumo diz "não criado"', /Tag Manager: não criado \(NÃO criado\)/.test(resumoDoLog(logs)), resumoDoLog(logs));
   }
 
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');

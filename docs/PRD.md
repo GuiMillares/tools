@@ -407,16 +407,30 @@ tenta de novo até três varreduras e aí deixa para a mão.
 | --- | --- | --- | --- |
 | Bloqueio de contatos | `BLOQUEIO DE CONTATOS - {domínio}` / `RETIRAR CONTATOS…` | descobre a marca pelo IP e censura os contatos no /doutor (Busca Cliente, MPI Solutions) ou no painel MPI+ (ADR-116, ADR-121) | fecha a tarefa comentando "Contatos removidos" |
 | Publicação MPI+ | `Publicação (Troca de DNS) [MPI+] - {domínio}` com temporário `cliente.mpitemporario.com.br` | o Publicar MPI+ (4.7) inteiro, sem perguntar: backup do DNS do cliente no lugar da parada, empresa pelo caso/fila (ADR-122, ADR-123) | fecha a tarefa quando o site está no ar (SSL com o vigia, se o DNS demorar) |
-| Publicação Busca One | `Publicação (Troca de DNS) - {domínio}` com temporário `producao.mpitemporario` / `deploy.buscacliente`, ou "Apontado via registro." | a **parte automática** (ADR-132): cria ou acha as propriedades no Google na marca da empresa, commita o `geral.php` no Bitbucket com `$idProjetoBusca` = o "ID xxxx" do comentário da tarefa (MPI Solutions: fixo 39) e manda o e-mail de criação de vhost e banco ao suporte, com o modelo da empresa | a tarefa vai para **Em andamento** no seu nome, com o registro do que foi feito e do que falta; **fica aberta**: vhost, clone no servidor e DNS são manuais |
+| Publicação Busca One | `Publicação (Troca de DNS) - …` com o temporário `deploy.buscaclientes.com.br/{repo}/` (Busca Cliente) ou `producao.mpitemporario.com.br/{repo}/` (MPI Solutions) no comentário, ou "Apontado via registro." | a **parte automática** (ADR-132, ADR-133): cria ou acha as propriedades no Google na marca da empresa, commita o `geral.php` no repositório do Bitbucket com `$idProjetoBusca` = o "ID do painel xxxx" da tarefa (MPI Solutions: fixo 39) e manda o e-mail de criação de vhost e banco ao suporte, com o modelo da empresa | a tarefa vai para **Em andamento** no seu nome e **fica aberta**: vhost, clone no servidor e DNS são manuais. As chaves e o resumo saem no terminal, nunca em comentário no Salesforce (ADR-134) |
 
-Na Busca One, domínio e ID vêm da própria tarefa (título e/ou comentário), e
-a empresa vem do caso, depois da fila, depois do temporário. O destinatário e
-a cópia do e-mail de vhost são editáveis no painel e ficam gravados; o assunto
-("Criação de Vhost e Banco - Busca Cliente - {domínio}", ou "- MPI -") e o
-corpo são fixos, do jeito que a equipe manda. Nada é enviado sem a conta
-Microsoft conectada, o Bitbucket configurado e a service account do Google —
-e, faltando qualquer um, nada é feito (nem as propriedades), para a tarefa
-ser retomada inteira depois.
+Na Busca One, tudo vem da própria tarefa, escrita no modelo combinado com o
+atendimento:
+
+```
+- link temporário: https://deploy.buscaclientes.com.br/ecolifeambiental.eco.br/
+
+ecolifeambiental.eco.br - domínio para ser usado
+ID do painel 4521
+```
+
+O **temporário diz a empresa** (`deploy.buscaclientes` = Busca Cliente,
+`producao.mpitemporario` = MPI Solutions); o que vem **depois da barra é o
+repositório** do Bitbucket, que nem sempre coincide com o domínio; o
+**domínio real é o outro domínio da tarefa** (título ou comentário, fora os
+nossos hosts e os e-mails), e é ele que vai para as propriedades, o
+`geral.php` e o e-mail. Sem temporário, a empresa vem do caso da tarefa e
+depois da fila. O destinatário e a cópia do e-mail de vhost são editáveis no
+painel e ficam gravados; o assunto ("Criação de Vhost e Banco - Busca
+Cliente - {domínio}", ou "- MPI -") e o corpo são fixos, do jeito que a
+equipe manda. Nada é enviado sem a conta Microsoft conectada, o Bitbucket
+configurado e a service account do Google — e, faltando qualquer um, nada é
+feito (nem as propriedades), para a tarefa ser retomada inteira depois.
 
 ## 5. Fora de escopo
 
