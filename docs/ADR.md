@@ -5916,10 +5916,23 @@ mesma consulta sem abrir o Hub:
 2. **Bitbucket depois.** Sem tarefa concluída: o repositório com o nome do
    domínio nas workspaces das marcas (`busca-clientes`, `mpi-solutions`, do
    hub-state), os arquivos `geral.php` e `client.inc.php` onde estiverem (até
-   3 níveis) e os commits que mexeram neles (`/commits?path=`): o mais
-   recente cuja mensagem fala em publicação ("Ajustes para publicação",
-   "[Feat] Publicação"), senão o mais recente. Tarefa aberta no Salesforce
-   entra no detalhe, não decide.
+   3 níveis) e os commits que mexeram neles (`/commits?path=`). Entre eles,
+   **o que pôs as chaves de verdade no arquivo** — o diff do commit
+   (`/diff/{hash}?path=`) com uma linha adicionada `$tagmanager = 'GTM-…'` ou
+   `$idAnalytics = 'G-…'`/`'UA-…'` —, lido do mais antigo para o mais novo e
+   parando no primeiro. Sem nenhum, o mais antigo cuja mensagem fala em
+   publicação ("Ajustes para publicação", "[Feat] Publicação"); sem nenhum,
+   um **palpite** (a primeira mudança no arquivo depois da criação), dito
+   como palpite na resposta e no detalhe. Tarefa aberta no Salesforce entra
+   no detalhe, não decide.
+
+   *Atualização no mesmo dia:* a primeira versão pegava o commit **mais
+   recente** com "publicação" na mensagem, senão o mais recente de todos. Na
+   lista real, quatro sites caíram num commit de manutenção de 22/09/2026
+   ("feat: inclui nova lógica de metrificação dos leads no painel") e um na
+   troca do reCAPTCHA de 29/09/2026; `perinilocacoes.com.br`, anotado à mão
+   como 25/03, saiu como 22/09. Daí a regra por conteúdo. O 429 do Bitbucket
+   (cota por hora) espera o `Retry-After` e repete, até 3 vezes.
 3. **Respostas**: `publicado em dd/mm/aaaa (Salesforce: tarefa de publicação
    concluída)`, `publicado em dd/mm/aaaa (Bitbucket: commit em inc/geral.php)`,
    `sem repositório` (nem tarefa concluída nem repositório) e `não encontrado`

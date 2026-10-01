@@ -27,15 +27,16 @@ function fakeSf({ sosl = [], soql = () => [], falhaCompleted = false } = {}) {
   };
 }
 
-// Bitbucket falso.
-function fakeBb({ repos = {}, arquivos = {}, commits = {} } = {}) {
-  const chamadas = { acharRepo: [], acharArquivos: [], commitsDoArquivo: [] };
+// Bitbucket falso. `diffs[hash]` é o diff daquele commit (vazio = sem chave).
+function fakeBb({ repos = {}, arquivos = {}, commits = {}, diffs = {} } = {}) {
+  const chamadas = { acharRepo: [], acharArquivos: [], commitsDoArquivo: [], diffDoCommit: [] };
   return {
     chamadas,
     workspaces: ['busca-clientes', 'mpi-solutions'],
     async acharRepo(slug) { chamadas.acharRepo.push(slug); return repos[slug] || null; },
     async acharArquivos(repo, nomes) { chamadas.acharArquivos.push(repo.repo); const a = arquivos[repo.repo] || {}; const out = {}; for (const n of nomes) if (a[n]) out[n] = a[n]; return out; },
     async commitsDoArquivo(repo, caminho) { chamadas.commitsDoArquivo.push(caminho); return (commits[repo.repo] || {})[caminho] || []; },
+    async diffDoCommit(repo, hash) { chamadas.diffDoCommit.push(hash); return diffs[hash] || ''; },
   };
 }
 
@@ -50,10 +51,31 @@ function fakeBb({ repos = {}, arquivos = {}, commits = {} } = {}) {
     check('escolherTarefa: a concluída mais recente, as abertas à parte, outras tarefas fora', e.concluida.Id === 'b' && e.abertas.length === 1 && e.abertas[0].Id === 'c', JSON.stringify(e));
   }
   {
-    const cs = [{ hash: '1', date: '2025-03-01T00:00:00+00:00', message: 'Template inicial', arquivo: 'geral.php' }, { hash: '2', date: '2025-03-25T12:00:00+00:00', message: 'Ajustes para publicação', arquivo: 'geral.php' }, { hash: '3', date: '2025-05-02T00:00:00+00:00', message: 'troca chave recaptcha', arquivo: 'geral.php' }];
-    check('escolherCommit prefere o mais recente que fala em publicação', Q.escolherCommit(cs).hash === '2');
-    check('escolherCommit sem mensagem de publicação: o mais recente', Q.escolherCommit(cs.filter((c) => c.hash !== '2')).hash === '3');
+    const cs = [{ hash: '1', date: '2025-03-01T00:00:00+00:00', message: 'Template inicial', arquivo: 'geral.php' }, { hash: '2', date: '2025-03-25T12:00:00+00:00', message: 'Ajustes para publicação', arquivo: 'geral.php' }, { hash: '3', date: '2025-05-02T00:00:00+00:00', message: 'troca chave recaptcha', arquivo: 'geral.php' }, { hash: '4', date: '2026-09-22T00:00:00+00:00', message: 'feat: publicação da nova metrificação', arquivo: 'geral.php' }];
+    check('escolherCommit: o MAIS ANTIGO que fala em publicação (não o de manutenção de 22/09)', Q.escolherCommit(cs).hash === '2' && Q.escolherCommit(cs).criterio === 'mensagem', JSON.stringify(Q.escolherCommit(cs)));
+    const semMsg = cs.filter((c) => c.hash !== '2' && c.hash !== '4');
+    check('escolherCommit sem mensagem de publicação: palpite = a primeira mudança depois da criação', Q.escolherCommit(semMsg).hash === '3' && Q.escolherCommit(semMsg).criterio === 'palpite');
+    check('escolherCommit com um commit só: ele, como palpite', Q.escolherCommit([cs[0]]).hash === '1' && Q.escolherCommit([cs[0]]).criterio === 'palpite');
     check('escolherCommit vazio → null', Q.escolherCommit([]) === null);
+
+    // Conteúdo manda: o commit que pôs as chaves vence a mensagem e a ordem.
+    check('introduzChaves: linha adicionada com GTM-', Q.introduzChaves("--- a\n+++ b\n-$tagmanager = '';\n+$tagmanager = 'GTM-ABC123';"));
+    check('introduzChaves: G- no idAnalytics', Q.introduzChaves("+$idAnalytics = 'G-7HQ2M4XKPL';"));
+    check('introduzChaves: chave vazia ou removida não conta', !Q.introduzChaves("+$tagmanager = '';\n-$tagmanager = 'GTM-OLD';") && !Q.introduzChaves(''));
+    (async () => {})();
+  }
+  {
+    const cs = [{ hash: '1', date: '2025-03-01T00:00:00+00:00', message: 'Template inicial', arquivo: 'geral.php' }, { hash: '2', date: '2025-03-25T12:00:00+00:00', message: 'configuração', arquivo: 'geral.php' }, { hash: '3', date: '2025-05-02T00:00:00+00:00', message: 'Ajustes para publicação (recaptcha)', arquivo: 'geral.php' }];
+    const diffs = { 2: "+$tagmanager = 'GTM-XYZ';", 3: "+$siteKey = '6L';" };
+    const lidos = [];
+    const r = await Q.escolherCommitPorConteudo(cs, async (c) => { lidos.push(c.hash); return diffs[c.hash] || ''; });
+    check('escolherCommitPorConteudo: o commit que pôs o GTM vence a mensagem "publicação" posterior', r.hash === '2' && r.criterio === 'chaves', JSON.stringify(r));
+    check('  lê os diffs do mais antigo ao mais novo e para ao achar', lidos.join() === '1,2');
+    const r2 = await Q.escolherCommitPorConteudo(cs, async () => '');
+    check('  sem chave em nenhum diff: cai na regra da mensagem', r2.hash === '3' && r2.criterio === 'mensagem');
+    const r3 = await Q.escolherCommitPorConteudo(cs, async () => { throw new Error('rede'); });
+    check('  diff que falha conta como vazio', r3.hash === '3');
+    check('  sem função de diff: regra da mensagem', (await Q.escolherCommitPorConteudo(cs, null)).hash === '3');
   }
 
   console.log('\n=== Salesforce: tarefa concluída ===');
@@ -104,13 +126,23 @@ function fakeBb({ repos = {}, arquivos = {}, commits = {} } = {}) {
     const sf = fakeSf({ sosl: [T({ Subject: 'Publicação (Troca de DNS) - y.com.br', IsClosed: false, Status: 'Em andamento', CompletedDateTime: null })], soql: () => [] });
     const bb = fakeBb({ repos, arquivos, commits });
     const r = await Q.quandoPublicou('y.com.br', { sf, bb });
-    check('publicado pelo commit "Ajustes para publicação" do geral.php', r.situacao === 'publicado' && r.fonte === 'bitbucket' && r.quando === '03/12/2025' && /inc\/geral\.php/.test(r.texto), JSON.stringify(r));
+    check('publicado pelo commit "Ajustes para publicação" do geral.php (regra da mensagem, sem diff com chave)', r.situacao === 'publicado' && r.fonte === 'bitbucket' && r.quando === '03/12/2025' && /inc\/geral\.php/.test(r.texto) && r.criterio === 'mensagem', JSON.stringify(r));
     check('cita a tarefa aberta no detalhe', /tarefa de publicação aberta/.test(r.detalhe), r.detalhe);
-    check('procurou os dois arquivos', bb.chamadas.commitsDoArquivo.join() === 'inc/geral.php,inc/client.inc.php');
-    // Sem mensagem de publicação: o commit mais recente dos dois arquivos.
+    check('procurou os dois arquivos e leu os diffs', bb.chamadas.commitsDoArquivo.join() === 'inc/geral.php,inc/client.inc.php' && bb.chamadas.diffDoCommit.length === 3);
+    // Sem mensagem de publicação: palpite = a primeira mudança depois da criação, dito como palpite.
     const bb2 = fakeBb({ repos, arquivos, commits: { 'y.com.br': { 'inc/geral.php': [commits['y.com.br']['inc/geral.php'][1]], 'inc/client.inc.php': commits['y.com.br']['inc/client.inc.php'] } } });
     const r2 = await Q.quandoPublicou('y.com.br', { sf: fakeSf({ soql: () => [] }), bb: bb2 });
-    check('sem "publicação" na mensagem: o commit mais recente (client.inc.php)', r2.quando === '10/12/2025' && /client\.inc\.php/.test(r2.texto), JSON.stringify(r2));
+    check('sem "publicação" na mensagem: palpite (primeira mudança depois da criação), marcado', r2.quando === '10/12/2025' && /client\.inc\.php, palpite/.test(r2.texto) && r2.criterio === 'palpite' && /PALPITE/.test(r2.detalhe), JSON.stringify(r2));
+    // O caso real de 01/10: manutenção de 22/09/2026 por cima; o diff com GTM- é o que vale.
+    const cs = { 'y.com.br': { 'inc/geral.php': [
+      { hash: 'm1', date: '2026-09-22T10:00:00+00:00', message: 'feat: inclui nova lógica de metrificação dos leads no painel' },
+      { hash: 'p1', date: '2026-03-25T10:00:00+00:00', message: 'config' },
+      { hash: 'c0', date: '2026-03-01T10:00:00+00:00', message: 'inicio' },
+    ] } };
+    const bb3 = fakeBb({ repos, arquivos: { 'y.com.br': { 'geral.php': 'inc/geral.php' } }, commits: cs, diffs: { p1: "+$tagmanager = 'GTM-PERINI';\n+$idAnalytics = 'G-123';", m1: "+$leads = true;" } });
+    const r3 = await Q.quandoPublicou('y.com.br', { sf: fakeSf({ soql: () => [] }), bb: bb3 });
+    check('manutenção de 22/09 por cima: vale o commit que pôs o GTM (25/03)', r3.quando === '25/03/2026' && r3.criterio === 'chaves' && /pôs as chaves/.test(r3.detalhe), JSON.stringify(r3));
+    check('  parou de ler diffs ao achar (c0, p1)', bb3.chamadas.diffDoCommit.join() === 'c0,p1', bb3.chamadas.diffDoCommit.join());
   }
 
   console.log('\n=== Sem repositório / não encontrado ===');
@@ -146,6 +178,7 @@ function fakeBb({ repos = {}, arquivos = {}, commits = {} } = {}) {
       if (/repositories\/mpi-solutions\/q\.com\.br\?/.test(url)) return { status: 200, json: { slug: 'q.com.br', mainbranch: { name: 'main' } } };
       if (/\/src\/main\/\?/.test(url)) return { status: 200, json: { values: [{ type: 'commit_directory', path: 'inc' }, { type: 'commit_file', path: 'inc/geral.php' }, { type: 'commit_file', path: 'index.php' }], next: null } };
       if (/\/commits\?path=inc%2Fgeral\.php/.test(url)) return { status: 200, json: { values: [{ hash: 'h1', date: '2025-02-01T00:00:00+00:00', message: 'Ajustes para publicação\n\ndetalhe', author: { raw: 'Ton <ton@x>' } }] } };
+      if (/\/diff\/h1\?path=inc%2Fgeral\.php/.test(url)) return { status: 200, json: null, text: "--- a/inc/geral.php\n+++ b/inc/geral.php\n+$tagmanager = 'GTM-Q';" };
       return { status: 500, json: null };
     };
     const bb = Q.criarBitbucket({ workspaces: ['busca-clientes', 'mpi-solutions'], pedir });
@@ -155,6 +188,8 @@ function fakeBb({ repos = {}, arquivos = {}, commits = {} } = {}) {
     check('acha o geral.php na subpasta e não inventa o client.inc.php', arqs['geral.php'] === 'inc/geral.php' && !arqs['client.inc.php'], JSON.stringify(arqs));
     const cs = await bb.commitsDoArquivo(repo, 'inc/geral.php');
     check('lê os commits do arquivo (primeira linha da mensagem)', cs.length === 1 && cs[0].message === 'Ajustes para publicação' && cs[0].arquivo === 'inc/geral.php' && cs[0].autor === 'Ton <ton@x>', JSON.stringify(cs));
+    const diff = await bb.diffDoCommit(repo, 'h1', 'inc/geral.php');
+    check('lê o diff do commit no arquivo (texto)', /GTM-Q/.test(diff) && Q.introduzChaves(diff), diff);
     check('workspaces vazias são ignoradas', Q.criarBitbucket({ workspaces: ['', ' a '] , pedir }).workspaces.join() === 'a');
     let erro = null;
     try { await Q.criarBitbucket({ workspaces: ['x'], pedir: async () => ({ status: 403, json: null }) }).acharRepo('q.com.br'); } catch (e) { erro = e; }
