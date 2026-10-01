@@ -357,7 +357,8 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
   de deploy do Salesforce, o resumo das suas tarefas (abertas, entregas em
   menos de 24h, sem prazo) e WHOIS/DNS de um domínio (ADR-113, ADR-115). As
   ferramentas ficam na barra lateral; a grade "Automações & scripts" saiu
-  (ADR-127).
+  (ADR-127). O painel flutuante da automação da fila (4.10) aparece em todas
+  as telas.
 - **Terminal de atividade:** painel direito, presente em todas as
   ferramentas. É onde toda chamada de API e todo aviso aparecem. Ver ADR-011.
   Minimiza (vira um trilho fino que conta o que chegou, em vermelho se veio
@@ -391,6 +392,31 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
   e Conceder acesso (a ferramenta 4.4 mora aqui). Em cima, a auditoria de
   credenciais diz o que está gravado nesta máquina, sem revelar valor, e
   "Testar todas" confere as sessões no terminal. Ctrl+S salva.
+
+### 4.10 Automação da fila — painel flutuante
+
+Um monitor que lê a fila de deploy do Salesforce a cada 5 minutos e executa
+sozinho o que já sabe fazer, uma tarefa por vez (ADR-119, ADR-120). Mora num
+painel flutuante no canto da tela, com **três interruptores que começam sempre
+desligados** — um automatizador não religa sozinho ao abrir o app —, "Rodar
+agora" e o freio de emergência, que desliga tudo. Cada tarefa tem o desfecho
+no terminal (feito / pulei, com o motivo / erro), não só o resumo; erro comum
+tenta de novo até três varreduras e aí deixa para a mão.
+
+| Interruptor | Tarefa da fila | O que o Hub faz | Como termina |
+| --- | --- | --- | --- |
+| Bloqueio de contatos | `BLOQUEIO DE CONTATOS - {domínio}` / `RETIRAR CONTATOS…` | descobre a marca pelo IP e censura os contatos no /doutor (Busca Cliente, MPI Solutions) ou no painel MPI+ (ADR-116, ADR-121) | fecha a tarefa comentando "Contatos removidos" |
+| Publicação MPI+ | `Publicação (Troca de DNS) [MPI+] - {domínio}` com temporário `cliente.mpitemporario.com.br` | o Publicar MPI+ (4.7) inteiro, sem perguntar: backup do DNS do cliente no lugar da parada, empresa pelo caso/fila (ADR-122, ADR-123) | fecha a tarefa quando o site está no ar (SSL com o vigia, se o DNS demorar) |
+| Publicação Busca One | `Publicação (Troca de DNS) - {domínio}` com temporário `producao.mpitemporario` / `deploy.buscacliente`, ou "Apontado via registro." | a **parte automática** (ADR-132): cria ou acha as propriedades no Google na marca da empresa, commita o `geral.php` no Bitbucket com `$idProjetoBusca` = o "ID xxxx" do comentário da tarefa (MPI Solutions: fixo 39) e manda o e-mail de criação de vhost e banco ao suporte, com o modelo da empresa | a tarefa vai para **Em andamento** no seu nome, com o registro do que foi feito e do que falta; **fica aberta**: vhost, clone no servidor e DNS são manuais |
+
+Na Busca One, domínio e ID vêm da própria tarefa (título e/ou comentário), e
+a empresa vem do caso, depois da fila, depois do temporário. O destinatário e
+a cópia do e-mail de vhost são editáveis no painel e ficam gravados; o assunto
+("Criação de Vhost e Banco - Busca Cliente - {domínio}", ou "- MPI -") e o
+corpo são fixos, do jeito que a equipe manda. Nada é enviado sem a conta
+Microsoft conectada, o Bitbucket configurado e a service account do Google —
+e, faltando qualquer um, nada é feito (nem as propriedades), para a tarefa
+ser retomada inteira depois.
 
 ## 5. Fora de escopo
 
@@ -486,6 +512,7 @@ o primeiro.
 | Termo | Significado aqui |
 | --- | --- |
 | **Marca / projeto** | Busca Cliente, MPI Solutions ou MPI+. Decide em quais contas do Google o app mexe. Ver ADR-008. |
+| **Busca One** | A plataforma dos sites da Busca Cliente e da MPI Solutions: repositório no Bitbucket, `geral.php`, vhost criado pelo suporte e deploy pelo Guacamole. O contrário de MPI+, que é publicado pelo painel. Ver ADR-132. |
 | **`geral.php`** | Arquivo de configuração no repositório de cada site, onde ficam os IDs de Analytics, GTM, Search Console e as chaves do reCAPTCHA. |
 | **Guacamole** | Terminal web usado para acessar os servidores. Não há SSH direto. |
 | **Slug do repositório** | É sempre o domínio do site (`layoutcenografia.com.br`). |

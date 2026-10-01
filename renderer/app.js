@@ -206,6 +206,10 @@ const state = {
   msTenant: '',
   mail: null, // destinatários e modelos da ferramenta de suspensão
   mailSsl: null, // idem, da ativação de SSL (ADR-057)
+  // Para quem vai o e-mail de vhost da publicação Busca One automática
+  // (ADR-132): { to, cc }. Editado no painel da automação; os modelos de
+  // assunto e corpo são fixos, em lib/busca-one.js.
+  mailVhost: null,
   sslProjeto: 'Busca Cliente', // vira {projeto} no assunto da ativação de SSL
   oauthPending: null, // { url } enquanto o login está aberto esperando o callback
 };
@@ -563,6 +567,7 @@ function saveHubState() {
     brand: state.brand,
     mail: state.mail,
     mailSsl: state.mailSsl,
+    mailVhost: state.mailVhost,
     sslProjeto: state.sslProjeto,
     npSteps: state.npSteps,
     sfTarefasAuto: state.sfTarefasAuto,
@@ -7536,6 +7541,9 @@ async function init() {
     }
     if (hubRes.state.mail) state.mail = hubRes.state.mail;
     if (hubRes.state.mailSsl) state.mailSsl = hubRes.state.mailSsl;
+    if (hubRes.state.mailVhost && typeof hubRes.state.mailVhost === 'object') {
+      state.mailVhost = { to: String(hubRes.state.mailVhost.to || ''), cc: String(hubRes.state.mailVhost.cc || '') };
+    }
     if (SSL_PROJETOS.includes(hubRes.state.sslProjeto)) state.sslProjeto = hubRes.state.sslProjeto;
   }
 

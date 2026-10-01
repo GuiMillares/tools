@@ -5664,6 +5664,110 @@ busca de novo acha pelo cache sem chamar a API. As verificações antigas
 iguais. Quatro defeitos postos de propósito numa cópia (ignorar o cache, o 403
 derrubar a busca, casar só pelo nome, não gravar o cache), os quatro pegos.
 
+## ADR-132 — Publicação Busca One automática: propriedades, geral.php e e-mail de vhost; o resto fica escrito na tarefa
+
+**Status:** aceita — verificada com dependências falsas (`test-busca-one`,
+`test-automacao`, `test-triagem`), no Chromium sem o app.js
+(`test-automacao-browser`) e no `index.html` inteiro com `window.api` falso
+(`test-busca-one-browser`). A primeira rodada contra Google, Bitbucket, Graph
+e Salesforce de verdade fica para o Guilherme ligar o interruptor com uma
+tarefa real na fila.
+
+**Contexto.** A fase 1 da automação (ADR-119, 120, 122) publica sozinha as
+tarefas MPI+ e deixava as de Busca One — `Publicação (Troca de DNS) -
+{domínio}` com temporário `producao.mpitemporario.com.br` (MPI Solutions) ou
+`deploy.buscacliente.com.br` (Busca Cliente), ou só "Apontado via registro." —
+marcadas como "fase 2", sem fazer nada. Busca One é a plataforma dos sites da
+Busca Cliente e da MPI Solutions: o site mora num repositório do Bitbucket
+(slug = domínio), lê as chaves no `geral.php` e é posto no ar por um humano
+depois que o suporte da hospedagem cria o vhost e o banco (clone/pull pelo
+Guacamole, DNS). Pedido do Guilherme em 01/10/2026: quando a tarefa for Busca
+One, **criar e/ou achar as propriedades** (Analytics, Tag Manager etc.),
+**subir no Bitbucket** e **mandar o e-mail de criação de vhost e banco** —
+dois modelos, um por empresa, em que só o domínio muda — e com isso "finalizar
+a parte automática da publicação". O **ID do painel** (`$idProjetoBusca`) vem
+do comentário da tarefa escrito `ID xxxx`; o **domínio**, do título e/ou do
+comentário.
+
+**Decisão.**
+
+1. **Triagem** (`lib/triagem.js`): toda publicação ganha `plataforma`
+   (`mpiplus` | `buscaone`). Busca One: o domínio é o que vem depois do último
+   " - " do assunto, se parecer domínio e não for host nosso; senão, o primeiro
+   host do comentário que não é da infraestrutura (mpitemporario,
+   buscacliente, idealtrends, bitbucket, salesforce, google, m3solutions).
+   `idPainel` por "ID 1234", "ID: 1234", "Id do painel 1234" — comentário
+   antes do assunto, 1 a 6 dígitos, com separador antes do "ID" (nunca o `id=`
+   de uma URL) e nunca 8 dígitos (número de caso). `empresaSugerida` pelo
+   temporário. Elegível = tem domínio; sem domínio, registra uma vez e deixa
+   para a mão, como antes.
+2. **Interruptor próprio** no painel da automação ("Publicação Busca One
+   automática (beta)"), desligado ao abrir como os outros (ADR-120).
+   Desligado, a tarefa **fica na fila** (não é marcada como processada), para
+   quando ligar. O freio de emergência desliga os três.
+3. **Motor** (`lib/busca-one.js`, puro, injetável, testado), com os
+   pré-requisitos conferidos **antes de qualquer efeito** (domínio, empresa,
+   destinatário, drivers; no renderer também service account, credenciais do
+   Bitbucket e conta Microsoft — o que falta aí é erro comum, que o motor
+   repete até o teto, não "desistir"), e a ordem fixa:
+   1. `google:createProject` com as 4 etapas na **marca da empresa** — o mesmo
+      do "Criar propriedades", que reaproveita o que já existe e não duplica
+      (ADR-046, ADR-131);
+   2. `bitbucket:commitGeral` com as 6 chaves e `$idProjetoBusca` = o **fixo da
+      marca** (MPI Solutions é 39, ADR-034; vem do `BRANDS` do renderer, com
+      `ID_PAINEL_FIXO` da lib como reserva) ou o **ID da tarefa**. Sem ID, a
+      variável não entra no commit (o `'xxxx'` do repositório fica) e vira
+      pendência avisada;
+   3. `mail:sendBatch` com o modelo da empresa, pela caixa de quem está
+      logado, salvo em Itens Enviados;
+   4. a tarefa vai para **"Em andamento"** (`salesforce:moverTarefa`, que a
+      assume no nome de quem está logado) e recebe o **registro** do que foi
+      feito (GA, GTM, site key, token do Search Console, ID do painel e sua
+      origem, commit, e-mail) e do que falta, **sem marcar ninguém** — opção
+      `marcar: false`, nova no `salesforce:fecharTarefa`, porque registro
+      parcial não é notícia para o atendimento ("Site publicado" é, ADR-089).
+      A tarefa **não é concluída**: vhost, clone no servidor e DNS continuam
+      manuais, e isso está escrito nela. Alocar para quem está logado e pôr
+      em andamento foi confirmado em 01/10/2026 ("pode alocar para mim e
+      colocar em andamento"). A `secretKey` do reCAPTCHA nunca vai para o
+      feed.
+4. **Empresa**: caso da tarefa → fila → temporário (ADR-123). Quando o
+   temporário discorda do caso, avisa e segue pelo caso. Sem nenhuma das três,
+   desiste de primeira ("publicar à mão").
+5. **Falhas**: propriedades → erro (o motor tenta de novo até 3 vezes; chave
+   da service account inválida desiste); commit → **pendência**, e o fluxo
+   segue para o e-mail (o pedido de vhost não depende do commit); e-mail →
+   erro, porque ele ainda não saiu — repetir 1 e 2 é idempotente (reaproveita
+   e "já estava com esses valores"); mover/comentar a tarefa → só aviso, o
+   registro fica no terminal. O mesmo e-mail só sairia duas vezes por uma
+   tarefa se a resposta do Graph se perdesse depois do envio.
+6. **Destinatário e cópia** do e-mail ficam no painel da automação ("Vhost
+   para" / "Cc"), gravados no hub-state (`mailVhost`); sem edição, valem os
+   do e-mail de ativação de SSL (`suporte@m3solutions.com.br`, cópia
+   `everton.lima@buscacliente.com.br`), confirmados em 01/10/2026: "mesma
+   coisa do SSL".
+   **Assunto e corpo são fixos** em `lib/busca-one.js`, exatamente como a
+   equipe manda (`{dominio}` é a única variável): "Criação de Vhost e Banco -
+   Busca Cliente - {domínio}" / "… - MPI - {domínio}".
+7. **Testes**: `test-triagem` (casos Busca One: domínio do assunto ou do
+   comentário, ID em cada lugar, `id=` e número de caso ignorados),
+   `test-busca-one` (modelos, ordem, ID fixo/da tarefa/ausente, cada falha),
+   `test-automacao` (roteamento por plataforma e interruptor),
+   `test-automacao-browser` (toggle, campos, driver sem app.js) e
+   `test-busca-one-browser` (renderer inteiro com `window.api` falso: state,
+   workspace, ID fixo, mailVhost, ordem das chamadas).
+
+**Consequências.** A parte automática de uma publicação Busca One sai sem
+clique, e o que sobra está escrito na tarefa, que fica em "Em andamento" com
+quem rodou o Hub. O Hub continua não executando deploy (PRD §5). Dois lugares
+sabem o 39 da MPI Solutions (o `BRANDS` do renderer manda; a lib é reserva). O
+corpo da Busca Cliente lista `everton.lima` duas vezes porque o modelo da
+equipe veio assim. A automação não ouve o "ID xxxx" quando ele está só no caso
+(não na tarefa); nesse caso o `geral.php` fica com `'xxxx'` e a pendência diz
+isso.
+
+---
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30

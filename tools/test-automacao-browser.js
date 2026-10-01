@@ -22,6 +22,7 @@ const STUB = `
       tarefas: [
         { id: 'b1', assunto: 'BLOQUEIO DE CONTATOS - a.com.br', descricao: '', fechada: false },
         { id: 'p1', assunto: 'Publicação (Troca de DNS) MPI+ - b.com.br', descricao: 'http://b.mpitemporario.com.br/ https://b.com.br/', fechada: false },
+        { id: 'o1', assunto: 'Publicação (Troca de DNS) - c.com.br', descricao: 'link temporário - http://producao.mpitemporario.com.br/c/ ID 321', fechada: false },
         { id: 'x1', assunto: 'Ligar para o cliente', descricao: '', fechada: false },
       ],
     }; },
@@ -35,6 +36,7 @@ const STUB = `
 const HTML = `<!doctype html><html><head><meta charset="utf-8"></head><body>
 <script>${STUB}</script>
 <script src="../lib/triagem.js"></script>
+<script src="../lib/busca-one.js"></script>
 <script src="../lib/automacao.js"></script>
 <script src="automacao-ui.js"></script>
 </body></html>`;
@@ -64,6 +66,11 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     check('publicação começa DESLIGADA mas habilitada (ADR-122)', await page.evaluate(() => { const p = document.getElementById('autoPub'); return p.disabled === false && p.checked === false; }));
     check('driver de publicação automática exposto (window.hubPublicarTarefaAuto)', await page.evaluate(() => typeof window.hubPublicarTarefaAuto === 'function'));
     check('começa desligado (bloqueio não marcado)', await page.evaluate(() => document.getElementById('autoBloq').checked === false));
+    // Busca One (ADR-132)
+    check('window.BuscaOne exposto', await page.evaluate(() => !!window.BuscaOne && typeof window.BuscaOne.publicarBuscaOne === 'function'));
+    check('Busca One começa DESLIGADA mas habilitada', await page.evaluate(() => { const o = document.getElementById('autoBuscaOne'); return !!o && o.disabled === false && o.checked === false; }));
+    check('driver Busca One exposto (window.hubPublicarBuscaOneAuto)', await page.evaluate(() => typeof window.hubPublicarBuscaOneAuto === 'function'));
+    check('campos do e-mail de vhost com o destinatário padrão (suporte da M3)', await page.evaluate(() => document.getElementById('autoVhostPara').value === 'suporte@m3solutions.com.br' && document.getElementById('autoVhostCc').value === 'everton.lima@buscacliente.com.br'), await page.evaluate(() => document.getElementById('autoVhostPara').value));
 
     // Liga o bloqueio → dispara uma varredura.
     await page.click('#autoBloq');
@@ -82,10 +89,26 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     await page.waitForFunction(() => (window.__logs || []).some((l) => /Publicar MPI\+ não carregada/.test(l[0])), { timeout: 5000 });
     check('ligar publicação chama o driver, que pula sem exceção quando o app.js não está', erros.length === 0, erros.join(' | '));
     check('a tarefa MPI+ b.com.br não foi bloqueada nem fechada por engano', !ch.doutorBloquear.some((x) => x.dominio === 'b.com.br') && (await page.evaluate(() => window.__chamadas.salesforceFecharTarefa.length)) === 1);
+    check('a Busca One c.com.br fica na fila com o interruptor dela desligado', !ch.doutorBloquear.some((x) => x.dominio === 'c.com.br') && !(await page.evaluate(() => (window.__logs || []).some((l) => /app\.js não carregado/.test(l[0])))));
+
+    // Liga a Busca One → o driver dela é chamado para c.com.br; sem o app.js
+    // (state, workspace, ID fixo) ele PULA com elegância, sem exceção e sem
+    // tocar no Salesforce.
+    await page.waitForFunction(() => window.hubAutomacao.estado.rodando === false, { timeout: 5000 });
+    await page.click('#autoBuscaOne');
+    await page.waitForFunction(() => (window.__logs || []).some((l) => /c\.com\.br: pulei — app\.js não carregado/.test(l[0])), { timeout: 5000 });
+    check('ligar Busca One chama o driver dela, que pula sem exceção quando o app.js não está', erros.length === 0, erros.join(' | '));
+    check('a Busca One não mexeu no Salesforce (nada fechado, nada movido)', (await page.evaluate(() => window.__chamadas.salesforceFecharTarefa.length)) === 1);
+    check('o log da varredura anuncia a Busca One com ID do painel e temporário', await page.evaluate(() => (window.__logs || []).some((l) => /Publicação Busca One: c\.com\.br \(temporário producao\.mpitemporario\.com\.br\); ID do painel 321/.test(l[0]))));
+
+    // Editar o destinatário do vhost não quebra sem o app.js (sem state, só memória).
+    await page.fill('#autoVhostPara', 'infra@exemplo.test');
+    await page.dispatchEvent('#autoVhostPara', 'change');
+    check('editar o destinatário do vhost loga e não dá exceção', erros.length === 0 && await page.evaluate(() => (window.__logs || []).some((l) => /E-mail de vhost: para infra@exemplo\.test/.test(l[0]))), erros.join(' | '));
 
     // Freio de emergência desliga tudo.
     await page.click('#autoParar');
-    check('freio de emergência desliga bloqueio e publicação', await page.evaluate(() => document.getElementById('autoBloq').checked === false && document.getElementById('autoPub').checked === false));
+    check('freio de emergência desliga bloqueio, publicação e Busca One', await page.evaluate(() => document.getElementById('autoBloq').checked === false && document.getElementById('autoPub').checked === false && document.getElementById('autoBuscaOne').checked === false));
     const acordado = await page.evaluate(() => window.__chamadas.manterAcordado);
     check('e solta a janela para desacelerar de novo (ADR-126)', JSON.stringify(acordado[acordado.length - 1]) === JSON.stringify([false, 'automacao']), JSON.stringify(acordado));
   } catch (e) {

@@ -2,9 +2,11 @@
 //
 // Carregado por <script> DEPOIS do app.js. Não mexe no corpo do app.js: injeta
 // o próprio controle (um painel flutuante) e usa window.Triagem / window.Automacao
-// (módulos duais) + window.api.* (preload) + window.log (terminal do app, se
-// existir). Começa SEMPRE desligado: um publicador/bloqueador autônomo não deve
-// religar sozinho depois de reiniciar o app.
+// / window.BuscaOne (módulos duais) + window.api.* (preload) + window.log
+// (terminal do app, se existir). Começa SEMPRE desligado: um publicador/
+// bloqueador autônomo não deve religar sozinho depois de reiniciar o app.
+// Três interruptores: bloqueio de contatos, publicação MPI+ (ADR-122) e
+// publicação Busca One (ADR-132).
 (function () {
   'use strict';
   if (!window.Automacao || !window.Triagem) { console.warn('[automação] triagem/automacao não carregados'); return; }
@@ -13,13 +15,34 @@
 
   const INTERVALO_MS = 5 * 60 * 1000;
   const estado = {
-    ligado: { bloqueio: false, publicacao: false },
+    ligado: { bloqueio: false, publicacao: false, buscaone: false },
     rodando: false,
     parar: false,
     processados: new Set(),
     timer: null,
     ultima: null,
+    emailVhost: null, // { to, cc } editados nesta sessão (espelho do state.mailVhost)
   };
+
+  // Para quem vai o e-mail de vhost da Busca One (ADR-132): o que foi editado
+  // no painel (gravado no hub-state como mailVhost); senão o mesmo destino e
+  // cópia do e-mail de ativação de SSL (suporte da M3, cópia para o Everton),
+  // como foi confirmado em 01/10/2026.
+  const VHOST_PADRAO = { to: 'suporte@m3solutions.com.br', cc: 'everton.lima@buscacliente.com.br' };
+  function emailVhostConfig() {
+    if (estado.emailVhost) return estado.emailVhost;
+    const st = typeof state !== 'undefined' && state ? state : null;
+    if (st && st.mailVhost && typeof st.mailVhost === 'object') return { to: String(st.mailVhost.to || ''), cc: String(st.mailVhost.cc || '') };
+    const ssl = (st && st.mailSsl) || (typeof MAIL_MODOS !== 'undefined' && MAIL_MODOS.ssl && MAIL_MODOS.ssl.defaults) || {};
+    return { to: String(ssl.to || VHOST_PADRAO.to), cc: String(ssl.cc != null ? ssl.cc : VHOST_PADRAO.cc) };
+  }
+  function guardarEmailVhost(to, cc) {
+    estado.emailVhost = { to: String(to || '').trim(), cc: String(cc || '').trim() };
+    if (typeof state !== 'undefined' && state) {
+      state.mailVhost = { ...estado.emailVhost };
+      if (typeof saveHubState === 'function') { try { Promise.resolve(saveHubState()).catch(() => {}); } catch (e) {} }
+    }
+  }
 
   // Log: usa o terminal do Hub quando existir; senão, console + o mini-log do
   // painel.
@@ -176,6 +199,77 @@
     }
   };
 
+  // ---------- Driver da publicação Busca One automática (ADR-132) ----------
+  //
+  // Busca Cliente / MPI Solutions: o site mora num repositório do Bitbucket e
+  // é posto no ar por um humano. O que dá para fazer sozinho está em
+  // lib/busca-one.js (puro, testado): propriedades no Google, geral.php
+  // commitado, e-mail de vhost ao suporte, e a tarefa em "Em andamento" com o
+  // registro do que foi feito — ela fica aberta. Aqui é só a cola: as funções
+  // reais (window.api.*) e o que o app.js sabe (service account, credenciais
+  // do Bitbucket, workspace da marca, $idProjetoBusca fixo da marca). Tudo
+  // que pode faltar é conferido ANTES de qualquer efeito.
+  window.hubPublicarBuscaOneAuto = async function hubPublicarBuscaOneAuto(payload) {
+    const p = payload || {};
+    if (!window.BuscaOne || typeof window.BuscaOne.publicarBuscaOne !== 'function') return { ok: false, pulou: true, motivo: 'lib/busca-one.js não carregada' };
+    const faltam = [];
+    if (typeof state === 'undefined') faltam.push('state');
+    if (typeof workspaceForBrand !== 'function') faltam.push('workspaceForBrand');
+    if (typeof normalizeDomain !== 'function') faltam.push('normalizeDomain');
+    if (faltam.length) return { ok: false, pulou: true, motivo: 'app.js não carregado (' + faltam.join(', ') + ')' };
+    if (typeof pub !== 'undefined' && pub && (pub.emAndamento || pub.rodando)) return { ok: false, pulou: true, motivo: 'já há uma publicação em andamento no Hub; tento na próxima varredura' };
+    if (typeof bulkRodando !== 'undefined' && bulkRodando) return { ok: false, pulou: true, motivo: 'o Publicar em massa está rodando; tento na próxima varredura' };
+    const dom = normalizeDomain(p.dominio);
+    if (!dom) return { ok: false, desistir: true, motivo: 'sem domínio final na tarefa' };
+    // Configuração que falta é erro comum (fica para a próxima varredura, até
+    // o teto), não "desistir": arrumar nas Configurações resolve.
+    if (!state.googleSaPath) return { ok: false, motivo: 'service account do Google não configurada (Configurações); as propriedades precisam dela' };
+    if (!state.creds) return { ok: false, motivo: 'Bitbucket não configurado (e-mail e API token, Configurações); o geral.php é commitado lá' };
+    if (!(state.ms && state.ms.connected)) return { ok: false, motivo: 'conta Microsoft não conectada (Configurações); o e-mail de vhost sai pela sua caixa' };
+    const email = emailVhostConfig();
+    if (!window.BuscaOne.listaEmails(email.to).length) return { ok: false, motivo: 'destinatário do e-mail de vhost em branco (painel da automação)' };
+
+    // Empresa e razão social pelo caso da tarefa (ADR-123); a fila e o
+    // temporário são reservas, nessa ordem.
+    const nome = window.BuscaOne.nomeEmpresa;
+    let empresa = null, razao = '', via = '';
+    if (p.link) {
+      const ctx = await window.api.salesforceContexto({ tarefa: p.link }).catch((e) => ({ ok: false, error: e.message }));
+      if (ctx && ctx.log) ctx.log.forEach((l) => log(l.message, l.type));
+      if (ctx && ctx.ok) {
+        razao = ctx.razao || '';
+        if (ctx.empresa) { empresa = ctx.empresa; via = ctx.via || 'caso da tarefa'; }
+      } else if (ctx && ctx.reauth) {
+        return { ok: false, motivo: 'Salesforce pede reconexão (Configurações); tento de novo depois' };
+      }
+    }
+    if (!empresa && (p.empresa === 'bc' || p.empresa === 'mpisolutions')) { empresa = p.empresa; via = 'fila da tarefa'; }
+    if (!empresa && (p.empresaSugerida === 'bc' || p.empresaSugerida === 'mpisolutions')) { empresa = p.empresaSugerida; via = 'temporário ' + (p.temporario || ''); }
+    if (empresa) {
+      log(`${dom}: empresa ${nome(empresa)} (pelo ${via})${razao ? '; razão social ' + razao : ''}.`, 'info');
+      if (p.empresaSugerida && p.empresaSugerida !== empresa) log(`${dom}: o temporário ${p.temporario || ''} sugere ${nome(p.empresaSugerida)}, mas o ${via} diz ${nome(empresa)}; seguindo pelo ${via}.`, 'warn');
+    }
+
+    // As respostas do processo principal trazem o log de cada chamada: vai
+    // tudo para o terminal, como nas ferramentas manuais.
+    const encaminha = (r) => { if (r && Array.isArray(r.log)) r.log.forEach((l) => log(l.message, l.type)); return r; };
+    const deps = {
+      log,
+      email,
+      idPainelFixo: (emp) => (typeof fixedPanelId === 'function' ? fixedPanelId(emp) : ''),
+      criarPropriedades: (q) => window.api.createGoogleProject({ domain: q.domain, saPath: state.googleSaPath, brand: q.brand, steps: q.steps }).then(encaminha),
+      commitGeral: (q) => window.api.commitGeralPhp({ repo: q.repo, brand: q.brand, workspace: workspaceForBrand(q.brand), values: q.values, creds: state.creds }).then(encaminha),
+      enviarEmail: (q) => window.api.sendMailBatch(q).then(encaminha),
+      moverTarefa: (q) => window.api.salesforceMoverTarefa(q).then(encaminha),
+      comentarTarefa: (q) => window.api.salesforceFecharTarefa(q).then(encaminha),
+    };
+    try {
+      return await window.BuscaOne.publicarBuscaOne({ ...p, dominio: dom, empresa, razao }, deps);
+    } catch (e) {
+      return { ok: false, motivo: e && e.message ? e.message : String(e) };
+    }
+  };
+
   async function publicar(payload) {
     return window.hubPublicarTarefaAuto(payload);
   }
@@ -188,11 +282,12 @@
     bloquearPainel: (p) => window.api.bloquearPainel(p),
     fecharTarefa: (p) => window.api.salesforceFecharTarefa(p),
     publicar,
+    publicarBuscaOne: (p) => window.hubPublicarBuscaOneAuto(p),
   };
 
   async function rodarVarredura(manual) {
     if (estado.rodando) { if (manual) log('Automação: já está rodando uma varredura.', 'warn'); return; }
-    if (!estado.ligado.bloqueio && !estado.ligado.publicacao) { if (manual) log('Automação: nada ligado (ligue Bloqueio e/ou Publicação).', 'warn'); return; }
+    if (!estado.ligado.bloqueio && !estado.ligado.publicacao && !estado.ligado.buscaone) { if (manual) log('Automação: nada ligado (ligue Bloqueio, Publicação MPI+ e/ou Publicação Busca One).', 'warn'); return; }
     // Leve em 2º plano (ADR-124): com uma publicação ou o Publicar em massa
     // rodando, a varredura só empilharia trabalho e consultas. Pula a rodada.
     const ocupado = (typeof pub !== 'undefined' && pub && (pub.emAndamento || pub.rodando)) || (typeof bulkRodando !== 'undefined' && bulkRodando);
@@ -232,7 +327,7 @@
     window.api.manterAcordado(false, 'automacao').catch(() => {});
   }
   function revisarTimer() {
-    if (estado.ligado.bloqueio || estado.ligado.publicacao) ligarTimer(); else desligarTimer();
+    if (estado.ligado.bloqueio || estado.ligado.publicacao || estado.ligado.buscaone) ligarTimer(); else desligarTimer();
   }
 
   // ---------- Painel flutuante ----------
@@ -251,11 +346,22 @@
     if (!painel) return;
     const b = painel.querySelector('#autoBloq');
     const p = painel.querySelector('#autoPub');
+    const o = painel.querySelector('#autoBuscaOne');
     const st = painel.querySelector('#autoStatus');
     if (b) b.checked = estado.ligado.bloqueio;
     if (p) p.checked = estado.ligado.publicacao;
+    if (o) o.checked = estado.ligado.buscaone;
+    // Os campos do e-mail de vhost seguem a configuração (o hub-state chega
+    // depois de o painel nascer) enquanto ninguém os editou nem está neles.
+    if (!estado.emailVhost) {
+      const cfg = emailVhostConfig();
+      for (const [id, valor] of [['#autoVhostPara', cfg.to], ['#autoVhostCc', cfg.cc]]) {
+        const campo = painel.querySelector(id);
+        if (campo && document.activeElement !== campo && campo.value !== valor) campo.value = valor;
+      }
+    }
     if (st) {
-      const on = estado.ligado.bloqueio || estado.ligado.publicacao;
+      const on = estado.ligado.bloqueio || estado.ligado.publicacao || estado.ligado.buscaone;
       st.textContent = estado.rodando ? 'rodando…' : on ? `ligado · monitor a cada 5 min${estado.ultima ? ` · última: ${estado.ultima.feitas}✓ ${estado.ultima.puladas}↷ ${estado.ultima.erros}✗` : ''}` : 'desligado';
       st.style.color = estado.rodando ? '#22F2EF' : on ? '#5EE970' : '#9fb9ad';
     }
@@ -273,6 +379,11 @@
       '<div id="autoBody">',
       '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="autoBloq"><span>Bloqueio de contatos automático</span></label>',
       '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer" title="Tarefa de publicação MPI+ na fila: acha o contrato no painel, faz backup do DNS do cliente, aplica DNS, aprova, publica, SSL, tags, planilha e fecha a tarefa"><input type="checkbox" id="autoPub"><span>Publicação MPI+ automática <em style="color:#e9b84a;font-style:normal">(beta)</em></span></label>',
+      '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer" title="Tarefa de publicação Busca One (Busca Cliente / MPI Solutions) na fila: cria ou acha as propriedades no Google, commita o geral.php no Bitbucket (ID do painel pelo “ID xxxx” da tarefa), manda o e-mail de vhost ao suporte e registra na tarefa, que vai para Em andamento e fica aberta: vhost, clone no servidor e DNS continuam manuais"><input type="checkbox" id="autoBuscaOne"><span>Publicação Busca One automática <em style="color:#e9b84a;font-style:normal">(beta)</em></span></label>',
+      '  <div id="autoVhost" style="margin:0 0 4px 24px;display:grid;gap:4px;color:#9fb9ad" title="Para quem vai o pedido de vhost e banco da Busca One. Fica gravado nesta máquina.">',
+      '    <label style="display:flex;align-items:center;gap:6px"><span style="width:62px;flex:none">Vhost para</span><input id="autoVhostPara" type="text" spellcheck="false" style="flex:1;min-width:0;background:#07130f;border:1px solid rgba(94,233,112,.25);color:#dcefe4;border-radius:6px;padding:3px 6px;font:11px ui-monospace,Consolas,monospace"></label>',
+      '    <label style="display:flex;align-items:center;gap:6px"><span style="width:62px;flex:none">Cc</span><input id="autoVhostCc" type="text" spellcheck="false" style="flex:1;min-width:0;background:#07130f;border:1px solid rgba(94,233,112,.25);color:#dcefe4;border-radius:6px;padding:3px 6px;font:11px ui-monospace,Consolas,monospace"></label>',
+      '  </div>',
       '  <div style="display:flex;gap:6px;margin:10px 0 6px">',
       '    <button id="autoRodar" style="flex:1;background:#123;border:1px solid rgba(34,242,239,.4);color:#22F2EF;border-radius:8px;padding:6px;cursor:pointer">Rodar agora</button>',
       '    <button id="autoParar" style="flex:1;background:#210f0f;border:1px solid rgba(255,107,107,.4);color:#ff6b6b;border-radius:8px;padding:6px;cursor:pointer">Parar</button>',
@@ -286,8 +397,19 @@
 
     painel.querySelector('#autoBloq').addEventListener('change', (e) => { estado.ligado.bloqueio = e.target.checked; revisarTimer(); atualizarPainel(); log(`Bloqueio automático ${e.target.checked ? 'LIGADO' : 'desligado'}.`, e.target.checked ? 'success' : 'info'); if (e.target.checked) rodarVarredura(false); });
     painel.querySelector('#autoPub').addEventListener('change', (e) => { estado.ligado.publicacao = e.target.checked; revisarTimer(); atualizarPainel(); log(`Publicação MPI+ automática ${e.target.checked ? 'LIGADA (beta): tarefas de publicação MPI+ da fila serão publicadas sozinhas, com backup do DNS antes de aplicar' : 'desligada'}.`, e.target.checked ? 'success' : 'info'); if (e.target.checked) rodarVarredura(false); });
+    painel.querySelector('#autoBuscaOne').addEventListener('change', (e) => {
+      estado.ligado.buscaone = e.target.checked; revisarTimer(); atualizarPainel();
+      const cfg = emailVhostConfig();
+      log(`Publicação Busca One automática ${e.target.checked ? `LIGADA (beta): tarefas de publicação Busca Cliente / MPI Solutions da fila ganham propriedades no Google, geral.php commitado e e-mail de vhost para ${cfg.to || '(destinatário em branco!)'}; a tarefa vai para Em andamento e fica aberta` : 'desligada'}.`, e.target.checked ? 'success' : 'info');
+      if (e.target.checked) rodarVarredura(false);
+    });
+    const vhostPara = painel.querySelector('#autoVhostPara');
+    const vhostCc = painel.querySelector('#autoVhostCc');
+    const gravarVhost = () => { guardarEmailVhost(vhostPara.value, vhostCc.value); log(`E-mail de vhost: para ${vhostPara.value.trim() || '(em branco)'}${vhostCc.value.trim() ? ', cc ' + vhostCc.value.trim() : ''}.`, 'info'); };
+    vhostPara.addEventListener('change', gravarVhost);
+    vhostCc.addEventListener('change', gravarVhost);
     painel.querySelector('#autoRodar').addEventListener('click', () => rodarVarredura(true));
-    painel.querySelector('#autoParar').addEventListener('click', () => { estado.parar = true; desligarTimer(); estado.ligado.bloqueio = false; estado.ligado.publicacao = false; atualizarPainel(); log('Automação: PARADA (freio de emergência). Tudo desligado.', 'warn'); });
+    painel.querySelector('#autoParar').addEventListener('click', () => { estado.parar = true; desligarTimer(); estado.ligado.bloqueio = false; estado.ligado.publicacao = false; estado.ligado.buscaone = false; atualizarPainel(); log('Automação: PARADA (freio de emergência). Tudo desligado.', 'warn'); });
     let min = false;
     painel.querySelector('#autoMin').addEventListener('click', () => { min = !min; painel.querySelector('#autoBody').style.display = min ? 'none' : 'block'; painel.querySelector('#autoMin').textContent = min ? '+' : '–'; });
     atualizarPainel();
@@ -295,6 +417,9 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montarPainel);
   else montarPainel();
+  // O hub-state (com o mailVhost gravado) chega depois de o painel nascer: uma
+  // atualização única, mais tarde, põe o destinatário certo nos campos.
+  setTimeout(atualizarPainel, 3000);
 
   // Exposto para depuração/uso externo.
   window.hubAutomacao = { rodar: () => rodarVarredura(true), estado };

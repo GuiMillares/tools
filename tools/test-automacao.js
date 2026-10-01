@@ -11,7 +11,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
 
 // Fábrica de deps falsas, registrando as chamadas.
 function fakeDeps(over = {}) {
-  const chamadas = { resolverMarca: [], bloquear: [], fecharTarefa: [], publicar: [] };
+  const chamadas = { resolverMarca: [], bloquear: [], fecharTarefa: [], publicar: [], publicarBuscaOne: [] };
   const deps = {
     log: () => {},
     ligado: { bloqueio: true, publicacao: true },
@@ -19,6 +19,7 @@ function fakeDeps(over = {}) {
     bloquear: async (p) => { chamadas.bloquear.push(p); return over.bloquear || { ok: true, empresa: 'CLIENTE' }; },
     fecharTarefa: async (p) => { chamadas.fecharTarefa.push(p); return over.fechar || { ok: true }; },
     publicar: async (p) => { chamadas.publicar.push(p); return over.publicar || { ok: true, dominio: p.dominio }; },
+    publicarBuscaOne: async (p) => { chamadas.publicarBuscaOne.push(p); return over.publicarBuscaOne || { ok: true, dominio: p.dominio }; },
     ...over.deps,
   };
   return { deps, chamadas };
@@ -91,7 +92,7 @@ function fakeDeps(over = {}) {
     let res = await A.varrerFila(dados, deps, { processados });
     check('processa o bloqueio e a publicação elegível', res.some((r) => r.tipo === 'bloqueio' && r.ok) && res.some((r) => r.tipo === 'publicacao' && r.ok), JSON.stringify(res.map((r) => r.id + ':' + r.tipo)));
     check('constrói o link da tarefa a partir da instância', chamadas.fecharTarefa[0].link === 'https://sf/lightning/r/Task/b1/view', chamadas.fecharTarefa[0].link);
-    check('a Busca One (não elegível) NÃO publica e fica marcada', chamadas.publicar.length === 1 && processados.has('p2'));
+    check('a Busca One NÃO vai para o driver MPI+ e, com o interruptor dela desligado, fica na fila (não marcada)', chamadas.publicar.length === 1 && chamadas.publicarBuscaOne.length === 0 && !processados.has('p2'));
     check('ignora tarefa que não é publicação nem bloqueio', !res.some((r) => r.id === 'x1'));
     check('não mexe em tarefa fechada', !res.some((r) => r.id === 'f1'));
 
@@ -111,6 +112,56 @@ function fakeDeps(over = {}) {
     const jaFeito = new Set(['b1', 'p1']);
     res = await A.varrerFila(dados, deps, { processados: jaFeito });
     check('não repete tarefas já processadas', chamadas.bloquear.length === 0 && chamadas.publicar.length === 0);
+  }
+
+  console.log('\n=== Publicação Busca One (ADR-132) ===');
+  {
+    const filas = [{ id: 'Q_BC', nome: 'Deploy Busca Cliente', marca: 'bc' }, { id: 'Q_MPI', nome: 'Deploy MPI Solutions', marca: 'mpisolutions' }];
+    const dados = {
+      instancia: 'https://sf', filas,
+      tarefas: [
+        { id: 'o1', fila: 'Q_MPI', assunto: 'Publicação (Troca de DNS) - c.com.br', descricao: 'link temporário - http://producao.mpitemporario.com.br/c/\nID 321', fechada: false },
+        { id: 'o2', assunto: 'Publicação (Troca de DNS) - Padaria do Zé', descricao: 'Apontado via registro.', fechada: false }, // sem domínio
+        { id: 'p1', assunto: 'Publicação (Troca de DNS) MPI+ - b.com.br', descricao: 'http://b.mpitemporario.com.br/ https://b.com.br/', fechada: false },
+      ],
+    };
+
+    // Só a Busca One ligada: a MPI+ fica na fila.
+    let { deps, chamadas } = fakeDeps();
+    deps.ligado = { bloqueio: false, publicacao: false, buscaone: true };
+    let processados = new Set();
+    let res = await A.varrerFila(dados, deps, { processados });
+    check('Busca One ligada: chama o driver dela com domínio, ID do painel, temporário e empresa da fila', chamadas.publicarBuscaOne.length === 1 && chamadas.publicarBuscaOne[0].dominio === 'c.com.br' && chamadas.publicarBuscaOne[0].idPainel === '321' && chamadas.publicarBuscaOne[0].temporario === 'producao.mpitemporario.com.br' && chamadas.publicarBuscaOne[0].empresa === 'mpisolutions' && chamadas.publicarBuscaOne[0].empresaSugerida === 'mpisolutions', JSON.stringify(chamadas.publicarBuscaOne));
+    check('  leva id e link da tarefa', chamadas.publicarBuscaOne[0].id === 'o1' && chamadas.publicarBuscaOne[0].link === 'https://sf/lightning/r/Task/o1/view');
+    check('  a MPI+ não roda com só a Busca One ligada', chamadas.publicar.length === 0 && !processados.has('p1'));
+    check('  sucesso marca a tarefa como processada', processados.has('o1') && res.some((r) => r.id === 'o1' && r.ok));
+    check('  Busca One sem domínio: registra e marca, sem chamar o driver', processados.has('o2') && !chamadas.publicarBuscaOne.some((p) => p.id === 'o2'));
+
+    // Só a MPI+ ligada: a Busca One fica na fila.
+    ({ deps, chamadas } = fakeDeps());
+    deps.ligado = { bloqueio: false, publicacao: true, buscaone: false };
+    processados = new Set();
+    await A.varrerFila(dados, deps, { processados });
+    check('só MPI+ ligada: Busca One não roda e não é marcada', chamadas.publicarBuscaOne.length === 0 && !processados.has('o1') && chamadas.publicar.length === 1);
+
+    // Sem o driver: pula sem exceção.
+    ({ deps, chamadas } = fakeDeps({ deps: { publicarBuscaOne: undefined } }));
+    deps.ligado = { buscaone: true };
+    const tri = require(path.join(__dirname, '..', 'lib', 'triagem')).triar(dados.tarefas[0]);
+    const r = await A.processarPublicacao({ ...dados.tarefas[0], link: '' }, tri, deps);
+    check('sem driver Busca One: pula com motivo', r.pulou === true && /Busca One/.test(r.motivo), JSON.stringify(r));
+
+    // Desistir e tentativas valem igual para a Busca One.
+    ({ deps } = fakeDeps({ publicarBuscaOne: { ok: false, desistir: true, motivo: 'sem empresa' } }));
+    deps.ligado = { buscaone: true };
+    processados = new Set();
+    await A.varrerFila(dados, deps, { processados });
+    check('desistir marca a Busca One como processada', processados.has('o1'));
+    ({ deps } = fakeDeps({ publicarBuscaOne: { ok: false, motivo: 'e-mail não saiu' } }));
+    deps.ligado = { buscaone: true };
+    processados = new Set(); const tent = new Map();
+    await A.varrerFila(dados, deps, { processados, tentativas: tent });
+    check('erro comum conta tentativa e não marca', !processados.has('o1') && tent.get('o1') === 1);
   }
 
   console.log('\n=== Empresa pela fila da tarefa (ADR-122) ===');
