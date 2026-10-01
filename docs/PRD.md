@@ -224,6 +224,10 @@ Para os domínios que não estão com a gente, um botão consulta o **histórico
 DNS** (ADR-026) e mostra em que período o domínio esteve em nossas faixas. É
 opcional, sob demanda, e depende de uma chave de API.
 
+O formulário (Para, Cc, Assunto, Corpo, Domínios, "Verificar apontamento") é
+uma coluna só, como o mockup da v2.4 (ADR-137); a de Ativar SSL (4.9) é a
+mesma tela com o seletor de projeto.
+
 ### 4.6 Publicar em massa — `google`
 
 Uma planilha de sites da MPI+ e, por site, as duas coisas na ordem que a
@@ -392,6 +396,9 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
   e Conceder acesso (a ferramenta 4.4 mora aqui). Em cima, a auditoria de
   credenciais diz o que está gravado nesta máquina, sem revelar valor, e
   "Testar todas" confere as sessões no terminal. Ctrl+S salva.
+- **Sessão do Salesforce:** conectada uma vez, renova-se sozinha enquanto o
+  Hub estiver aberto, inclusive na primeira chamada da manhã (ADR-136); só
+  pede reconexão se o Salesforce revogar o acesso.
 
 ### 4.10 Automação da fila — painel flutuante
 
@@ -431,6 +438,26 @@ Cliente - {domínio}", ou "- MPI -") e o corpo são fixos, do jeito que a
 equipe manda. Nada é enviado sem a conta Microsoft conectada, o Bitbucket
 configurado e a service account do Google — e, faltando qualquer um, nada é
 feito (nem as propriedades), para a tarefa ser retomada inteira depois.
+
+### 4.11 Quando publicou — `hosting`
+
+Uma lista de domínios (colada ou planilha) e, para cada um, **quando o site
+foi publicado**, numa linha copiável (ADR-135):
+
+1. **Salesforce**: a tarefa de publicação **concluída** que cita o domínio
+   (assunto ou comentários), com a data de conclusão. Sem tarefa que cite o
+   domínio, a conta do cliente e as tarefas de publicação dos casos dela,
+   para quem trocou de domínio.
+2. **Bitbucket**, sem tarefa concluída: o repositório com o nome do domínio e
+   o commit que mexeu no `geral.php` ou no `client.inc.php`, de preferência o
+   que fala em publicação.
+
+Respostas: `publicado em dd/mm/aaaa (Salesforce: …)` ou `(Bitbucket: commit
+em …)`, `sem repositório`, `não encontrado`. A tela mostra o detalhe (tarefa e
+caso, conta, ou commit e hash), copia tudo como "domínio - resposta" e salva
+`.xlsx`. Com o Salesforce desconectado, consulta só o Bitbucket e avisa. A
+mesma consulta roda fora do Hub, sob o Electron, com
+`tools/quando-publicou.js`.
 
 ## 5. Fora de escopo
 

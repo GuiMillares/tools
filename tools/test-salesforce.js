@@ -105,6 +105,22 @@ const sf = (token = 'TOKEN123') => criarSalesforce('https://grupo-ideal-trends.m
   try { await sf().consultar('SELECT Id FROM Task'); } catch (e) { e3 = e; }
   check('sessão vencida é reconhecida para renovar', e3 instanceof SalesforceErro && e3.sessaoInvalida === true, e3 && e3.message);
 
+  // ADR-136: o /services/oauth2/userinfo responde 403 Bad_OAuth_Token para o
+  // token vencido (a REST responde 401). Era isso que "deslogava" o Hub toda
+  // manhã: 403 virava "reconecte" em vez de renovar.
+  rede.responder = () => ({ status: 403, json: { raw: 'Bad_OAuth_Token' } });
+  let e4 = null;
+  try { await sf().identidade(); } catch (e) { e4 = e; }
+  check('403 Bad_OAuth_Token no userinfo é sessão vencida (renova)', e4 instanceof SalesforceErro && e4.status === 403 && e4.sessaoInvalida === true, e4 && e4.message);
+  rede.responder = () => ({ status: 403, json: { raw: '' } });
+  let e5 = null;
+  try { await sf().identidade(); } catch (e) { e5 = e; }
+  check('403 no userinfo sem corpo também é sessão vencida', e5 && e5.sessaoInvalida === true, e5 && e5.message);
+  rede.responder = () => ({ status: 403, json: [{ errorCode: 'INSUFFICIENT_ACCESS', message: 'sem permissão' }] });
+  let e6 = null;
+  try { await sf().consultar('SELECT Id FROM Task'); } catch (e) { e6 = e; }
+  check('403 de permissão numa consulta NÃO é sessão vencida', e6 && e6.status === 403 && e6.sessaoInvalida === false, e6 && e6.message);
+
   console.log('\n=== Criação em lote: 200 por chamada, e uma linha ruim não derruba as outras ===');
   rede.chamadas.length = 0;
   rede.responder = (p) => ({ status: 200, json: (p.corpo.records || []).map((r, i) => (i === 1 ? { success: false, errors: [{ message: 'deu ruim' }] } : { id: 'T' + i, success: true })) });

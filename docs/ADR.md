@@ -5888,6 +5888,109 @@ aviso, este era registro.
 
 ---
 
+## ADR-135 — "Quando publicou": a data pela tarefa concluída no Salesforce, senão pelo commit do geral.php / client.inc.php
+
+**Contexto.** Pedido de 01/10/2026, com uma lista de ~80 domínios: "preciso
+descobrir pelo Salesforce e/ou Bitbucket quando foi publicado; pelo Salesforce
+ele tem que achar a tarefa de publicação com status concluído; se não achar,
+procurar no Bitbucket pelo domínio e pelo commit no geral.php e/ou
+client.inc.php; ao achar um ou outro, 'publicado em'; sem repositório; não
+encontrado". Parte da lista vinha anotada à mão ("domínio correto X dia
+03/08", "trocou o domínio", "não achei tarefa"), o que diz duas coisas: o
+domínio da tarefa nem sempre é o da lista (cliente trocou de domínio), e a
+resposta tem que ser uma linha por domínio, copiável.
+
+**Decisão.** Uma ferramenta nova, **Quando publicou** (`lib/quando-publicou.js`
+puro; `publicacao:quando` no processo principal; tela de lista na sidebar), e
+um executor de linha de comando (`tools/quando-publicou.js`) para rodar a
+mesma consulta sem abrir o Hub:
+
+1. **Salesforce primeiro.** Busca global (SOSL) pelo domínio — enxerga assunto
+   e comentários (ADR-097) — e, entre as tarefas que citam o domínio de
+   verdade (`textoTemDominio`), a de publicação (`/publica/i` no assunto)
+   **concluída** mais recente. A data é `CompletedDateTime` (sem o campo, a
+   última modificação). Sem tarefa que cite o domínio, a **reserva é a conta**
+   (`acharContaPorDominio`, ADR-117) e as tarefas de publicação dos casos
+   dela: foi assim que `vidracarianovaebenezer.com.br` achou a tarefa de
+   `vidrosealuminios.com.br` (03/08/2026), exatamente a anotação à mão.
+2. **Bitbucket depois.** Sem tarefa concluída: o repositório com o nome do
+   domínio nas workspaces das marcas (`busca-clientes`, `mpi-solutions`, do
+   hub-state), os arquivos `geral.php` e `client.inc.php` onde estiverem (até
+   3 níveis) e os commits que mexeram neles (`/commits?path=`): o mais
+   recente cuja mensagem fala em publicação ("Ajustes para publicação",
+   "[Feat] Publicação"), senão o mais recente. Tarefa aberta no Salesforce
+   entra no detalhe, não decide.
+3. **Respostas**: `publicado em dd/mm/aaaa (Salesforce: tarefa de publicação
+   concluída)`, `publicado em dd/mm/aaaa (Bitbucket: commit em inc/geral.php)`,
+   `sem repositório` (nem tarefa concluída nem repositório) e `não encontrado`
+   (repositório sem esses arquivos ou sem commit neles). A tela mostra uma
+   linha por domínio com o detalhe (tarefa, caso, conta ou commit e hash),
+   copia tudo como "domínio - resposta" e salva `.xlsx`.
+4. **Fora do Hub.** As credenciais estão no `safeStorage`, que só o Electron
+   abre: o executor roda sob o Electron (`node_modules\.bin\electron
+   tools\quando-publicou.js lista.txt saida.xlsx`), num perfil temporário com
+   a cópia do "Local State" (é de lá que o safeStorage tira a chave no
+   Windows), sem tocar no perfil do Hub aberto; o token do Salesforce, se
+   vencido, é renovado só na memória do processo.
+
+**Consequências.** `test-quando-publicou` cobre as escolhas (tarefa concluída
+x aberta, commit de publicação x mais recente, org sem CompletedDateTime,
+reserva pela conta, sem repositório, não encontrado, 403 = permissão) e o
+cliente do Bitbucket com `pedir()` falso. A lista de 01/10 (80 domínios)
+rodou pelo executor: as anotações à mão bateram com o que o Hub achou. A
+busca global é aproximada e o `textoTemDominio` é o filtro: tarefa de
+"outrodominio.com.br" não conta. O Hub continua não gerenciando propriedades
+nem repositórios; só lê.
+
+---
+
+## ADR-136 — Sessão do Salesforce: 403 no userinfo é token vencido, renova em vez de pedir reconexão
+
+**Contexto.** "Enquanto o Hub estiver aberto ele não deslogar do Salesforce"
+(01/10/2026). O log mostrou o que era o "deslogar": toda manhã, na primeira
+chamada (`GET /services/oauth2/userinfo`, o "quem sou eu" da home e da fila),
+`HTTP 403` e o aviso "reconecte nas configurações" — 30/09 às 08:25, 01/10 às
+08:53, e uma rajada de 23 em 2 s em 28/09 às 16:11, depois de um tempo
+parado. O Hub renova a sessão sozinho (`sfComSessao` → `sfRenovar` com o
+refresh token) quando a API responde **401 INVALID_SESSION_ID**; mas o
+endpoint `userinfo` responde **403 Bad_OAuth_Token** para o mesmo token
+vencido, e 403 era tratado como "sem permissão, reconecte" (ADR-093). Nunca
+chegava a renovar.
+
+**Decisão.** `ehSessaoInvalida` (lib/salesforce.js) passa a considerar
+sessão vencida também o **403 com `Bad_OAuth_Token` no corpo, ou qualquer 403
+em `/services/oauth2/userinfo`**; 403 numa consulta REST continua sendo
+permissão (não renova). Com isso o `sfComSessao` renova e repete, e a manhã
+começa conectada. Não há temporizador de "manter vivo": a renovação sob
+demanda já cobre, e um timer seria mais uma coisa rodando com o Hub parado
+(ADR-126). Se um dia o refresh token for revogado, aí sim o Hub pede
+reconexão, como antes.
+
+**Consequências.** `test-salesforce` cobre os três casos (403
+Bad_OAuth_Token no userinfo, 403 sem corpo no userinfo, 403 de permissão numa
+consulta). A ADR-093 continua valendo para o 403 que não é token vencido.
+
+---
+
+## ADR-137 — Suspensão / Ativação SSL: o formulário em uma coluna, como o mockup
+
+**Contexto.** 01/10/2026, com a tela aberta: "arruma isso também, ele está
+quebrado". A tela de suspensão (e a de SSL, que é a mesma) estava com os
+campos num grid de duas colunas (`grid-2`), com rótulos técnicos ("Destinatário
+(Para) · dest", "Template de assunto · tags", "Corpo do e-mail · plain text"),
+o campo de domínios espremido na coluna da esquerda com a da direita vazia, e
+um botão "Verificar apontamento e preparar e-mails" com linha de "timeout /
+safe dispatch". O mockup da v2.4 (`ssl-1.png`) é uma coluna só: Projeto, Para,
+Cc, Assunto, Corpo, Domínios (grande) e "Verificar apontamento".
+
+**Decisão.** O formulário segue o mockup: uma coluna, rótulos curtos (Para,
+Cc, Assunto, Corpo, Domínios), domínios com 8 linhas, botão "Verificar
+apontamento". Nada muda no comportamento (os ids dos campos e o fluxo são os
+mesmos); o harness de preview (`tools/preview.js`) continua sem erro de
+console nas duas telas.
+
+---
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30

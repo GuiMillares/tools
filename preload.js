@@ -99,6 +99,8 @@ contextBridge.exposeInMainWorld('api', {
   salesforceContaPorDominio: (payload) => ipcRenderer.invoke('salesforce:contaPorDominio', payload),
   salesforceContexto: (payload) => ipcRenderer.invoke('salesforce:contexto', payload),
   checarOuvidoria: (payload) => ipcRenderer.invoke('salesforce:ouvidoria', payload),
+  // Quando foi publicado (ADR-135): tarefa concluída no Salesforce, senão commit no Bitbucket.
+  quandoPublicou: (payload) => ipcRenderer.invoke('publicacao:quando', payload),
   whois: (payload) => ipcRenderer.invoke('dns:whois', payload),
   usuarioLogado: () => ipcRenderer.invoke('sistema:usuario'),
   recursos: () => ipcRenderer.invoke('sistema:recursos'),

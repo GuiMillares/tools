@@ -73,6 +73,7 @@ const TOOLS = [
   { id: 'suspender', category: 'hosting', name: 'Suspender sites', desc: 'Confere onde cada domínio está hospedado e envia o pedido de suspensão de quem é da M3.' },
   { id: 'doutor', category: 'hosting', name: 'Bloquear contatos', desc: 'Entra no /doutor do site com a credencial da marca e bloqueia os contatos da empresa (o telefone vira ##).' },
   { id: 'ouvidoria', category: 'hosting', name: 'Ouvidoria / SSL', desc: 'Planilha de domínios: acha a conta no Salesforce, lê o caso de Ouvidoria (Definição e Data de Conclusão) e devolve a Situação e se deve ativar o SSL.' },
+  { id: 'quando', category: 'hosting', name: 'Quando publicou', desc: 'Lista de domínios: a data de publicação pela tarefa concluída no Salesforce ou, sem ela, pelo commit do geral.php / client.inc.php no Bitbucket.' },
 ];
 
 function toolCategory(id) {
@@ -606,6 +607,7 @@ function render() {
   if (state.view === 'bulk') renderBulkTool();
   if (state.view === 'doutor') renderDoutorTool();
   if (state.view === 'ouvidoria') renderOuvidoriaTool();
+  if (state.view === 'quando') renderQuandoTool();
 }
 
 // ---------- Moldura v2.4: sidebar de módulos + topo + rodapé (ADR-114) ----------
@@ -622,6 +624,7 @@ const NAV_ICON = {
   ssl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l8-3 8 3v6c0 5-4 8-8 9-4-1-8-4-8-9z"/></svg>',
   suspender: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H5.2L4 18z"/><path d="M9 9h6"/></svg>',
   terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>',
+  quando: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
 };
 
 NAV_ICON.merge = ICONS.merge;
@@ -637,6 +640,7 @@ const MODULES = [
   { id: 'bulk', nome: 'Publicação em Massa', icon: 'bulk', tag: 'MOD_BULK' },
   { id: 'newproject', nome: 'Propriedades Google', icon: 'google', tag: 'MOD_GOOGLE_PROPS' },
   { id: 'ouvidoria', nome: 'Ouvidoria & Auditoria', icon: 'ouvidoria', tag: 'MOD_OUVIDORIA' },
+  { id: 'quando', nome: 'Quando publicou', icon: 'quando', tag: 'MOD_QUANDO_PUB' },
   { id: 'doutor', nome: 'Bloquear Contatos', icon: 'doutor', tag: 'MOD_AUTO_LOCK' },
   { id: 'ssl', nome: 'Ativação SSL / E-mails', icon: 'ssl', tag: 'MOD_SSL_MAIL_DISPATCH' },
   { id: 'suspender', nome: 'Suspensão & E-mails', icon: 'suspender', tag: 'MOD_SUSPEND_MAIL' },
@@ -889,6 +893,7 @@ function dominioDaTela() {
   else if (v === 'publish') d = (pub && pub.dominio) || val('pubDominio');
   else if (v === 'ssl' || v === 'suspender') d = parseDomains(val('mailDomains'))[0] || '';
   else if (v === 'ouvidoria') d = (ouvEstado.dominios || [])[0] || '';
+  else if (v === 'quando') d = (qpEstado.dominios || [])[0] || '';
   else if (v === 'newproject') d = val('npDomainInput') || val('npSearchInput');
   else if (v === 'bulk') d = (bulkRows[0] && bulkRows[0].dominio) || '';
   else if (v === 'merge') d = (state.queue[0] && state.queue[0].repo) || '';
@@ -1640,6 +1645,177 @@ async function exportarOuvidoria() {
   if (!res.ok) { log(res.error, 'error'); return; }
   if (res.cancelado) { log('Exportação cancelada.', 'info'); return; }
   log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s), ${outros.length ? 'com aba "Outros clientes"' : 'aba única'}).`, 'success');
+}
+
+// ---------- Ferramenta: Quando publicou (ADR-135) ----------
+//
+// Lista de domínios → para cada um, a tarefa de publicação concluída no
+// Salesforce (data de conclusão) e, sem ela, o commit do geral.php /
+// client.inc.php no Bitbucket. Quem decide é o processo principal
+// (publicacao:quando); aqui é a lista, a tabela e a planilha.
+
+let qpEstado = { dominios: [], texto: '', origem: '', rodando: false, parar: false, linhas: [] };
+
+function renderQuandoTool() {
+  el.leftPanel.innerHTML = `
+    ${backButtonHtml()}
+    <div class="sec anim-in">
+    <div class="sec-head"><span class="sec-title">Quando foi publicado</span><span class="sec-meta">${hubSfConectado ? 'SFDC + Bitbucket' : 'salesforce desconectado · só Bitbucket'}</span></div>
+    <div class="tool-sub" style="margin:0 0 12px">Por domínio: a tarefa de publicação concluída no Salesforce; sem ela, o commit do geral.php / client.inc.php no Bitbucket</div>
+    <label class="field">
+      <span>Planilha de domínios (.xlsx, .csv ou colado)</span>
+      <input id="qpFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    </label>
+    <label class="field">
+      <span>ou cole os domínios (um por linha; o resto da linha é ignorado) <span class="tag" id="qpContagem">${qpEstado.dominios.length ? `${qpEstado.dominios.length} domínios` : ''}</span></span>
+      <textarea id="qpTexto" rows="6" placeholder="cliente1.com.br\ncliente2.com.br - anotação qualquer" autocomplete="off">${escapeHtml(qpEstado.texto || '')}</textarea>
+    </label>
+    </div>
+    <div id="qpResumo"></div>
+    <div id="qpAcoes"></div>
+    <div id="qpLista"></div>
+    ${infoBoxHtml('<p><strong>Salesforce primeiro:</strong> busca global pelo domínio (assunto e comentários) e pega a tarefa de publicação <strong>concluída</strong> mais recente; a data é a de conclusão. Sem tarefa que cite o domínio, acha a <strong>conta</strong> do cliente e olha as tarefas de publicação dos casos dela — serve para quem trocou de domínio.</p><p><strong>Depois o Bitbucket:</strong> o repositório com o nome do domínio nas workspaces das marcas e o commit que mexeu no <strong>geral.php</strong> ou no <strong>client.inc.php</strong> — o mais recente que fala em publicação, senão o mais recente. Sem repositório: <em>sem repositório</em>. Repositório sem esses commits: <em>não encontrado</em>.</p>', 'Como a data é descoberta')}
+  `;
+  document.getElementById('backToHub').addEventListener('click', goHome);
+  document.getElementById('qpFile').addEventListener('change', async (e) => {
+    const arquivo = e.target.files && e.target.files[0];
+    if (!arquivo) return;
+    const bytes = new Uint8Array(await arquivo.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const res = await window.api.lerPlanilha({ nome: arquivo.name, base64: btoa(bin) });
+    if (!res.ok) { log(res.error, 'error'); return; }
+    qpCarregar(res.linhas, arquivo.name);
+  });
+  const texto = document.getElementById('qpTexto');
+  const doTexto = () => { qpEstado.texto = texto.value; qpCarregar(texto.value.split(/\r?\n/).map((l) => [l]), 'texto colado'); };
+  texto.addEventListener('change', doTexto);
+  texto.addEventListener('blur', doTexto);
+  renderQuando();
+}
+
+// De cada linha, o PRIMEIRO domínio: a lista costuma vir anotada
+// ("x.com.br - publicado dia 25/03", "x.com.br - domínio correto y.com.br"),
+// e o resto da linha é observação, não outro domínio para consultar.
+function qpCarregar(linhas, origem) {
+  const vistos = new Set();
+  const dominios = [];
+  for (const linha of linhas || []) {
+    const celulas = Array.isArray(linha) ? linha : [linha];
+    let achou = '';
+    for (const cel of celulas) {
+      for (const tok of String(cel || '').split(/[\s,;|]+/)) {
+        const d = normalizeDomain(tok);
+        if (d && pareceDominio(d)) { achou = d; break; }
+      }
+      if (achou) break;
+    }
+    if (achou && !vistos.has(achou)) { vistos.add(achou); dominios.push(achou); }
+  }
+  qpEstado = { ...qpEstado, dominios, origem, rodando: false, parar: false, linhas: [] };
+  const cont = document.getElementById('qpContagem');
+  if (cont) cont.textContent = dominios.length ? `${dominios.length} domínios` : '';
+  if (dominios.length) log(`Quando publicou: ${dominios.length} domínio(s) de ${origem}.`, 'info');
+  renderAtalhosTerminal();
+  renderQuando();
+}
+
+function qpBadge(l) {
+  if (l.erro) return ['err', 'erro'];
+  if (l.situacao === 'publicado') return ['ok', l.fonte === 'salesforce' ? 'Salesforce' : 'Bitbucket'];
+  if (l.situacao === 'sem repositório') return ['warn', 'sem repositório'];
+  return ['warn', 'não encontrado'];
+}
+
+function renderQuando() {
+  const resumo = document.getElementById('qpResumo');
+  const acoes = document.getElementById('qpAcoes');
+  const lista = document.getElementById('qpLista');
+  if (!resumo || !acoes || !lista) return;
+
+  const n = qpEstado.linhas.length;
+  const pub = qpEstado.linhas.filter((l) => l.situacao === 'publicado').length;
+  resumo.innerHTML = qpEstado.dominios.length
+    ? `<div class="section-label">${qpEstado.dominios.length} domínio(s)${n ? ` · ${n} consultado(s), ${pub} com data` : ''}</div>`
+    : '';
+
+  if (qpEstado.rodando) {
+    acoes.innerHTML = `<button id="qpParar" class="btn caution full-width">Parar depois deste</button>`;
+    document.getElementById('qpParar').addEventListener('click', () => { qpEstado.parar = true; log('Vou parar depois do domínio atual.', 'warn'); });
+  } else {
+    let h = '';
+    if (qpEstado.dominios.length) h += `<button id="qpRun" class="btn primary full-width">${ICONS.search} Descobrir quando publicou (${qpEstado.dominios.length} domínio${qpEstado.dominios.length > 1 ? 's' : ''})</button>`;
+    if (n) h += `<div style="display:flex;gap:6px;margin-top:6px"><button id="qpCopiar" class="btn ghost" style="flex:1">Copiar resultado</button><button id="qpExport" class="btn ghost" style="flex:1">Salvar planilha (.xlsx)</button></div>`;
+    acoes.innerHTML = h;
+    const run = document.getElementById('qpRun');
+    if (run) run.addEventListener('click', rodarQuando);
+    const cp = document.getElementById('qpCopiar');
+    if (cp) cp.addEventListener('click', (e) => copiarQuando(e.currentTarget));
+    const exp = document.getElementById('qpExport');
+    if (exp) exp.addEventListener('click', exportarQuando);
+  }
+
+  lista.innerHTML = n
+    ? '<div class="rows">' + qpEstado.linhas.map((l) => {
+        const [cls, txt] = qpBadge(l);
+        return `<div class="row is-${cls}"><div class="row__main"><div class="row__title">${escapeHtml(l.dominio)} — ${escapeHtml(l.texto || '')}</div><div class="row__sub">${escapeHtml(l.detalhe || '')}</div></div><span class="badge ${cls}">${escapeHtml(txt)}</span></div>`;
+      }).join('') + '</div>'
+    : '';
+}
+
+async function rodarQuando() {
+  if (qpEstado.rodando || !qpEstado.dominios.length) return;
+  qpEstado.rodando = true;
+  qpEstado.parar = false;
+  qpEstado.linhas = [];
+  renderQuando();
+  log(`Quando publicou: consultando ${qpEstado.dominios.length} domínio(s) no Salesforce e no Bitbucket.`, 'cmd');
+  let avisouSf = false;
+  for (const dominio of qpEstado.dominios) {
+    if (qpEstado.parar) { log('Parado por você.', 'warn'); break; }
+    const res = await withBusy(`consultando ${dominio}`, () => window.api.quandoPublicou({ dominio }));
+    if (res.log) for (const e of res.log) log(e.message, e.type);
+    if (!res.ok) {
+      qpEstado.linhas.push({ dominio, erro: true, situacao: 'erro', texto: `erro: ${res.error || 'sem detalhe'}`, detalhe: '' });
+    } else {
+      if (res.semSalesforce && !avisouSf) { avisouSf = true; log('Salesforce fora nesta rodada: as datas vêm só do Bitbucket. Reconecte nas Configurações para consultar as tarefas.', 'warn'); }
+      qpEstado.linhas.push({ dominio, situacao: res.situacao, quando: res.quando, fonte: res.fonte, detalhe: res.detalhe, texto: res.texto });
+    }
+    renderQuando();
+  }
+  qpEstado.rodando = false;
+  qpEstado.parar = false;
+  const c = (s) => qpEstado.linhas.filter((l) => l.situacao === s).length;
+  log(`Quando publicou: ${c('publicado')} com data, ${c('sem repositório')} sem repositório, ${c('não encontrado')} não encontrado(s), ${c('erro')} erro(s), de ${qpEstado.linhas.length}.`, 'success');
+  renderQuando();
+}
+
+function qpTextoResultado() {
+  return qpEstado.linhas.map((l) => `${l.dominio} - ${l.texto}`).join('\n');
+}
+
+async function copiarQuando(btn) {
+  if (!qpEstado.linhas.length) { log('Nada para copiar ainda.', 'warn'); return; }
+  try {
+    await window.api.copyToClipboard(qpTextoResultado());
+    log(`${qpEstado.linhas.length} linha(s) copiadas ("domínio - resposta").`, 'success');
+    flashCopied(btn);
+  } catch (e) {
+    log(`Falha ao copiar: ${e.message}`, 'error');
+  }
+}
+
+async function exportarQuando() {
+  if (!qpEstado.linhas.length) { log('Nada para exportar ainda.', 'warn'); return; }
+  const res = await window.api.exportarPlanilha({
+    nomeSugerido: 'quando-publicou.xlsx',
+    colunas: ['Domínio', 'Resposta', 'Situação', 'Publicado em', 'Fonte', 'Detalhe'],
+    linhas: qpEstado.linhas.map((l) => [l.dominio, l.texto || '', l.situacao || '', l.quando || '', l.fonte || '', l.detalhe || '']),
+    aba: 'Quando publicou',
+  });
+  if (!res.ok) { log(res.error, 'error'); return; }
+  if (res.cancelado) { log('Exportação cancelada.', 'info'); return; }
+  log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s)).`, 'success');
 }
 
 // ---------- Tela inicial (Hub) ----------
@@ -6699,38 +6875,35 @@ function renderSuspendTool() {
     <div class="sec-head"><span class="sec-title">${ehSsl ? 'Ativação SSL &amp; e-mails de apontamento' : 'Suspensão de sites &amp; e-mails'}</span><span class="sec-meta">DNS_PROBE / MS_GRAPH</span></div>
     <div class="tool-sub" style="margin:0 0 12px">M3 Solutions (faixa 149.18.x) · Graph API v1.0 · envio pela sua caixa</div>
     <div id="msStatus"></div>
-    <div class="grid-2">
     ${modo.projeto
       ? `<label class="field">
-      <span>Projeto <span class="tag">{projeto}</span></span>
+      <span>Projeto (vira {projeto} no assunto)</span>
       <select id="mailProjeto">
         ${SSL_PROJETOS.map((p) => `<option value="${escapeHtml(p)}" ${(state.sslProjeto || SSL_PROJETOS[0]) === p ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}
       </select>
     </label>`
       : ''}
     <label class="field">
-      <span>Destinatário (Para) <span class="tag">dest</span></span>
+      <span>Para</span>
       <input id="mailTo" type="text" value="${escapeHtml(m.to)}" autocomplete="off" />
     </label>
     <label class="field">
-      <span>Cópia (Cc) <span class="tag">cc</span></span>
+      <span>Cc</span>
       <input id="mailCc" type="text" value="${escapeHtml(m.cc)}" autocomplete="off" />
     </label>
     <label class="field">
-      <span>Template de assunto <span class="tag">tags</span></span>
+      <span>Assunto</span>
       <input id="mailSubject" type="text" value="${escapeHtml(m.subject)}" autocomplete="off" />
     </label>
     <label class="field">
-      <span>Corpo do e-mail <span class="tag">plain text</span></span>
-      <textarea id="mailBody" rows="5">${escapeHtml(m.body)}</textarea>
+      <span>Corpo</span>
+      <textarea id="mailBody" rows="4">${escapeHtml(m.body)}</textarea>
     </label>
     <label class="field">
       <span>Domínios (um por linha) <span class="tag" id="mailContagem"></span></span>
-      <textarea id="mailDomains" rows="5" placeholder="cliente1.com.br&#10;cliente2.com.br" autocomplete="off"></textarea>
+      <textarea id="mailDomains" rows="8" placeholder="cliente1.com.br&#10;cliente2.com.br" autocomplete="off"></textarea>
     </label>
-    </div>
-    <button id="mailCheckBtn" class="btn primary full-width">${ICONS.ssl} Verificar apontamento e preparar e-mails</button>
-    <div class="btn-meta"><span>timeout: 30s</span><span>safe dispatch (MS Graph API)</span></div>
+    <button id="mailCheckBtn" class="btn primary full-width">Verificar apontamento</button>
     </div>
     <div id="mailCheck"></div>
     ${infoBoxHtml(`<p>O Hub consulta o DNS autoritativo de cada domínio na fila, checa se o registro A aponta para o servidor da <strong>M3 Solutions</strong> e marca automaticamente como seguro. IPs externos (Google, Vesta, terceiros) são desmarcados por segurança; o resto você decide.</p><div class="destaque">As tags <code>{dominio}</code>${modo.projeto ? ' e <code>{projeto}</code>' : ''} são interpoladas para cada destinatário individual antes da transmissão via Microsoft Graph API.</div>`)}

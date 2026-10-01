@@ -181,6 +181,7 @@ const STUB = () => {
       ] }),
     whois: async ({ dominio }) => ({ ok: true, dominio, dns: { ns: ['ns1.cloudflare.com', 'ns2.cloudflare.com'], a: ['149.18.102.39'], mx: ['10 mx.'+dominio], resolveu: true }, whois: { host: 'whois.registro.br', texto: 'owner: CLIENTE LTDA\nstatus: published', campos: { titular: 'CLIENTE LTDA', registrador: '', criado: '20180312', expira: '20260312', status: 'published', nameservers: ['ns1.cloudflare.com'] } } }),
     checarOuvidoria: async ({ dominio }) => ({ ok: true, achou: true, razao: 'CLIENTE LTDA', situacao: 'Cancelado — 05/08/2026 [00085674]', ativarSsl: 'não', temOuvidoria: true, log: [] }),
+    quandoPublicou: async ({ dominio }) => ({ ok: true, dominio, situacao: 'publicado', quando: '14/11/2025', fonte: 'salesforce', detalhe: 'tarefa "Publicação (Troca de DNS) - ' + dominio + '" concluída em 14/11/2025', texto: 'publicado em 14/11/2025 (Salesforce: tarefa de publicação concluída)', log: [] }),
   };
 };
 

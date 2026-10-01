@@ -6830,6 +6830,45 @@ ipcMain.handle('salesforce:ouvidoria', async (event, { dominio, razao } = {}) =>
   }
 });
 
+// ---------- Quando foi publicado (ADR-135) ----------
+//
+// Por domínio: a tarefa de publicação concluída no Salesforce (busca global,
+// com a conta do cliente como reserva) e, sem ela, o commit do geral.php ou do
+// client.inc.php no repositório do Bitbucket (slug = domínio, nas workspaces
+// das marcas). O núcleo está em lib/quando-publicou.js; aqui é a cola com a
+// sessão do Salesforce (renova sozinha) e as credenciais do Bitbucket. Com o
+// Salesforce fora, consulta só o Bitbucket e avisa.
+ipcMain.handle('publicacao:quando', async (event, { dominio } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  try {
+    const QuandoPublicou = require('./lib/quando-publicou');
+    let creds = null;
+    try { if (fs.existsSync(credsPath())) creds = JSON.parse(safeStorage.decryptString(fs.readFileSync(credsPath()))); } catch (e) { creds = null; }
+    let workspaces = [];
+    try {
+      const st = fs.existsSync(hubStatePath()) ? JSON.parse(fs.readFileSync(hubStatePath(), 'utf-8')) : {};
+      workspaces = [...new Set([...Object.values(st.bitbucketWorkspaces || {}), st.bitbucketWorkspace].map((w) => String(w || '').trim()).filter(Boolean))];
+    } catch (e) { workspaces = []; }
+    const bb = creds && creds.email && creds.token && workspaces.length ? QuandoPublicou.criarBitbucket({ creds, workspaces }) : null;
+    if (!bb) push(creds && creds.token ? 'Sem "Workspace do Bitbucket" configurada (Configurações): a busca por commit fica de fora.' : 'Bitbucket não configurado: a busca por commit fica de fora.', 'warn');
+
+    let resultado;
+    try {
+      resultado = await sfComSessao((sf) => QuandoPublicou.quandoPublicou(dominio, { sf, bb, log: push }));
+    } catch (e) {
+      if (!(e instanceof SfReauthNeeded) && !sfPrecisaReconectar(e)) throw e;
+      push(`Salesforce fora (${e.message}); procurando só no Bitbucket.`, 'warn');
+      resultado = await QuandoPublicou.quandoPublicou(dominio, { sf: null, bb, log: push });
+      resultado.semSalesforce = true;
+    }
+    return { ok: true, log, ...resultado };
+  } catch (e) {
+    push(`Erro em ${dominio}: ${e.message}`, 'error');
+    return { ok: false, error: e.message, log };
+  }
+});
+
 // ---------- WHOIS + DNS da tela inicial (ADR-113) ----------
 //
 // WHOIS é uma consulta de texto na porta 43. Para .br vai direto no
