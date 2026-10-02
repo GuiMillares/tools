@@ -49,7 +49,8 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
   const erros = [];
   page.on('pageerror', (e) => erros.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') erros.push('console: ' + m.text()); });
-  const pronto = () => page.waitForFunction(() => typeof render === 'function' && !!document.getElementById('whoisDominio'), null, { timeout: 15000 });
+  // A home pronta é a dos indicadores (ADR-138); o cartão de WHOIS saiu.
+  const pronto = () => page.waitForFunction(() => typeof render === 'function' && !!document.getElementById('homeMetricas'), null, { timeout: 15000 });
   const colunas = () => page.evaluate(() => getComputedStyle(document.querySelector('.app-body')).gridTemplateColumns.split(' ').length);
   try {
     await page.addInitScript(STUB);
@@ -58,7 +59,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
 
     console.log('\n=== Tela inicial sem a grade de ferramentas (ADR-127) ===');
     check('não tem mais "Automações & scripts" (grade, busca, recentes)', await page.evaluate(() => !document.querySelector('.home-tools, #toolGrid, #hubSearch, .chip-row') && !/Automações &/.test(document.getElementById('leftPanel').textContent)));
-    check('o WHOIS e as filas continuam', await page.evaluate(() => !!document.getElementById('whoisDominio') && !!document.getElementById('homeFilas')));
+    check('os indicadores e as filas estão na home; o cartão de WHOIS não (ADR-138)', await page.evaluate(() => !!document.getElementById('homeMetricas') && !!document.getElementById('homeFilas') && !document.getElementById('whoisDominio')));
 
     console.log('\n=== Busca do topo (Ctrl+K) ===');
     const busca = async (texto) => {
@@ -72,7 +73,11 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     check('acha também o que não tem atalho na lateral: "buscar propriedades"', (await busca('buscar propriedades')) === 'newproject' && (await page.evaluate(() => state.npTab)) === 'find');
     check('"conceder acesso" abre a aba das Configurações', (await busca('conceder acesso')) === 'config' && (await page.evaluate(() => state.cfgTab)) === 'acesso');
     check('e limpa a busca depois de abrir', (await page.inputValue('#tbSearch')) === '');
-    check('um domínio vai para a tela inicial e consulta o WHOIS', (await busca('https://www.cliente-teste.com.br/contato')) === 'home' && (await page.evaluate(() => window.__bash.whois.map((w) => w.dominio))).includes('cliente-teste.com.br'));
+    // Um domínio não muda de tela: vira "whois <domínio>" no terminal (ADR-138).
+    const antesDom = await page.evaluate(() => logBuffer.length);
+    const viewDepois = await busca('https://www.cliente-teste.com.br/contato');
+    check('um domínio consulta o WHOIS no terminal, sem sair da tela', viewDepois === 'config' && (await page.evaluate(() => window.__bash.whois.map((w) => w.dominio))).includes('cliente-teste.com.br') && (await page.evaluate((n) => logBuffer.slice(n).some((e) => e.type === 'cmd' && /^whois cliente-teste\.com\.br$/.test(e.message)), antesDom)));
+    await page.evaluate(() => goHome());
     const n0 = await page.evaluate(() => logBuffer.length);
     await busca('zzqqxx');
     check('nada batendo: avisa no terminal, sem sair da tela', await page.evaluate((n) => logBuffer.slice(n).some((e) => e.type === 'warn' && /Nada no Hub/.test(e.message)) && state.view === 'home', n0));

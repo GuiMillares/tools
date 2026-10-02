@@ -108,16 +108,22 @@ function fakeTm(permissoes) {
     check('e promovida de read para publish', ca[0].permission === 'publish');
   }
 
-  console.log('\n=== Já é admin da conta: nada a fazer ===');
+  console.log('\n=== Já é admin da conta: recebe publicação no container mesmo assim (ADR-139) ===');
   {
+    // Admin da conta sem permissão no container abre o container novo em
+    // somente leitura — foi o que aconteceu com bcrelatoriotags e
+    // ferramentasmpisolutions. O Hub não pula mais este caso.
     const { api, chamadas } = fakeTm([{
       path: 'accounts/1/user_permissions/1', emailAddress: 'a@b.c',
-      accountAccess: { permission: 'admin' }, containerAccess: [],
+      accountAccess: { permission: 'admin' }, containerAccess: [{ containerId: '111', permission: 'publish' }],
     }]);
     const r = await M.grantOwnerContainerAccess({ tagmanager: api, accountPath: 'accounts/1',
       containerId: '999', email: 'a@b.c', ritmo, push: () => {} });
-    check('detecta admin e não mexe', r.estado === 'jaAdmin');
-    check('nenhuma escrita gasta', chamadas.create.length === 0 && chamadas.update.length === 0);
+    check('admin também é atualizado, e o resultado diz que é admin', r.estado === 'atualizado' && r.admin === true, JSON.stringify(r));
+    check('uma escrita: update, não create', chamadas.update.length === 1 && chamadas.create.length === 0);
+    const u = chamadas.update[0];
+    check('continua admin da conta', u.accountAccess.permission === 'admin');
+    check('ganha publish no container novo e mantém o antigo', u.containerAccess.some((c) => c.containerId === '999' && c.permission === 'publish') && u.containerAccess.some((c) => c.containerId === '111'), JSON.stringify(u.containerAccess));
   }
 
   console.log('\n=== Sem e-mail configurado ===');

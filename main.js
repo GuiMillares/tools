@@ -749,10 +749,12 @@ async function grantOwnerContainerAccess({ tagmanager, accountPath, containerId,
     (u) => String(u.emailAddress || '').toLowerCase() === alvo
   );
 
-  if (atual && atual.accountAccess?.permission === 'admin') {
-    return { estado: 'jaAdmin' };
-  }
-
+  // Ser admin DA CONTA não dá acesso ao container: no Tag Manager a permissão
+  // de container (leitura / edição / aprovação / publicação) é por container,
+  // e um admin sem ela abre o container novo em somente leitura. Era o que
+  // acontecia com bcrelatoriotags e ferramentasmpisolutions (ADR-139): o Hub
+  // pulava este passo para admins. Agora a conta da marca sempre recebe
+  // publicação no container, admin ou não.
   if (!atual) {
     // Ainda não é membro da conta: entra como usuário, com acesso a este
     // container. Não promovemos a admin da conta sem pedir, isso daria poder
@@ -782,7 +784,7 @@ async function grantOwnerContainerAccess({ tagmanager, accountPath, containerId,
       requestBody: { ...atual, containerAccess: containers },
     })
   );
-  return { estado: 'atualizado', containersAntes: (atual.containerAccess || []).length };
+  return { estado: 'atualizado', containersAntes: (atual.containerAccess || []).length, admin: atual.accountAccess?.permission === 'admin' };
 }
 
 // ---------- Motor: reproduzir um template de container no GTM ----------
@@ -1398,12 +1400,10 @@ ipcMain.handle('google:createProject', async (event, { domain: dominioBruto, saP
               ritmo,
               push,
             });
-            if (r.estado === 'jaAdmin') {
-              push(`${dono} já é admin da conta, acesso ao container é automático.`, 'info');
-            } else if (r.estado === 'criado') {
+            if (r.estado === 'criado') {
               push(`${dono} adicionado na conta com acesso de publicação neste container.`, 'success');
             } else if (r.estado === 'atualizado') {
-              push(`${dono} agora tem acesso de publicação neste container (${r.containersAntes} outros preservados).`, 'success');
+              push(`${dono} agora tem acesso de publicação neste container${r.admin ? ' (é admin da conta, mas a permissão de container é separada)' : ''} (${r.containersAntes} outros preservados).`, 'success');
             }
           }
         } catch (e) {
@@ -8594,6 +8594,52 @@ ipcMain.handle('salesforce:tarefas', async () => {
         },
         instancia: sf.instanceUrl,
       };
+    });
+    return { ok: true, log, ...saida };
+  } catch (e) {
+    push(`Salesforce: ${e.message}`, 'error');
+    return { ok: false, error: e.message, precisaReconectar: !!(e && (e.sessaoInvalida || e.status === 403 || e.reauth)), log };
+  }
+});
+
+// Indicadores da tela inicial (ADR-138): as SUAS tarefas (OwnerId = você) do
+// último ano, com data de criação e de conclusão. Uma consulta só; quem corta
+// por dia/semana/mês/ano é o renderer (lib/metricas.js), para trocar o período
+// sem voltar ao Salesforce. CompletedDateTime quando a org tem; sem ele, a
+// última modificação da tarefa fechada vale como conclusão.
+ipcMain.handle('salesforce:metricas', async (event, { dias } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  const n = Math.max(1, Math.min(732, Number(dias) || 366));
+  try {
+    const saida = await sfComSessao(async (sf) => {
+      const eu = await sfQuemSouEu(sf);
+      const campos = (comConclusao) => `Id, Subject, IsClosed, Status, CreatedDate, LastModifiedDate${comConclusao ? ', CompletedDateTime' : ''}, OwnerId, Owner.Name, Owner.Type`;
+      const where = `OwnerId = '${escaparSoql(eu.id)}' AND (CreatedDate = LAST_N_DAYS:${n} OR LastModifiedDate = LAST_N_DAYS:${n})`;
+      push(`SOQL suas tarefas dos últimos ${n} dias (${eu.nome})`, 'cmd');
+      let linhas;
+      let comConclusao = true;
+      try {
+        linhas = await sf.consultar(`SELECT ${campos(true)} FROM Task WHERE ${where} ORDER BY CreatedDate DESC`, { maximo: 20000 });
+      } catch (e) {
+        if (e && e.sessaoInvalida) throw e;
+        if (!/CompletedDateTime/i.test(String(e && e.message))) throw e;
+        comConclusao = false;
+        linhas = await sf.consultar(`SELECT ${campos(false)} FROM Task WHERE ${where} ORDER BY CreatedDate DESC`, { maximo: 20000 });
+      }
+      const tarefas = linhas.map((t) => ({
+        id: t.Id,
+        assunto: t.Subject || '',
+        fechada: !!t.IsClosed,
+        status: t.Status || '',
+        criada: t.CreatedDate,
+        concluida: t.IsClosed ? (t.CompletedDateTime || t.LastModifiedDate) : null,
+        dono: (t.Owner && t.Owner.Name) || '',
+        donoTipo: (t.Owner && t.Owner.Type) || '',
+        publicacao: /publica/i.test(t.Subject || ''),
+      }));
+      push(`${tarefas.length} tarefa(s) suas lidas${comConclusao ? '' : ' (a org não tem CompletedDateTime: conclusão = última modificação)'}.`, 'success');
+      return { eu: { id: eu.id, nome: eu.nome }, tarefas, dias: n, comConclusao, agora: new Date().toISOString() };
     });
     return { ok: true, log, ...saida };
   } catch (e) {

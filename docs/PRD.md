@@ -147,7 +147,8 @@ são 38. O terminal avisa a estimativa antes de começar e mostra cada pausa
 Logo depois de criar o container, a **conta do Google da marca** recebe acesso
 de publicação nele (ADR-020, ADR-035) — sem isso o container criado pela service
 account abre em somente leitura, e cada projeto novo viraria um ajuste manual de
-permissão.
+permissão. Isso vale **mesmo quando a conta já é administradora da conta do
+Tag Manager**: a permissão de container é separada da de conta (ADR-139).
 
 **A conta depende da superfície** (ADR-067). Analytics e Search Console usam a
 conta da marca; o Tag Manager pode usar outra, porque as tags nem sempre são
@@ -357,12 +358,18 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
 
 ### 4.9 Superfícies compartilhadas
 
-- **Tela inicial (Hub):** saudação com o nome de quem está logado, as filas
-  de deploy do Salesforce, o resumo das suas tarefas (abertas, entregas em
-  menos de 24h, sem prazo) e WHOIS/DNS de um domínio (ADR-113, ADR-115). As
-  ferramentas ficam na barra lateral; a grade "Automações & scripts" saiu
-  (ADR-127). O painel flutuante da automação da fila (4.10) aparece em todas
-  as telas.
+- **Tela inicial (Hub):** saudação com o nome de quem está logado e, em
+  cima, três indicadores das **suas** tarefas do Salesforce (ADR-138), cada
+  um com o período no próprio cartão: **SLA médio** (da criação à conclusão
+  das concluídas; dia, semana, mês), **Tarefas** (concluídas e criadas; dia,
+  semana, mês, ano) e **Publicações feitas** (dia, semana, mês, ano). Número
+  grande, gráfico de colunas com tooltip, e uma tabela no lugar do gráfico
+  pelo botão do cartão. Abaixo, as filas de deploy e o resumo das suas
+  tarefas (abertas, entregas em menos de 24h, sem prazo) (ADR-113, ADR-115).
+  WHOIS/DNS não tem mais cartão: um domínio na busca do topo, ou `whois
+  <domínio>` no terminal, responde no terminal da direita. As ferramentas
+  ficam na barra lateral; a grade "Automações & scripts" saiu (ADR-127). O
+  painel flutuante da automação da fila (4.10) aparece em todas as telas.
 - **Terminal de atividade:** painel direito, presente em todas as
   ferramentas. É onde toda chamada de API e todo aviso aparecem. Ver ADR-011.
   Minimiza (vira um trilho fino que conta o que chegou, em vermelho se veio

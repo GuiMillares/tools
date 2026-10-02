@@ -211,6 +211,8 @@ const state = {
   // (ADR-132): { to, cc }. Editado no painel da automação; os modelos de
   // assunto e corpo são fixos, em lib/busca-one.js.
   mailVhost: null,
+  // Período escolhido em cada indicador da tela inicial (ADR-138). Lembrado.
+  homePeriodos: { sla: 'semana', tarefas: 'semana', pub: 'mes' },
   sslProjeto: 'Busca Cliente', // vira {projeto} no assunto da ativação de SSL
   oauthPending: null, // { url } enquanto o login está aberto esperando o callback
 };
@@ -569,6 +571,7 @@ function saveHubState() {
     mail: state.mail,
     mailSsl: state.mailSsl,
     mailVhost: state.mailVhost,
+    homePeriodos: state.homePeriodos,
     sslProjeto: state.sslProjeto,
     npSteps: state.npSteps,
     sfTarefasAuto: state.sfTarefasAuto,
@@ -695,12 +698,13 @@ function buscarNoTopo(texto) {
     else openTool(achado.id);
     return;
   }
+  // Um domínio na busca vira "whois <domínio>" no terminal da direita (ADR-138):
+  // a resposta sai lá, onde já saem o dns e o whois digitados.
   const dominio = normalizeDomain(texto);
   if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(dominio)) {
     limpar();
-    whoisEstado.dominio = dominio;
-    goHome();
-    consultarWhois();
+    if (typeof mostrarAtividade === 'function') mostrarAtividade();
+    executarNoTerminal(`whois ${dominio}`);
     return;
   }
   log(`Nada no Hub com "${String(texto).trim()}". Digite o nome de um módulo (publicar, kanban, ouvidoria…) ou um domínio.`, 'warn');
@@ -888,8 +892,7 @@ function dominioDaTela() {
   const v = state.view;
   const val = (id) => (document.getElementById(id)?.value || '').trim();
   let d = '';
-  if (v === 'home') d = whoisEstado.dominio || val('whoisDominio');
-  else if (v === 'doutor') d = doutorEstado.dominio || val('doutorDominio');
+  if (v === 'doutor') d = doutorEstado.dominio || val('doutorDominio');
   else if (v === 'publish') d = (pub && pub.dominio) || val('pubDominio');
   else if (v === 'ssl' || v === 'suspender') d = parseDomains(val('mailDomains'))[0] || '';
   else if (v === 'ouvidoria') d = (ouvEstado.dominios || [])[0] || '';
@@ -919,6 +922,14 @@ function atalhosDaTela() {
   }
   if (v === 'doutor' && d) lista.push({ rotulo: '#abrir-doutor', comando: `start https://${d}/doutor/` });
   if (v === 'publish' && d) lista.push({ rotulo: '#ns-no-pai', comando: `nslookup -type=NS ${d}` });
+  if (v === 'home') {
+    // A tela inicial não tem mais o cartão de WHOIS (ADR-138): o atalho deixa
+    // o comando pronto no terminal, é só completar com o domínio.
+    const preencher = (cmd) => async () => { if (typeof mostrarAtividade === 'function') mostrarAtividade(); el.termInput.value = `${cmd} `; el.termInput.focus(); };
+    lista.push({ rotulo: '#whois', comando: preencher('whois') });
+    lista.push({ rotulo: '#dns', comando: preencher('dns') });
+    lista.push({ rotulo: '#recarregar-indicadores', comando: async () => { await carregarMetricas(true); } });
+  }
   if (v === 'kanban' || v === 'home') lista.push({ rotulo: '#recarregar-filas', comando: async () => { await carregarTarefasSf(true); render(); } });
   if (v === 'config') lista.push({ rotulo: '#testar-credenciais', comando: async () => testarCredenciais() });
   if (v === 'merge') lista.push({ rotulo: '#git-version', comando: 'git --version' });
@@ -1850,36 +1861,29 @@ function renderHome() {
       </div>
     </div>
 
+    <div class="home-sec-title anim-in">${NAV_ICON.quando}Indicadores das suas tarefas <span class="r" id="homeMetricasMeta">${metricasEstado.carregando ? 'lendo…' : hubSfConectado ? 'salesforce · último ano' : 'offline'}</span></div>
+    <div class="metricas anim-in" id="homeMetricas"></div>
+
     <div class="home-grid">
       <div class="home-col">
         <div class="home-sec-title anim-in">${NAV_ICON.deploy}Filas ativas de produção <span class="r">${sfKanban.carregando ? 'lendo…' : hubSfConectado ? 'salesforce' : 'offline'}</span></div>
         <div class="filas anim-in" id="homeFilas"></div>
-        <div id="homeSf" class="anim-in"></div>
       </div>
       <div class="home-col">
-        <div class="whois-card anim-in">
-          <div class="whois-head">${ICONS.search || ''}<div class="section-label">Pesquisa de apontamento &amp; DNS</div><span class="spacer"></span><span class="home-pill cyan">whois/dns</span></div>
-          <div class="whois-row">
-            <input id="whoisDominio" type="text" placeholder="ex: cliente.com.br" value="${escapeHtml(whoisEstado.dominio || '')}" autocomplete="off" />
-            <button id="whoisBtn" class="btn primary" ${whoisEstado.rodando ? 'disabled' : ''}>${whoisEstado.rodando ? 'Consultando...' : 'Consultar'}</button>
-          </div>
-          <div id="whoisResultado"></div>
-        </div>
+        <div id="homeSf" class="anim-in"></div>
       </div>
     </div>
   `;
   // A grade "Automações & scripts" saiu daqui (ADR-127): as ferramentas estão
   // na barra lateral, e a busca do topo (Ctrl+K) abre qualquer uma pelo nome.
+  // O cartão de WHOIS/DNS também saiu (ADR-138): um domínio na busca do topo,
+  // ou "whois <domínio>" no terminal, responde no terminal da direita.
 
-  renderWhois();
+  renderHomeMetricas();
   renderHomeFilas();
   renderHomeResumoSf();
   if (hubSfConectado && !sfKanban.dados && !sfKanban.carregando) carregarTarefasSf(false);
-
-  const wd = document.getElementById('whoisDominio');
-  wd.addEventListener('input', (e) => { whoisEstado.dominio = e.target.value.trim(); renderAtalhosTerminal(); });
-  wd.addEventListener('keydown', (e) => { if (e.key === 'Enter') consultarWhois(); });
-  document.getElementById('whoisBtn').addEventListener('click', consultarWhois);
+  if (hubSfConectado) carregarMetricas(false);
 
   // Puxa o nome de verdade (Salesforce/e-mail) uma vez e re-renderiza a saudação.
   if (hubUsuario === null && window.api.usuarioLogado) {
@@ -1895,58 +1899,155 @@ function renderHome() {
   }
 }
 
-// ---------- WHOIS + DNS na tela inicial (ADR-113) ----------
+// ---------- Indicadores das suas tarefas na tela inicial (ADR-138) ----------
+//
+// SLA médio, tarefas e publicações, cada um com o período (dia, semana, mês,
+// ano) escolhido no próprio cartão e lembrado. Os dados vêm de uma consulta só
+// (salesforce:metricas: as suas tarefas do último ano) e ficam 5 min em
+// memória; trocar o período não volta ao Salesforce. O desenho é SVG puro
+// (lib/metricas.js), sem biblioteca e sem animação. Cada cartão tem o número
+// grande, o gráfico (ou a tabela, no botão), tooltip por coluna e a legenda
+// quando há duas séries.
 
-let whoisEstado = { dominio: '', rodando: false, resultado: null };
+let metricasEstado = { dados: null, quando: 0, carregando: false, erro: null, tabela: {} };
+const METRICAS_CARDS = [
+  { id: 'sla', titulo: 'SLA médio', sub: 'da criação à conclusão, nas suas tarefas concluídas no período', periodos: ['dia', 'semana', 'mes'] },
+  { id: 'tarefas', titulo: 'Tarefas', sub: 'suas tarefas concluídas (colunas) e criadas (linha) no período', periodos: ['dia', 'semana', 'mes', 'ano'] },
+  { id: 'pub', titulo: 'Publicações feitas', sub: 'suas tarefas de publicação concluídas no período', periodos: ['dia', 'semana', 'mes', 'ano'] },
+];
+// Quantos rótulos do eixo x cabem: no dia (24 horas) um a cada 6; no mês (30
+// dias) um a cada 5; no ano (12 meses) um a cada 2.
+const METRICAS_CADA_ROTULO = { dia: 6, semana: 1, mes: 5, ano: 2 };
 
-async function consultarWhois() {
-  const dominio = normalizeDomain(whoisEstado.dominio);
-  if (!dominio) { log('Informe um domínio para consultar.', 'error'); return; }
-  whoisEstado.rodando = true;
-  whoisEstado.resultado = null;
-  renderHome();
-  const res = await withBusy(`consultando ${dominio}`, () => window.api.whois({ dominio }));
-  whoisEstado.rodando = false;
-  if (!res || !res.ok) { whoisEstado.resultado = { erro: (res && res.error) || 'falhou' }; log(`WHOIS/DNS: ${(res && res.error) || 'falhou'}`, 'error'); }
-  else { whoisEstado.resultado = res; log(`WHOIS/DNS de ${dominio}: ${res.dns.ns.length} nameserver(s), ${res.dns.a.length} A.`, 'success'); }
-  renderHome();
+async function carregarMetricas(forcar) {
+  if (metricasEstado.carregando) return metricasEstado.dados;
+  if (!forcar && metricasEstado.dados && Date.now() - metricasEstado.quando < 5 * 60000) return metricasEstado.dados;
+  if (!hubSfConectado) return null;
+  metricasEstado.carregando = true;
+  renderHomeMetricas();
+  const r = await window.api.salesforceMetricas({ dias: 366 }).catch((e) => ({ ok: false, error: e.message }));
+  metricasEstado.carregando = false;
+  metricasEstado.quando = Date.now();
+  if (r && r.log && forcar) for (const e of r.log) log(e.message, e.type);
+  if (!r || !r.ok) {
+    metricasEstado.erro = (r && r.error) || 'falhou';
+    log(`Indicadores do Salesforce: ${metricasEstado.erro}${r && r.precisaReconectar ? ' (reconecte nas configurações)' : ''}`, 'warn');
+  } else {
+    metricasEstado.erro = null;
+    metricasEstado.dados = r;
+    if (forcar) log(`Indicadores: ${r.tarefas.length} tarefa(s) suas no último ano.`, 'success');
+  }
+  renderHomeMetricas();
+  return metricasEstado.dados;
 }
 
-function renderWhois() {
-  const wrap = document.getElementById('whoisResultado');
-  if (!wrap) return;
-  const r = whoisEstado.resultado;
-  if (!r) { wrap.innerHTML = ''; return; }
-  if (r.erro) { wrap.innerHTML = `<div class="whois-res"><div class="whois-bloco">Não consegui consultar: ${escapeHtml(r.erro)}</div></div>`; return; }
-  const dns = r.dns || {};
-  const w = r.whois || {};
-  const c = w.campos || {};
-  const linha = (rot, val) => val ? `<dt>${escapeHtml(rot)}</dt><dd>${escapeHtml(val)}</dd>` : '';
-  const nsDns = (dns.ns || []);
-  const nsWhois = (c.nameservers || []);
-  const nsMostrar = nsDns.length ? nsDns : nsWhois;
-  wrap.innerHTML = `<div class="whois-res">
-    <div class="whois-bloco">
-      <h4>DNS em uso <span class="ns-cyan">(nameservers)</span></h4>
-      ${nsMostrar.length ? `<ul class="whois-list">${nsMostrar.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}</ul>` : '<div class="whois-kv"><dt>—</dt><dd>não achei nameservers (o domínio existe e está delegado?)</dd></div>'}
-      <dl class="whois-kv" style="margin-top:8px">
-        ${dns.a && dns.a.length ? `<dt>A (raiz)</dt><dd>${escapeHtml(dns.a.join(', '))}</dd>` : ''}
-        ${dns.mx && dns.mx.length ? `<dt>MX</dt><dd>${escapeHtml(dns.mx.join(' · '))}</dd>` : ''}
-      </dl>
+// O que cada cartão mostra, a partir da janela e da agregação.
+function metricaConteudo(c, j, a) {
+  const M = window.Metricas;
+  const rotulos = j.buckets.map((b) => b.rotulo);
+  const cada = METRICAS_CADA_ROTULO[j.periodo] || 1;
+  if (c.id === 'sla') {
+    return {
+      valor: M.formatarHoras(a.totais.slaMediaHoras),
+      sub: a.totais.slaN ? `${a.totais.slaN} concluída(s) · mediana ${M.formatarHoras(a.totais.slaMedianaHoras)}` : 'nenhuma tarefa concluída no período',
+      svg: M.svgColunas({ valores: a.slaHoras, rotulos, cadaRotulo: cada, formatar: (v) => (v ? M.formatarHoras(v) : '0') }),
+      legenda: '',
+      cabecalho: ['Período', 'SLA médio', 'Concluídas'],
+      linhas: j.buckets.map((b, i) => [b.rotulo, a.slaHoras[i] === null ? '—' : M.formatarHoras(a.slaHoras[i]), String(a.concluidas[i])]),
+      dica: (i) => `${rotulos[i]}: ${a.slaHoras[i] === null ? 'sem conclusão' : 'SLA ' + M.formatarHoras(a.slaHoras[i])} · ${a.concluidas[i]} concluída(s)`,
+    };
+  }
+  if (c.id === 'tarefas') {
+    return {
+      valor: String(a.totais.concluidas),
+      sub: `concluída(s) · ${a.totais.criadas} criada(s) · ${a.totais.abertasAgora} aberta(s) agora`,
+      svg: M.svgColunas({ valores: a.concluidas, linha: a.criadas, rotulos, cadaRotulo: cada, inteiros: true }),
+      legenda: '<div class="metrica-legenda"><span><i></i>concluídas</span><span><i class="linha"></i>criadas</span></div>',
+      cabecalho: ['Período', 'Concluídas', 'Criadas'],
+      linhas: j.buckets.map((b, i) => [b.rotulo, String(a.concluidas[i]), String(a.criadas[i])]),
+      dica: (i) => `${rotulos[i]}: ${a.concluidas[i]} concluída(s) · ${a.criadas[i]} criada(s)`,
+    };
+  }
+  return {
+    valor: String(a.totais.publicacoes),
+    sub: 'publicação(ões) concluída(s) no período',
+    svg: M.svgColunas({ valores: a.publicacoes, rotulos, cadaRotulo: cada, inteiros: true }),
+    legenda: '',
+    cabecalho: ['Período', 'Publicações'],
+    linhas: j.buckets.map((b, i) => [b.rotulo, String(a.publicacoes[i])]),
+    dica: (i) => `${rotulos[i]}: ${a.publicacoes[i]} publicação(ões)`,
+  };
+}
+
+function metricaCardHtml(c, j, cont) {
+  const M = window.Metricas;
+  const emTabela = !!metricasEstado.tabela[c.id];
+  const tabela = `<table class="metrica-tabela"><thead><tr>${cont.cabecalho.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${cont.linhas.map((l) => `<tr>${l.map((x) => `<td>${escapeHtml(x)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  return `<div class="metrica ${metricasEstado.carregando ? 'carregando' : ''}" data-metrica="${c.id}">
+    <div class="metrica-head">
+      <span class="metrica-l">${escapeHtml(c.titulo)}</span>
+      <span class="seg">${c.periodos.map((p) => `<button class="${p === j.periodo ? 'on' : ''}" data-periodo="${p}">${escapeHtml(M.PERIODOS[p].rotulo)}</button>`).join('')}</span>
     </div>
-    <div class="whois-bloco">
-      <h4>WHOIS</h4>
-      ${w.erro ? `<div class="whois-kv"><dt>—</dt><dd>WHOIS indisponível: ${escapeHtml(w.erro)}</dd></div>` : `<dl class="whois-kv">
-        ${linha('Titular', c.titular)}
-        ${linha('Registrador', c.registrador)}
-        ${linha('Criado', c.criado)}
-        ${linha('Expira', c.expira)}
-        ${linha('Status', c.status)}
-      </dl>`}
-      ${w.aviso ? `<div class="whois-kv" style="margin-top:6px"><dt>nota</dt><dd>${escapeHtml(w.aviso)}</dd></div>` : ''}
-      ${w.texto ? `<details class="whois-raw"><summary>Ver WHOIS completo</summary><pre>${escapeHtml(w.texto)}</pre></details>` : ''}
-    </div>
+    <div class="metrica-valor"><b>${escapeHtml(cont.valor)}</b><span>${escapeHtml(cont.sub)}</span></div>
+    <div class="metrica-grafico">${emTabela ? tabela : cont.svg}</div>
+    <div class="metrica-foot">${cont.legenda || `<span class="metrica-sub">${escapeHtml(c.sub)}</span>`}<button class="btn compact ghost" data-tabela="${c.id}">${emTabela ? 'gráfico' : 'tabela'}</button></div>
+    <div class="mt-tip" hidden></div>
   </div>`;
+}
+
+function renderHomeMetricas() {
+  const wrap = document.getElementById('homeMetricas');
+  if (!wrap) return;
+  const M = window.Metricas;
+  const d = metricasEstado.dados;
+  const meta = document.getElementById('homeMetricasMeta');
+  if (meta) meta.textContent = metricasEstado.carregando ? 'lendo…' : !hubSfConectado ? 'offline' : d ? `salesforce · ${primeiroNome(d.eu?.nome || '') || 'você'} · último ano` : 'salesforce';
+  if (!hubSfConectado || !M) {
+    wrap.innerHTML = '<div class="metrica metrica-aviso">Conecte o Salesforce nas configurações para ver SLA, tarefas e publicações aqui.</div>';
+    return;
+  }
+  if (!d) {
+    wrap.innerHTML = metricasEstado.erro
+      ? `<div class="metrica metrica-aviso">Não consegui ler os indicadores: ${escapeHtml(metricasEstado.erro)}. <button class="btn compact ghost" id="metricasTentar">Tentar de novo</button></div>`
+      : '<div class="metrica metrica-aviso">Lendo as suas tarefas do último ano no Salesforce…</div>';
+    document.getElementById('metricasTentar')?.addEventListener('click', () => carregarMetricas(true));
+    return;
+  }
+  const agora = new Date();
+  const cards = METRICAS_CARDS.map((c) => {
+    const j = M.janela(state.homePeriodos[c.id], agora);
+    const a = M.agregar(d.tarefas, j);
+    return { c, j, cont: metricaConteudo(c, j, a) };
+  });
+  wrap.innerHTML = cards.map(({ c, j, cont }) => metricaCardHtml(c, j, cont)).join('');
+
+  wrap.querySelectorAll('[data-periodo]').forEach((b) => b.addEventListener('click', () => {
+    const card = b.closest('[data-metrica]');
+    state.homePeriodos[card.dataset.metrica] = b.dataset.periodo;
+    saveHubState();
+    renderHomeMetricas();
+  }));
+  wrap.querySelectorAll('[data-tabela]').forEach((b) => b.addEventListener('click', () => {
+    metricasEstado.tabela[b.dataset.tabela] = !metricasEstado.tabela[b.dataset.tabela];
+    renderHomeMetricas();
+  }));
+  // Tooltip por coluna: o alvo é a faixa inteira do bucket (maior que a
+  // barra), e o texto entra por textContent.
+  for (const { c, cont } of cards) {
+    const card = wrap.querySelector(`[data-metrica="${c.id}"]`);
+    const tip = card && card.querySelector('.mt-tip');
+    if (!card || !tip) continue;
+    card.querySelectorAll('.mt-col').forEach((g) => {
+      g.addEventListener('mouseenter', () => { tip.textContent = cont.dica(Number(g.dataset.i)); tip.hidden = false; });
+      g.addEventListener('mousemove', (e) => {
+        const r = card.getBoundingClientRect();
+        const w = tip.offsetWidth || 120;
+        tip.style.left = `${Math.max(4, Math.min(e.clientX - r.left - w / 2, r.width - w - 4))}px`;
+        tip.style.top = `${Math.max(4, e.clientY - r.top - 30)}px`;
+      });
+      g.addEventListener('mouseleave', () => { tip.hidden = true; });
+    });
+  }
 }
 
 function backButtonHtml({ tabs = '' } = {}) {
@@ -7716,6 +7817,13 @@ async function init() {
     if (hubRes.state.mailSsl) state.mailSsl = hubRes.state.mailSsl;
     if (hubRes.state.mailVhost && typeof hubRes.state.mailVhost === 'object') {
       state.mailVhost = { to: String(hubRes.state.mailVhost.to || ''), cc: String(hubRes.state.mailVhost.cc || '') };
+    }
+    // Só períodos que existem, só nos indicadores que existem.
+    if (hubRes.state.homePeriodos && typeof hubRes.state.homePeriodos === 'object') {
+      for (const k of Object.keys(state.homePeriodos)) {
+        const p = hubRes.state.homePeriodos[k];
+        if (['dia', 'semana', 'mes', 'ano'].includes(p)) state.homePeriodos[k] = p;
+      }
     }
     if (SSL_PROJETOS.includes(hubRes.state.sslProjeto)) state.sslProjeto = hubRes.state.sslProjeto;
   }

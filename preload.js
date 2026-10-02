@@ -137,6 +137,8 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('bash:saiu', handler);
   },
   salesforceTarefas: () => ipcRenderer.invoke('salesforce:tarefas'),
+  // Indicadores da tela inicial (ADR-138): tarefas do último ano, para SLA, tarefas e publicações.
+  salesforceMetricas: (payload) => ipcRenderer.invoke('salesforce:metricas', payload || {}),
   salesforceMoverTarefa: (payload) => ipcRenderer.invoke('salesforce:moverTarefa', payload),
   statusCredenciais: () => ipcRenderer.invoke('sistema:credenciais'),
   abrirLink: (payload) => ipcRenderer.invoke('sistema:abrirLink', payload),

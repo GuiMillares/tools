@@ -6010,6 +6010,90 @@ console nas duas telas.
 
 ---
 
+## ADR-138 — Tela inicial com os indicadores das suas tarefas; o WHOIS vai para o terminal
+
+**Contexto.** Pedido de 02/10/2026: "ao invés de deixar assim minha tela
+inicial, colocar gráficos do Salesforce com filtros — SLA médio (dia, semana,
+mês), Tarefas (dia, semana, mês, ano), Publicações feitas (dia, semana, mês,
+ano) — e tirar a parte de procurar o apontamento; tudo que aparece quando a
+gente pesquisa aparecer no cmd da direita, e a pesquisa do WHOIS ser nele". E,
+em seguida: "são só as tarefas relacionadas ao meu usuário". A home da v2.4
+(ADR-113, ADR-115) tinha o cartão de WHOIS/DNS na coluna da direita e a
+busca do topo (ADR-127) abria esse cartão quando o texto era um domínio.
+
+**Decisão.**
+
+1. **Uma consulta, três cartões.** `salesforce:metricas` lê as **suas**
+   tarefas (`OwnerId = você`) do último ano, com criação e conclusão
+   (`CompletedDateTime`; sem o campo, a última modificação da fechada). O
+   renderer corta por período e desenha; trocar o período não volta ao
+   Salesforce (os dados ficam 5 min em memória). Tarefa aberta na fila, ainda
+   sem dono, não entra: ela passa a ser sua quando você a assume.
+2. **Os indicadores**, cada um com o seu seletor de período no cartão
+   (lembrado no hub-state, `homePeriodos`):
+   - **SLA médio**: horas da criação à conclusão, média das suas tarefas
+     concluídas no período (dia, semana, mês), com a mediana e o n ao lado;
+     colunas = média por hora/dia.
+   - **Tarefas**: concluídas (colunas) e criadas (linha de contexto) por
+     bucket; abertas agora ao lado. Dia, semana, mês, ano.
+   - **Publicações feitas**: as concluídas cujo assunto fala em publicação.
+   Dia = as 24 horas de hoje; semana = 7 dias; mês = 30 dias; ano = 12
+   meses, tudo em hora local. `lib/metricas.js` (puro, dual) faz janelas,
+   buckets, agregação, formatação ("2d 4h") e o SVG.
+3. **Gráfico sem biblioteca e pelo guia de dataviz**: colunas de até 24px com
+   topo arredondado e base reta, 2px de folga, grade hairline sólida em 0,
+   metade e teto "redondo", rótulo direto só na maior coluna, tooltip por
+   coluna (o alvo é a faixa inteira) e uma tabela no lugar do gráfico pelo
+   botão do cartão; legenda só onde há duas séries. As cores foram
+   **validadas** sobre o painel (`#0a1c17`) com o validador do guia: a coluna
+   é `#22a85a` (dentro da faixa de luminosidade; o verde da marca `#3ee97d`
+   ficou fora dela e vira só o hover), a série de contexto é o cinza-verde
+   do texto apagado, e texto nunca usa cor de série. Nada anima (ADR-126).
+4. **O WHOIS sai da home.** Um domínio na busca do topo vira `whois
+   <domínio>` no terminal da direita (que já tinha os comandos `dns` e
+   `whois`, ADR-115), mostrando a Atividade se estava escondida; os atalhos
+   `#whois` e `#dns` da home deixam o comando pronto na linha de comando. O
+   cartão, o estado `whoisEstado` e o CSS dele foram removidos. O IPC
+   `dns:whois` continua, é o que o terminal usa.
+5. **As filas e o resumo ficam**, abaixo dos indicadores, lado a lado.
+
+**Consequências.** `test-metricas` cobre janelas, buckets, agregação, SLA,
+formatação e o SVG (contagem de colunas, rótulo no máximo, grade, escape).
+O harness de preview renderiza a home com 160 tarefas falsas e sem erro de
+console; a leitura real só acontece com o Salesforce conectado. Fica a nota
+do próprio SLA: ele mede o tempo da criação da tarefa (quem abriu o pedido) à
+conclusão, inclusive o tempo na fila antes de você assumir. Substitui o
+cartão de WHOIS da ADR-113 e o destino de domínio da ADR-127.
+
+---
+
+## ADR-139 — Conta da marca com publicação no container novo mesmo sendo admin da conta
+
+**Contexto.** 02/10/2026: "quando criar Tag Manager, colocar a conta
+(bcrelatoriotags e ferramentasmpi) com acesso total; ele tem deixado as contas
+como modo leitura". A ADR-020 manda dar à conta da marca acesso de publicação
+no container criado pela service account; mas `grantOwnerContainerAccess`
+pulava quem **já era admin da conta** ("acesso ao container é automático"), e
+o log de 01/10 mostra exatamente isso: "bcrelatoriotags@gmail.com já é admin
+da conta, acesso ao container é automático". No Tag Manager não é: a
+permissão de **conta** (usuário/admin) e a de **container** (leitura, edição,
+aprovação, publicação) são separadas, e um admin sem permissão no container
+novo o abre em somente leitura.
+
+**Decisão.** A conta da marca sempre recebe `publish` no container criado:
+quem não é membro entra como usuário da conta com publicação no container;
+quem já é membro — admin ou não — tem a permissão existente **atualizada**,
+preservando a permissão de conta e os outros containers. O estado `jaAdmin`
+deixou de existir; o terminal diz "agora tem acesso de publicação neste
+container (é admin da conta, mas a permissão de container é separada)".
+`test-acesso-container` cobre o caso do admin.
+
+**Consequências.** Containers criados antes de 02/10 para as contas admin
+podem estar em leitura; é ajuste manual no Tag Manager (ou recriar). A
+ADR-020 continua valendo no resto.
+
+---
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30

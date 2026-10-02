@@ -162,6 +162,19 @@ const STUB = () => {
       { id: 'dnshist', nome: 'Histórico de DNS (WhoisXML)', ok: false, detalhe: 'opcional' },
     ] }),
     salesforceMoverTarefa: async () => ({ ok: true, log: [], status: 'In Progress', rotulo: 'Em andamento', assumida: true }),
+    // Indicadores da home (ADR-138): 160 tarefas suas espalhadas pelo último
+    // ano, determinísticas, um terço de publicação, um quarto ainda aberta.
+    salesforceMetricas: async () => {
+      const t = [];
+      const agora = Date.now();
+      for (let i = 0; i < 160; i++) {
+        const criada = new Date(agora - ((i * 37) % 360) * 86400000 - (i % 24) * 3600000 - 5 * 3600000);
+        const fechada = i % 4 !== 0;
+        const dur = (6 + (i * 13) % 90) * 3600000;
+        t.push({ id: 'T' + i, assunto: i % 3 === 0 ? 'Publicação (Troca de DNS) - site' + i + '.com.br' : 'Alt - site' + i + '.com.br', fechada, status: fechada ? 'Completed' : 'Not Started', criada: criada.toISOString(), concluida: fechada ? new Date(Math.min(agora - 3600000, criada.getTime() + dur)).toISOString() : null, publicacao: i % 3 === 0, dono: 'Guilherme Millares', donoTipo: 'User' });
+      }
+      return { ok: true, log: [], eu: { id: '005A', nome: 'Guilherme Millares' }, tarefas: t, dias: 366, comConclusao: true, agora: new Date().toISOString() };
+    },
     salesforceTarefas: async () => ({ ok: true, log: [], instancia: 'https://grupo-ideal-trends.my.salesforce.com',
       eu: { id: '005A', nome: 'Guilherme Millares', email: 'guilherme.millares@buscacliente.com.br' },
       filas: [{ id: '00GA', nome: 'Deploy Busca Cliente', marca: 'bc' }, { id: '00GB', nome: 'Deploy MPI Solutions', marca: 'mpisolutions' }],
@@ -266,7 +279,7 @@ const FIXTURES = {
 
 const SCENES = {
   home: async (page) => {
-    await page.evaluate(async () => { hubSfConectado = true; await carregarTarefasSf(true); state.view = 'home'; render(); });
+    await page.evaluate(async () => { hubSfConectado = true; await carregarTarefasSf(true); await carregarMetricas(true); state.view = 'home'; render(); });
     await page.waitForTimeout(200);
   },
   // Os dois terminais (ADR-128): o Git Bash aberto embaixo do meio, com o
