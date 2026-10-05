@@ -6018,6 +6018,8 @@ console nas duas telas.
 
 ## ADR-138 — Tela inicial com os indicadores das suas tarefas; o WHOIS vai para o terminal
 
+**Status:** aceita — pela ADR-143 "concluída" é só o status Concluído (cancelada não conta) e o SLA é em dias úteis pela fórmula do relatório do painel, não em horas corridas
+
 **Contexto.** Pedido de 02/10/2026: "ao invés de deixar assim minha tela
 inicial, colocar gráficos do Salesforce com filtros — SLA médio (dia, semana,
 mês), Tarefas (dia, semana, mês, ano), Publicações feitas (dia, semana, mês,
@@ -6309,6 +6311,69 @@ duplica) e entra na lista como aguardando o cliente. `test-automacao` cobre o
 teto com o mapa vivo; `test-esperas`, a entrada do cliente (30 min, nunca
 "falta algo", termina quando aponta); `test-automacao-browser`, a anotação
 no painel e no log com a lista de espera do app presente.
+
+## ADR-143 — Os indicadores contam como o relatório do painel do Salesforce: só Concluído, e o SLA em dias úteis pela fórmula dele
+
+**Contexto.** Em 05/10/2026, com o filtro "Dia", o Hub mostrava 25 tarefas
+concluídas hoje e SLA médio de 2d 20h; o painel do Salesforce do usuário
+mostrava "Tarefas Concluídas por Analista: Guilherme 34" e "Deploy - BC /
+MPI: 0,9". "Não sei se você está fazendo os gráficos se baseando no
+Salesforce, pois os dados de SLA e tarefas concluídas estão errados." Os
+dois relatórios foram lidos pela Analytics API (`/analytics/reports/{id}/
+describe` e a execução com as linhas):
+
+- **"Tarefas Concluidas por analista - BC"** (`00ObL000007HGtxUAG`) e
+  **"Done -- Deploy - BC / MPI"** (`00ObL000007QxZtUAK`): tipo Tarefas e
+  compromissos, `ASSIGNED` = o usuário, **`STATUS = Concluído`**, data
+  **`COMPLETED_DATE_TIME = THIS_MONTH`**. O 34 é **o mês**, não o dia.
+- O "0,9" é a média da fórmula de linha **CDF1 ("SLA")** do "Done -- Deploy":
+  `5*FLOOR((DATEVALUE(COMPLETED_DATE_TIME) - DATE(1900,1,8))/7) + MIN(5, MOD(…,7))`
+  menos o mesmo para `CREATED_DATE` — isto é, **dias úteis entre a data de
+  criação e a de conclusão**, sem hora (sábado e domingo valem o fim da
+  semana: sexta → segunda = 1, quinta → sexta seguinte = 6, mesmo dia = 0).
+
+Conferido no SOQL: hoje, dono = eu, fechadas = 25, das quais **3
+canceladas** (status "Cancelada", que `IsClosed` inclui e o relatório não);
+este mês, 39 fechadas = 34 Concluído + 5 Cancelada. A média em horas
+corridas das 34 é 2,15 dias; em dias úteis pela fórmula, 0,94 — o 25 e o
+2d 20h do Hub eram a mesma base com outra definição (fechadas, horas
+corridas), não outra fonte.
+
+**Decisão.** O Hub conta **como o relatório do painel**, e nada mais:
+
+1. **Concluída = Status Concluído.** No `salesforce:metricas`, a tarefa
+   fechada como cancelada (`/cancel/i` no status) vem com `cancelada: true`
+   e **sem data de conclusão**; a lib não a conta como concluída, publicação
+   nem SLA. Continua contando como criada e como fechada (não está aberta).
+2. **SLA em dias úteis**, pela fórmula do relatório (`indiceDiaUtil`,
+   `diasUteisEntre` em `lib/metricas.js`, com a data local como o
+   `DATEVALUE`): média e mediana por coluna, no período corrente e na janela;
+   formato "0,94" / "1" / "6" (`formatarDias`), vírgula decimal, como o
+   painel. O eixo usa a forma curta de uma casa. A medida em horas corridas
+   (`horasAte`, `formatarHoras`) fica na lib, sem uso nos cartões.
+3. **Conferência automática contra o relatório**, feita hoje com a mesma
+   consulta do Hub: dia → 22 concluídas, SLA 0,91; mês → **34 concluídas,
+   SLA 0,94** (o relatório: 34 e 0,94); ano → 1.174. A diferença que restava
+   era o período: o painel é "este mês"; no Hub, é o filtro "Mês".
+4. **Layout da home** (mesmo pedido: "ícones quebrados, quadrados muito
+   colados, quadrados em cima de textos"): o rótulo do eixo y era "20d 20h" e
+   vazava do cartão — a margem esquerda do SVG passou a ser calculada pelo
+   rótulo mais largo e o cartão corta o que passar; o foguete do "deploy"
+   em 14px virava um borrão — as filas ganharam um ícone de bandeja
+   (`NAV_ICON.filas`); a coluna da direita ganhou um título próprio
+   ("Tarefas do Salesforce"), na mesma linha do título das filas, e o
+   cartão desceu para baixo dele, em vez de encostar no título vizinho; os
+   cartões dos indicadores ganharam respiro (16px entre eles, 20px antes
+   das filas, 10px depois do título).
+
+**Consequências.** O número do Hub é o do painel para o mesmo período:
+"Mês" = o painel; "Dia" = o que o painel mostraria com o filtro em "Hoje".
+Quem quiser o SLA em horas corridas não tem mais onde ver (a lib ainda
+sabe calcular). `test-metricas` cobre a fórmula com os casos das linhas
+reais do relatório (sexta → segunda = 1, quinta 24/09 → sexta 02/10 = 6),
+a cancelada que não conta e o formato; os dados falsos do preview seguem
+válidos. As ADR-138 e as atualizações dela ficam como estão, com o SLA
+redefinido aqui.
 
 ---
 

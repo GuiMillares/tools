@@ -8694,17 +8694,25 @@ ipcMain.handle('salesforce:metricas', async (event, { dias } = {}) => {
         comConclusao = false;
         linhas = await sf.consultar(`SELECT ${campos(false)} FROM Task WHERE ${where} ORDER BY CreatedDate DESC`, { maximo: 20000 });
       }
-      const tarefas = linhas.map((t) => ({
-        id: t.Id,
-        assunto: t.Subject || '',
-        fechada: !!t.IsClosed,
-        status: t.Status || '',
-        criada: t.CreatedDate,
-        concluida: t.IsClosed ? (t.CompletedDateTime || t.LastModifiedDate) : null,
-        dono: (t.Owner && t.Owner.Name) || '',
-        donoTipo: (t.Owner && t.Owner.Type) || '',
-        publicacao: /publica/i.test(t.Subject || ''),
-      }));
+      // Como o relatório "Done -- Deploy - BC / MPI" do painel do Salesforce
+      // (ADR-143): concluída é só Status = Concluído (API "Completed"); a
+      // fechada como Cancelada conta como criada e como fechada, mas não como
+      // concluída — fica sem data de conclusão.
+      const tarefas = linhas.map((t) => {
+        const cancelada = /cancel/i.test(t.Status || '');
+        return {
+          id: t.Id,
+          assunto: t.Subject || '',
+          fechada: !!t.IsClosed,
+          cancelada,
+          status: t.Status || '',
+          criada: t.CreatedDate,
+          concluida: t.IsClosed && !cancelada ? (t.CompletedDateTime || t.LastModifiedDate) : null,
+          dono: (t.Owner && t.Owner.Name) || '',
+          donoTipo: (t.Owner && t.Owner.Type) || '',
+          publicacao: /publica/i.test(t.Subject || ''),
+        };
+      });
       push(`${tarefas.length} tarefa(s) suas lidas${comConclusao ? '' : ' (a org não tem CompletedDateTime: conclusão = última modificação)'}.`, 'success');
       return { eu: { id: eu.id, nome: eu.nome }, tarefas, dias: n, comConclusao, agora: new Date().toISOString() };
     });

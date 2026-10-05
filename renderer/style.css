@@ -1047,13 +1047,17 @@ code {
 .home-pill { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent-line); background: var(--accent-soft); border-radius: 6px; padding: 3px 9px; display: inline-flex; align-items: center; gap: 6px; }
 .home-pill.cyan { color: var(--accent-2); border-color: var(--accent-2-line); background: var(--accent-2-soft); }
 .home-pill.dim { color: var(--text-faint); border-color: var(--border); background: transparent; }
-.home-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+/* As duas colunas de baixo têm um título cada, na mesma linha, e os cartões
+   começam alinhados abaixo deles; entre os indicadores e elas há respiro. */
+.home-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 20px; }
 @media (max-width: 1400px) { .home-grid { grid-template-columns: 1fr; } }
-.home-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.home-sec-title { display: flex; align-items: center; justify-content: space-between; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); }
-.home-sec-title svg { width: 14px; height: 14px; color: var(--accent); margin-right: 8px; vertical-align: -2px; }
-.home-sec-title .r { color: var(--text-faint); font-weight: 500; }
-.filas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.home-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* Ícone colado ao título, e o complemento (.r) empurrado para a direita —
+   com space-between o texto ficava centralizado, longe do ícone. */
+.home-sec-title { display: flex; align-items: center; justify-content: flex-start; min-height: 20px; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); }
+.home-sec-title svg { width: 14px; height: 14px; color: var(--accent); margin-right: 8px; vertical-align: -2px; flex-shrink: 0; }
+.home-sec-title .r { color: var(--text-faint); font-weight: 500; margin-left: auto; padding-left: 10px; }
+.filas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 @media (max-width: 1000px) { .filas { grid-template-columns: 1fr; } }
 .fila { border: 1px solid var(--border); border-top: 2px solid var(--accent); border-radius: var(--r-lg); background: var(--panel-solid); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-height: 150px; }
 .fila.cyan { border-top-color: var(--accent-2); }
@@ -1076,6 +1080,8 @@ code {
 .sf-resumo { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel-solid); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .sf-resumo-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .sf-resumo-head .home-sec-title { text-transform: none; letter-spacing: 0; font-family: var(--sans); font-size: 14px; }
+.sf-resumo-quem { display: flex; align-items: center; gap: 8px; margin-right: auto; font-size: 13px; font-weight: 600; color: var(--text); min-width: 0; }
+.sf-resumo-quem svg { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
 .sf-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .sf-num { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-2); padding: 10px 12px; }
 .sf-num-l { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); }
@@ -1096,9 +1102,9 @@ code {
    a coluna é um verde dentro da faixa de luminosidade (#22a85a), o verde da
    marca só no hover; a série de contexto (linha) é o cinza-verde do texto
    apagado. Texto nunca usa a cor da série. */
-.metricas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.metricas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 10px; }
 @media (max-width: 1150px) { .metricas { grid-template-columns: 1fr; } }
-.metrica { position: relative; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel-solid); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; --mt-serie: #22a85a; --mt-serie-hi: #3ee97d; --mt-contexto: var(--text-faint); }
+.metrica { position: relative; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--panel-solid); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; overflow: hidden; --mt-serie: #22a85a; --mt-serie-hi: #3ee97d; --mt-contexto: var(--text-faint); }
 .metrica.carregando .metrica-grafico { opacity: 0.45; }
 .metrica-aviso { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--text-dim); }
 .metrica-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1112,7 +1118,9 @@ code {
 .metrica-valor b { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1; }
 .metrica-valor span { font-size: 12px; color: var(--text-faint); }
 .metrica-grafico { min-height: 110px; }
-.metrica-grafico svg { width: 100%; height: auto; display: block; overflow: visible; }
+/* O SVG calcula a margem esquerda pelo rótulo mais largo do eixo: nada vaza
+   para fora do cartão. */
+.metrica-grafico svg { width: 100%; height: auto; display: block; overflow: hidden; }
 .mt-grid { stroke: var(--border); stroke-width: 1; }
 .mt-txt { fill: var(--text-dim); font-family: var(--mono); font-size: 9.5px; }
 .mt-tick { fill: var(--text-faint); }

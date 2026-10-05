@@ -379,9 +379,13 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
   cima, três indicadores das **suas** tarefas do Salesforce (ADR-138), cada
   um com a granularidade no próprio cartão — uma coluna por **dia** (30
   dias), por **semana** (12), por **mês inteiro** (12) ou por **ano** (3):
-  **SLA médio** (da criação à conclusão das concluídas; dia, semana, mês),
+  **SLA médio** (dias úteis da criação à conclusão, pela fórmula do
+  relatório "Done – Deploy" do painel do Salesforce; dia, semana, mês),
   **Tarefas** (concluídas e criadas; dia, semana, mês, ano) e **Publicações
-  feitas** (dia, semana, mês, ano). O número grande é o **período corrente**
+  feitas** (dia, semana, mês, ano). "Concluída" é só o status Concluído,
+  como no relatório "Tarefas Concluídas por analista": tarefa cancelada
+  conta como criada, não como concluída (ADR-143); com o filtro em Mês, os
+  números são os do painel. O número grande é o **período corrente**
   da granularidade escolhida — Dia mostra **hoje**, Semana esta semana, Mês
   este mês, Ano este ano — e o total da janela (os 30 dias, as 12 semanas…)
   fica no texto ao lado; a coluna corrente sai destacada no gráfico e marcada

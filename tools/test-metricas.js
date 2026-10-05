@@ -67,26 +67,49 @@ console.log('\n=== Agregação ===');
   check('concluídas por dia: 1 em 26/09, 2 em 30/09, 1 em 01/10', a.concluidas[24] === 1 && a.concluidas[28] === 2 && a.concluidas[29] === 1 && soma(a.concluidas) === 4, a.concluidas.join());
   check('publicações por dia (só as concluídas de publicação)', a.publicacoes[24] === 1 && a.publicacoes[28] === 1 && a.publicacoes[29] === 1 && soma(a.publicacoes) === 3, a.publicacoes.join());
   check('totais', a.totais.criadas === 5 && a.totais.concluidas === 4 && a.totais.publicacoes === 3 && a.totais.abertasAgora === 2, JSON.stringify(a.totais));
-  check('SLA médio = média de 48, 26, 24, 600 horas', Math.round(a.totais.slaMediaHoras) === 175 && a.totais.slaN === 4, String(a.totais.slaMediaHoras));
-  check('SLA mediana = (26+48)/2 = 37h', a.totais.slaMedianaHoras === 37, String(a.totais.slaMedianaHoras));
-  check('SLA por coluna: 30/09 = (48+26)/2 = 37; 01/10 = 24; 26/09 = 600; sem conclusão = null', a.slaHoras[28] === 37 && a.slaHoras[29] === 24 && a.slaHoras[24] === 600 && a.slaHoras[0] === null, a.slaHoras.join());
+  // SLA em dias úteis (ADR-143): seg 28→qua 30 = 2; ter 29→qua 30 = 1; qua 30→qui 01 = 1; ter 01/09→sáb 26/09 = 19.
+  check('SLA médio = média de 2, 1, 1, 19 dias úteis = 5,75', a.totais.slaMedia === 5.75 && a.totais.slaN === 4, String(a.totais.slaMedia));
+  check('SLA mediana = (1+2)/2 = 1,5', a.totais.slaMediana === 1.5, String(a.totais.slaMediana));
+  check('SLA por coluna: 30/09 = (2+1)/2 = 1,5; 01/10 = 1; 26/09 = 19; sem conclusão = null', a.sla[28] === 1.5 && a.sla[29] === 1 && a.sla[24] === 19 && a.sla[0] === null, a.sla.join());
   check('abertasAgora não depende do período', M.agregar(tarefas, M.janela('ano', AGORA)).totais.abertasAgora === 2);
   // Colunas de mês inteiro: setembro é a 10, outubro a 11.
   const mes = M.agregar(tarefas, M.janela('mes', AGORA));
   check('mês: setembro junta tudo (criadas 7, concluídas 3, publicações 2); outubro 1 concluída', mes.criadas[10] === 7 && mes.concluidas[10] === 3 && mes.publicacoes[10] === 2 && mes.concluidas[11] === 1 && mes.publicacoes[11] === 1, JSON.stringify({ c: mes.criadas, k: mes.concluidas, p: mes.publicacoes }));
-  check('mês: SLA médio de setembro = média de 48, 26, 600', Math.round(mes.slaHoras[10]) === 225 && mes.slaHoras[11] === 24, mes.slaHoras.join());
+  check('mês: SLA médio de setembro = média de 2, 1, 19 = 7,33; outubro 1', Math.round(mes.sla[10] * 100) === 733 && mes.sla[11] === 1, mes.sla.join());
   const ano = M.agregar(tarefas, M.janela('ano', AGORA));
   check('ano: tudo em 2026', ano.concluidas.join() === '0,0,4' && ano.criadas.join() === '0,0,7');
-  check('vazio não quebra', M.agregar([], dia).totais.slaMediaHoras === null && M.agregar(null, dia).totais.criadas === 0);
+  check('vazio não quebra', M.agregar([], dia).totais.slaMedia === null && M.agregar(null, dia).totais.criadas === 0);
 
   // O período corrente ("quando eu clico no filtro do dia eu quero ver o dia
   // de hoje"): a última coluna, com as mesmas contas — o número grande.
-  check('dia → atual é hoje (01/10): 1 concluída, 0 criada, 1 publicação, SLA 24h', a.atual.indice === 29 && a.atual.rotulo === 'hoje' && a.atual.concluidas === 1 && a.atual.criadas === 0 && a.atual.publicacoes === 1 && a.atual.slaMediaHoras === 24 && a.atual.slaN === 1, JSON.stringify(a.atual));
+  check('dia → atual é hoje (01/10): 1 concluída, 0 criada, 1 publicação, SLA 1 dia útil', a.atual.indice === 29 && a.atual.rotulo === 'hoje' && a.atual.concluidas === 1 && a.atual.criadas === 0 && a.atual.publicacoes === 1 && a.atual.slaMedia === 1 && a.atual.slaN === 1, JSON.stringify(a.atual));
   const sem = M.agregar(tarefas, M.janela('semana', AGORA));
-  check('semana → atual é a semana de 28/09: 5 criadas, 3 concluídas, 2 publicações, SLA média de 48, 26, 24', sem.atual.indice === 11 && sem.atual.rotulo === 'esta semana' && sem.atual.criadas === 5 && sem.atual.concluidas === 3 && sem.atual.publicacoes === 2 && Math.round(sem.atual.slaMediaHoras * 100) === 3267 && sem.atual.slaMedianaHoras === 26, JSON.stringify(sem.atual));
+  check('semana → atual é a semana de 28/09: 5 criadas, 3 concluídas, 2 publicações, SLA média de 2, 1, 1', sem.atual.indice === 11 && sem.atual.rotulo === 'esta semana' && sem.atual.criadas === 5 && sem.atual.concluidas === 3 && sem.atual.publicacoes === 2 && Math.round(sem.atual.slaMedia * 100) === 133 && sem.atual.slaMediana === 1, JSON.stringify(sem.atual));
   check('mês → atual é outubro: 1 concluída, 1 publicação, 0 criada; o total da janela continua 4', mes.atual.rotulo === 'este mês' && mes.atual.concluidas === 1 && mes.atual.publicacoes === 1 && mes.atual.criadas === 0 && mes.totais.concluidas === 4, JSON.stringify(mes.atual));
   check('ano → atual é 2026: 4 concluídas, 7 criadas', ano.atual.rotulo === 'este ano' && ano.atual.concluidas === 4 && ano.atual.criadas === 7, JSON.stringify(ano.atual));
-  check('sem conclusão no período corrente: SLA atual é null, n 0', M.agregar([tarefas[4]], dia).atual.slaMediaHoras === null && M.agregar([tarefas[4]], dia).atual.slaN === 0);
+  check('sem conclusão no período corrente: SLA atual é null, n 0', M.agregar([tarefas[4]], dia).atual.slaMedia === null && M.agregar([tarefas[4]], dia).atual.slaN === 0);
+
+  // Cancelada (ADR-143): fechada, criada, mas não concluída — como o relatório
+  // do painel, que filtra Status = Concluído.
+  const cancelada = { fechada: true, cancelada: true, criada: iso(2026, 9, 30, 9), concluida: null, publicacao: true };
+  const comCancelada = M.agregar([...tarefas, cancelada], dia);
+  check('cancelada conta como criada, não como concluída nem publicação nem SLA', comCancelada.totais.criadas === 6 && comCancelada.totais.concluidas === 4 && comCancelada.totais.publicacoes === 3 && comCancelada.totais.slaN === 4 && comCancelada.totais.abertasAgora === 2, JSON.stringify(comCancelada.totais));
+  check('cancelada com data de conclusão por engano também não conta', M.agregar([{ ...cancelada, concluida: iso(2026, 10, 1, 8) }], dia).totais.concluidas === 0);
+}
+
+console.log('\n=== SLA em dias úteis: a fórmula CDF1 do relatório "Done -- Deploy" (ADR-143) ===');
+{
+  const d = (y, m, dd, h = 12) => new Date(y, m - 1, dd, h);
+  check('mesmo dia = 0', M.diasUteisEntre(d(2026, 10, 1, 15), d(2026, 10, 1, 17)) === 0);
+  check('sexta 02/10 → segunda 05/10 = 1 (o fim de semana não conta)', M.diasUteisEntre(d(2026, 10, 2, 20), d(2026, 10, 5, 13)) === 1);
+  check('quinta 24/09 → sexta 02/10 = 6 (como a linha "Ajuste Site MPI" do relatório)', M.diasUteisEntre(d(2026, 9, 24, 19), d(2026, 10, 2, 11)) === 6);
+  check('terça 29/09 → quinta 01/10 = 2 (a linha "Criação de subdominio e VHost")', M.diasUteisEntre(d(2026, 9, 29, 19), d(2026, 10, 1, 9)) === 2);
+  check('quarta 30/09 23:59 → quinta 01/10 00:01 = 1 (só a data conta)', M.diasUteisEntre(d(2026, 9, 30, 23), d(2026, 10, 1, 0)) === 1);
+  check('sexta → sábado = 1 e sábado → segunda = 0 (sábado e domingo valem o fim da semana, como na fórmula)', M.diasUteisEntre(d(2026, 10, 2), d(2026, 10, 3)) === 1 && M.diasUteisEntre(d(2026, 10, 3), d(2026, 10, 5)) === 0);
+  check('índice de dia útil: segunda 08/01/1900 é 0; terça 09/01 é 1; sábado 13/01 e domingo 14/01 são 5; segunda 15/01 é 5', M.indiceDiaUtil(new Date(1900, 0, 8)) === 0 && M.indiceDiaUtil(new Date(1900, 0, 9)) === 1 && M.indiceDiaUtil(new Date(1900, 0, 13)) === 5 && M.indiceDiaUtil(new Date(1900, 0, 14)) === 5 && M.indiceDiaUtil(new Date(1900, 0, 15)) === 5);
+  check('conclusão antes da criação ou data inválida = null', M.diasUteisEntre(d(2026, 10, 2), d(2026, 10, 1)) === null && M.diasUteisEntre('nada', d(2026, 10, 1)) === null);
+  check('aceita ISO (como vem do Salesforce)', M.diasUteisEntre(iso(2026, 10, 2, 20), iso(2026, 10, 5, 13)) === 1);
+  check('formatarDias: 0,94 com vírgula, inteiro sem casas, nulo é traço; curto arredonda a 1 casa', M.formatarDias(0.9411764705882353) === '0,94' && M.formatarDias(1) === '1' && M.formatarDias(6) === '6' && M.formatarDias(null) === '—' && M.formatarDias(1.333, { curto: true }) === '1,3' && M.formatarDias(2.5, { curto: true }) === '2,5', [0.9411764705882353, 1, 6, null].map((x) => M.formatarDias(x)).join(' | '));
   check('a janela diz como chamar o período corrente ("hoje" / "nesta semana")', M.janela('dia', AGORA).em === 'hoje' && M.janela('semana', AGORA).em === 'nesta semana' && M.janela('mes', AGORA).em === 'neste mês' && M.janela('ano', AGORA).em === 'neste ano' && M.PERIODOS.dia.atual === 'hoje');
 }
 

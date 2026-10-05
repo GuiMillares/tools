@@ -631,6 +631,9 @@ const NAV_ICON = {
 };
 
 NAV_ICON.merge = ICONS.merge;
+// A bandeja: as filas de deploy na home (o foguete do "deploy" vira um borrão
+// em 14px).
+NAV_ICON.filas = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 13h4l2 3h4l2-3h4"/></svg>';
 NAV_ICON.config = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
 
 // A sidebar espelha os mockups (ADR-115): só módulo que existe. As
@@ -1106,7 +1109,7 @@ function renderHomeFilas() {
     const abertas = tarefasDaFila(f.id).filter((t) => !t.fechada);
     const lista = abertas.slice(0, 4);
     return `<div class="fila ${i % 2 ? 'cyan' : ''}">
-      <div class="fila-head"><span class="fila-nome" title="${escapeHtml(f.nome)}">${NAV_ICON.deploy}<span>${escapeHtml(f.nome)}</span></span><span class="fila-n">${abertas.length} na fila</span></div>
+      <div class="fila-head"><span class="fila-nome" title="${escapeHtml(f.nome)}">${NAV_ICON.filas}<span>${escapeHtml(f.nome)}</span></span><span class="fila-n">${abertas.length} na fila</span></div>
       <div class="fila-itens">
         ${lista.length ? lista.map((t) => {
           const p = prazoInfo(t);
@@ -1132,9 +1135,13 @@ function renderHomeResumoSf() {
   const proximas = abertas.filter((t) => prazoInfo(t).critica || (t.prazo && t.prazo <= new Date(Date.now() + 86400000).toISOString().slice(0, 10)));
   const semPrazo = abertas.filter((t) => !t.prazo);
   const destaque = [...abertas].filter((t) => t.prazo).sort((a, b) => a.prazo.localeCompare(b.prazo)).slice(0, 3);
+  // O título da coluna está fora do cartão (na mesma linha do título das
+  // filas); aqui ficam só a sessão e o atalho para o Kanban.
+  const meta = document.getElementById('homeSfMeta');
+  if (meta) meta.textContent = `salesforce · ${primeiroNome(nome) || d.eu.nome || 'você'}`;
   wrap.innerHTML = `<div class="sf-resumo">
     <div class="sf-resumo-head">
-      <span class="home-sec-title">${NAV_ICON.ouvidoria}Tarefas do Salesforce <span class="r">· ${escapeHtml(primeiroNome(nome) || d.eu.nome || '')}</span></span>
+      <span class="sf-resumo-quem">${NAV_ICON.ouvidoria}<span>Suas tarefas abertas, por prazo</span></span>
       <span class="home-pill cyan">sessão ativa</span>
       <button class="btn compact ghost" id="homeAbrirKanban">${NAV_ICON.kanban} Abrir no quadro Kanban</button>
     </div>
@@ -1866,10 +1873,11 @@ function renderHome() {
 
     <div class="home-grid">
       <div class="home-col">
-        <div class="home-sec-title anim-in">${NAV_ICON.deploy}Filas ativas de produção <span class="r">${sfKanban.carregando ? 'lendo…' : hubSfConectado ? 'salesforce' : 'offline'}</span></div>
+        <div class="home-sec-title anim-in">${NAV_ICON.filas}Filas ativas de produção <span class="r">${sfKanban.carregando ? 'lendo…' : hubSfConectado ? 'salesforce' : 'offline'}</span></div>
         <div class="filas anim-in" id="homeFilas"></div>
       </div>
       <div class="home-col">
+        <div class="home-sec-title anim-in">${NAV_ICON.kanban}Tarefas do Salesforce <span class="r" id="homeSfMeta">${hubSfConectado ? `salesforce${primeiroNome(nome) ? ' · ' + escapeHtml(primeiroNome(nome)) : ''}` : 'offline'}</span></div>
         <div id="homeSf" class="anim-in"></div>
       </div>
     </div>
@@ -1913,9 +1921,9 @@ function renderHome() {
 
 let metricasEstado = { dados: null, quando: 0, carregando: false, erro: null, tabela: {} };
 const METRICAS_CARDS = [
-  { id: 'sla', titulo: 'SLA médio', sub: 'da criação à conclusão, nas suas tarefas concluídas', periodos: ['dia', 'semana', 'mes'] },
-  { id: 'tarefas', titulo: 'Tarefas', sub: 'suas tarefas concluídas (colunas) e criadas (linha)', periodos: ['dia', 'semana', 'mes', 'ano'] },
-  { id: 'pub', titulo: 'Publicações feitas', sub: 'suas tarefas de publicação concluídas', periodos: ['dia', 'semana', 'mes', 'ano'] },
+  { id: 'sla', titulo: 'SLA médio', sub: 'dias úteis da criação à conclusão, como no relatório "Done – Deploy" do Salesforce', periodos: ['dia', 'semana', 'mes'] },
+  { id: 'tarefas', titulo: 'Tarefas', sub: 'suas tarefas com status Concluído (colunas) e criadas (linha); canceladas não contam', periodos: ['dia', 'semana', 'mes', 'ano'] },
+  { id: 'pub', titulo: 'Publicações feitas', sub: 'suas tarefas de publicação com status Concluído', periodos: ['dia', 'semana', 'mes', 'ano'] },
 ];
 // Quantos rótulos do eixo x cabem: 30 dias um a cada 5; 12 semanas e 12
 // meses um a cada 2; 3 anos todos.
@@ -1954,17 +1962,19 @@ function metricaConteudo(c, j, a) {
   const rotulos = j.buckets.map((b) => b.rotulo);
   const rotuloLinha = (i) => (i === u ? `${rotulos[i]} (${j.atual})` : rotulos[i]);
   const cada = METRICAS_CADA_ROTULO[j.periodo] || 1;
-  const fh = M.formatarHoras;
+  // O SLA é em dias úteis, como o relatório "Done -- Deploy" do painel do
+  // Salesforce (ADR-143): "0,94" lá é "0,94" aqui.
+  const fd = (v) => M.formatarDias(v);
   if (c.id === 'sla') {
-    const janelaTxt = a.totais.slaN ? `${j.descricao}: ${fh(a.totais.slaMediaHoras)} (${a.totais.slaN} concluída(s), mediana ${fh(a.totais.slaMedianaHoras)})` : `nenhuma concluída nos ${j.descricao}`;
+    const janelaTxt = a.totais.slaN ? `${j.descricao}: ${fd(a.totais.slaMedia)} (${a.totais.slaN} concluída(s), mediana ${fd(a.totais.slaMediana)})` : `nenhuma concluída nos ${j.descricao}`;
     return {
-      valor: a.atual.slaN ? fh(a.atual.slaMediaHoras) : '—',
-      sub: a.atual.slaN ? `${j.em} · ${a.atual.slaN} concluída(s) · mediana ${fh(a.atual.slaMedianaHoras)} · ${janelaTxt}` : `nenhuma concluída ${j.em} · ${janelaTxt}`,
-      svg: M.svgColunas({ valores: a.slaHoras, rotulos, cadaRotulo: cada, formatar: (v) => (v ? fh(v) : '0'), destacar: u }),
+      valor: a.atual.slaN ? fd(a.atual.slaMedia) : '—',
+      sub: a.atual.slaN ? `dias úteis, ${j.em} · ${a.atual.slaN} concluída(s) · mediana ${fd(a.atual.slaMediana)} · ${janelaTxt}` : `nenhuma concluída ${j.em} · ${janelaTxt}`,
+      svg: M.svgColunas({ valores: a.sla, rotulos, cadaRotulo: cada, formatar: (v) => fd(v), formatarEixo: (v) => M.formatarDias(v, { curto: true }), destacar: u }),
       legenda: '',
-      cabecalho: ['Período', 'SLA médio', 'Concluídas'],
-      linhas: j.buckets.map((b, i) => [rotuloLinha(i), a.slaHoras[i] === null ? '—' : fh(a.slaHoras[i]), String(a.concluidas[i])]),
-      dica: (i) => `${rotuloLinha(i)}: ${a.slaHoras[i] === null ? 'sem conclusão' : 'SLA ' + fh(a.slaHoras[i])} · ${a.concluidas[i]} concluída(s)`,
+      cabecalho: ['Período', 'SLA médio (dias úteis)', 'Concluídas'],
+      linhas: j.buckets.map((b, i) => [rotuloLinha(i), a.sla[i] === null ? '—' : fd(a.sla[i]), String(a.concluidas[i])]),
+      dica: (i) => `${rotuloLinha(i)}: ${a.sla[i] === null ? 'sem conclusão' : 'SLA ' + fd(a.sla[i]) + ' dia(s) útil(eis)'} · ${a.concluidas[i]} concluída(s)`,
     };
   }
   if (c.id === 'tarefas') {
