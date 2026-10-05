@@ -2387,10 +2387,18 @@ function writeEmpresaSegredos(empresa, patch) {
   return novo;
 }
 
-// Configuração não sigilosa da publicação: IP público e servidor padrão do Hestia.
+// Configuração não sigilosa da publicação: IP público de produção e afins.
 const publicacaoConfigPath = () => path.join(app.getPath('userData'), 'publicacao-config.json');
+// IPs de produção que já valeram e não valem mais para projeto novo: quem
+// tinha um deles gravado passa a ler o padrão atual (ADR-141). O servidor de
+// produção que o painel lista hoje (Idealplus 03) responde em .60; o .39 era
+// o servidor 11, que saiu do painel em 10/2026.
+const IPS_PRODUCAO_ANTIGOS = ['149.18.102.39'];
 const PUBLICACAO_PADRAO = {
-  hestiaIpPublico: '149.18.102.39',
+  // Reserva: o DNS dos projetos MPI+ novos usa o IP do servidor de produção
+  // que o painel lista (painel:servidores); este valor entra quando o painel
+  // não dá o IP ou lista mais de um servidor (ADR-141).
+  hestiaIpPublico: '149.18.102.60',
   // O IP em que os sites MPI+ da planilha estão hoje. No lote a única mudança
   // de DNS é a troca deste pelo de cima, e só quando a raiz está exatamente
   // nele (ADR-067). A regra cheia de preservação de e-mail continua sendo do
@@ -2406,7 +2414,11 @@ const PUBLICACAO_PADRAO = {
 function readPublicacaoConfig() {
   try {
     if (!fs.existsSync(publicacaoConfigPath())) return { ...PUBLICACAO_PADRAO };
-    return { ...PUBLICACAO_PADRAO, ...JSON.parse(fs.readFileSync(publicacaoConfigPath(), 'utf-8')) };
+    const cfg = { ...PUBLICACAO_PADRAO, ...JSON.parse(fs.readFileSync(publicacaoConfigPath(), 'utf-8')) };
+    // Cura o IP de produção antigo gravado (ADR-141): projeto novo não pode
+    // mais apontar para ele.
+    if (IPS_PRODUCAO_ANTIGOS.includes(String(cfg.hestiaIpPublico || '').trim())) cfg.hestiaIpPublico = PUBLICACAO_PADRAO.hestiaIpPublico;
+    return cfg;
   } catch (e) {
     return { ...PUBLICACAO_PADRAO };
   }
@@ -4320,7 +4332,7 @@ async function painelPublicarProducao(win, { dominio, servidorId }, push) {
   const s = r.servidor || {};
   push(`Painel: servidor de produção ${s.nome || s.host || s.id} (id ${s.id}${s.host ? ', ' + s.host : ''}${s.ip ? ', IP ' + s.ip : ''}), o que o painel lista.`, 'info');
   if (s.ip && cfg.hestiaIpPublico && s.ip !== cfg.hestiaIpPublico) {
-    push(`Atenção: o servidor escolhido tem IP público ${s.ip}, e o IP de produção configurado para o DNS e o SSL é ${cfg.hestiaIpPublico}. Se os sites novos devem responder em ${s.ip}, troque o IP nas Configurações; se ${cfg.hestiaIpPublico} continua na frente, está tudo certo.`, 'warn');
+    push(`O servidor escolhido tem IP público ${s.ip} e a configuração diz ${cfg.hestiaIpPublico}. O DNS deste projeto usou o IP do servidor do painel (ADR-141); atualize o IP nas Configurações para a reserva não ficar velha.`, 'warn');
   }
   push(`Painel: publicação enfileirada (job ${r.estado.job?.id || '?'}, passo ${r.estado.job?.step || '?'}).`, 'success');
   return { estado: r.estado, servidor: r.servidor || null };
@@ -4554,6 +4566,34 @@ handleNoPainel('painel:acharContrato', async (event, payload) => {
     const c = r.contrato;
     push(`Painel: ${dominio || razao} → ${c.empresa} / ${c.projetoNome || c.projeto} / contrato ${c.contrato}${r.conferidoPeloTemporario ? `, temporário ${painelAchar.normalizarTemporario(c.temporario)} confere` : ', o único do cliente (sem temporário na planilha para conferir)'}.`, r.conferidoPeloTemporario ? 'success' : 'warn');
     return { ok: true, url: r.url, contrato: c, conferidoPeloTemporario: r.conferidoPeloTemporario, log };
+  } catch (e) {
+    erroFatal = true;
+    push(`Painel: ${e.message}`, 'error');
+    return { ok: false, error: e.message, log };
+  } finally {
+    painelSoltarJanela(win, url, { descartar: erroFatal });
+  }
+});
+
+// Os servidores que o painel lista, e o IP de produção para o DNS de um
+// projeto novo (ADR-141): o do único servidor de produção com IP; null quando
+// o painel não dá IP ou lista mais de um (aí vale a configuração, e a escolha
+// do servidor fica para a hora de publicar, ADR-140). Fica depois do
+// painel:publicar porque o test-ssl-painel recorta o main.js até ele.
+handleNoPainel('painel:servidores', async (event, payload) => {
+  const { url } = payload || {};
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  let win = null;
+  let erroFatal = false;
+  try {
+    win = await abrirPainelLogado(url, push);
+    const r = await painelEstadoPublicacao(win);
+    const servidores = ((r.estado && r.estado.servidores) || []).map((s) => ({ id: String(s.id), nome: String(s.nome || ''), tipo: String(s.tipo || ''), host: String(s.host || ''), ip: String(s.ip || '') }));
+    const producao = servidores.filter((s) => !s.tipo || s.tipo === 'production');
+    const ipProducao = producao.length === 1 && producao[0].ip ? producao[0].ip : null;
+    push(`Painel: ${servidores.length} servidor(es) na lista, ${producao.length} de produção${ipProducao ? `; IP de produção ${ipProducao} (${producao[0].nome || producao[0].host})` : ''}.`, 'info');
+    return { ok: true, log, servidores, producao, ipProducao };
   } catch (e) {
     erroFatal = true;
     push(`Painel: ${e.message}`, 'error');

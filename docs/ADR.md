@@ -6158,11 +6158,59 @@ dois ele pergunta qual dos dois deve usar".
    conhece a infraestrutura, não do Hub. Por isso, quando o IP do servidor
    escolhido difere do configurado, o terminal avisa com as duas hipóteses,
    e a zona continua apontando para o configurado.
+   *Substituído no mesmo dia pela ADR-141:* a resposta veio ("os apontamentos
+   para novos projetos MPI+ será 149.18.102.60"), e o IP passou a seguir o
+   servidor do painel.
 
 **Consequências.** As publicações voltam a passar sem mexer em configuração
 quando o painel troca de servidor. O que não dá para automatizar sem risco é
 o IP do DNS: fica o aviso. `test-publicacao` continua aceitando a chave antiga
 `hestiaServidorPadrao` na configuração (ignorada).
+
+---
+
+## ADR-141 — O IP de produção do DNS é o do servidor que o painel MPI+ lista; a configuração é reserva
+
+**Contexto.** Depois da ADR-140, a pergunta que ficou ("`.39` continua na
+frente, ou os sites novos vão para `.60`?") foi respondida em 05/10/2026: "os
+apontamentos para novos projetos MPI+ será 149.18.102.60", e, logo depois,
+"conseguimos deixar isso sempre? ele usar o IP público do servidor que ele
+apontar no MPI+". O IP de produção estava fixo na configuração
+(`hestiaIpPublico: 149.18.102.39`, gravado no `publicacao-config.json` e
+padrão no código), entrava na zona da Cloudflare (raiz e `www`), na espera
+da propagação e na checagem antes do SSL. O painel passou a informar o IP
+público de cada servidor (`ip`), e o servidor de produção já vem dele
+(ADR-140).
+
+**Decisão.**
+
+1. **O IP segue o servidor do painel.** Um handler novo, `painel:servidores`,
+   lê a lista de servidores do painel e devolve o IP do único servidor de
+   produção (`ipProducao`); sem IP ou com mais de um servidor de produção,
+   devolve nulo. No Publicar MPI+, a etapa do DNS lê isso antes de montar a
+   zona e passa o IP como `ipNovo`; a espera da propagação e o SSL usam o IP
+   que a zona recebeu. No Publicar em massa, o IP é lido **uma vez por
+   rodada**, pelo painel do primeiro site, e vale para a troca da raiz e para
+   a checagem do SSL de todos. O terminal diz de onde veio ("IP de produção
+   pelo painel: 149.18.102.60 (servidor Idealplus 03)").
+2. **A configuração vira reserva**, usada quando o painel não informa o IP ou
+   lista mais de um servidor de produção. O padrão do código passou a
+   `149.18.102.60`, e o IP antigo gravado (`.39`) é **curado na leitura**
+   (`IPS_PRODUCAO_ANTIGOS`): quem tinha `.39` passa a ler `.60`, como a
+   ADR-090 fez com o assunto antigo. Outro IP qualquer gravado é respeitado.
+   O campo nas Configurações diz que é reserva.
+3. **A marca pelo IP** (ADR-119, bloqueio de contatos) aceita `.60` como
+   MPI+ além do `.39`: os sites antigos continuam no `.39`, os novos nascem
+   no `.60`.
+4. O `ipAntigoMpiMassa` (`149.18.102.58`, a migração V1→V2) não muda: é o IP
+   de onde os sites da planilha saem, não para onde vão.
+
+**Consequências.** A próxima troca de servidor no painel não exige mexer em
+configuração nem em código: servidor e IP vêm do painel. `test-publicacao`
+cobre a cura do `.39` e o respeito a outro IP; `test-triagem`, o `.60` como
+MPI+. Projeto publicado hoje: zona com raiz e `www` em `149.18.102.60`,
+e-mail preservado onde estava (ADR-071), SSL só quando o DNS apontar para
+`.60`. Os sites já publicados no `.39` não são tocados.
 
 ---
 

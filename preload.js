@@ -90,6 +90,8 @@ contextBridge.exposeInMainWorld('api', {
   aplicarCloudflare: (payload) => ipcRenderer.invoke('cloudflare:aplicar', payload),
   exportarPlanilha: (payload) => ipcRenderer.invoke('planilha:exportar', payload),
   publicarPainel: (payload) => ipcRenderer.invoke('painel:publicar', payload),
+  // Servidores que o painel lista e o IP de produção para o DNS (ADR-141).
+  painelServidores: (payload) => ipcRenderer.invoke('painel:servidores', payload),
   acharContratoNoPainel: (payload) => ipcRenderer.invoke('painel:acharContrato', payload),
   pararProcesso: () => ipcRenderer.invoke('processo:parar'),
   doutorSetCreds: (payload) => ipcRenderer.invoke('doutor:setCreds', payload),

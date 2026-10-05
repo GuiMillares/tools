@@ -334,9 +334,11 @@ apontamento, SSL (ou pendente, com aviso), tags e a linha na planilha.
 **O servidor de produção é o que o painel lista** na hora de publicar
 (ADR-140): um só, o Hub usa; dois ou mais, pergunta no terminal qual (na
 rodada em massa, uma vez por rodada; na automática, desiste e deixa para a
-mão). Não há mais servidor fixo nas Configurações. O IP de produção do DNS
-continua configurado, e o terminal avisa quando o IP do servidor escolhido é
-outro.
+mão). Não há mais servidor fixo nas Configurações. **O IP de produção do
+DNS é o IP público desse servidor** (ADR-141): a raiz e o `www` da zona, a
+espera da propagação e o SSL usam o que o painel informa; o IP das
+Configurações é só reserva, para quando o painel não informa ou lista mais
+de um servidor de produção.
 
 Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto, e
 pergunta a empresa no terminal antes da planilha (ADR-064).

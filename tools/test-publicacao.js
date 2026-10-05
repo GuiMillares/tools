@@ -156,7 +156,12 @@ const texto = (r) => (r.log || []).map((l) => l.message).join(' | ');
   check('campo em branco não apaga o que está salvo', M.readEmpresaSegredos('bc').cloudflareToken === 'tok-bc' && M.readEmpresaSegredos('bc').registrobrSenha === 's3nha');
   const st = await handlers['publicacao:getConfig']();
   check('status diz que existe sem devolver o valor', st.empresas.bc.cloudflareToken === true && !JSON.stringify(st).includes('tok-bc') && !JSON.stringify(st).includes('s3nha'), JSON.stringify(st));
-  check('config padrão do Hestia', st.config.hestiaIpPublico === '149.18.102.39' && st.config.hestiaServidorPadrao === '11');
+  // ADR-141: o IP antigo (.39) gravado é curado para o de produção atual (.60)
+  // na leitura; outro IP qualquer é respeitado.
+  check('IP de produção antigo gravado é lido como o atual (.60)', st.config.hestiaIpPublico === '149.18.102.60' && st.config.hestiaServidorPadrao === '11', JSON.stringify(st.config));
+  await handlers['publicacao:setConfig'](null, { config: { hestiaIpPublico: '10.9.8.7' } });
+  check('outro IP configurado é respeitado', (await handlers['publicacao:getConfig']()).config.hestiaIpPublico === '10.9.8.7');
+  await handlers['publicacao:setConfig'](null, { config: { hestiaIpPublico: '149.18.102.60' } });
   r = await handlers['publicacao:setConfig'](null, { empresas: { xpto: { cloudflareToken: 'a' } } });
   check('empresa desconhecida é ignorada', !fs.existsSync(path.join(DIR, 'empresa-xpto.enc')));
 
@@ -221,7 +226,9 @@ const texto = (r) => (r.log || []).map((l) => l.message).join(' | ');
     check('scan contou 5', r.escaneados === 5, String(r.escaneados));
     check('devolve os nameservers já na montagem', r.nameservers.length === 2);
     const z = r.zona;
-    check('raiz vai para o IP novo', z.registros.some((x) => x.type === 'A' && x.name === 'novo.com.br' && x.content === '149.18.102.39'));
+    // Sem ipNovo na chamada, a zona usa o IP de produção da configuração — o
+    // padrão atual, .60 (ADR-141).
+    check('raiz vai para o IP novo (.60, o padrão da configuração)', z.registros.some((x) => x.type === 'A' && x.name === 'novo.com.br' && x.content === '149.18.102.60'));
     check('erp que só o scan viu é replicado', z.registros.some((x) => x.name === 'erp.novo.com.br' && x.content === '10.1.1.1'));
     check('DKIM que só a fotografia viu entra', z.registros.some((x) => x.type === 'TXT' && x.name === 'default._domainkey.novo.com.br'));
     check('MX vira mail.<dominio> e mail A aponta para o IP antigo', z.registros.some((x) => x.type === 'MX' && x.content === 'mail.novo.com.br') && z.registros.some((x) => x.type === 'A' && x.name === 'mail.novo.com.br' && x.content === '200.9.9.9'));
@@ -238,7 +245,7 @@ const texto = (r) => (r.log || []).map((l) => l.message).join(' | ');
     check('AAAA da raiz saiu', !depois.some((x) => x.type === 'AAAA'));
     check('MX para a raiz saiu, MX para mail ficou', depois.filter((x) => x.type === 'MX').length === 1 && depois.find((x) => x.type === 'MX').content === 'mail.novo.com.br');
     check('www sem proxy', depois.find((x) => x.type === 'CNAME' && x.name === 'www.novo.com.br').proxied === false);
-    check('raiz no IP novo, sem proxy', depois.find((x) => x.type === 'A' && x.name === 'novo.com.br').content === '149.18.102.39' && depois.find((x) => x.type === 'A' && x.name === 'novo.com.br').proxied === false);
+    check('raiz no IP novo, sem proxy', depois.find((x) => x.type === 'A' && x.name === 'novo.com.br').content === '149.18.102.60' && depois.find((x) => x.type === 'A' && x.name === 'novo.com.br').proxied === false);
     check('erp intocado', depois.some((x) => x.name === 'erp.novo.com.br' && x.content === '10.1.1.1'));
     // Ordem das remoções (ADR-085): o AAAA da raiz disputa o nome com o A novo,
     // então sai antes dos PUT/POST; o MX antigo só sai depois de o MX novo

@@ -4390,9 +4390,12 @@ async function rodarBulk({ retomando = false } = {}) {
 
   const cfg = await window.api.getPublicacaoConfig();
   // O servidor é o de produção que o painel lista (ADR-140); com dois, o Hub
-  // pergunta uma vez e vale para a rodada toda.
+  // pergunta uma vez e vale para a rodada toda. O IP de produção para o DNS
+  // é o desse servidor (ADR-141), lido uma vez aqui pelo painel do primeiro
+  // site da fila.
   bulkServidorEscolhido = '';
   bulkServidorUsado = null;
+  bulkIpProducao = (await withBusy('lendo o servidor de produção no painel', () => ipProducaoParaDns(fila[0].painel))).ip;
 
   // Sem confirmação de lista (ADR-072): o botão diz o que vai acontecer, e a
   // lista já está na tela. A parada que fica é a do DNS, uma por domínio.
@@ -4845,10 +4848,12 @@ function renderBulkZonaNova(row, res) {
 async function cuidarDoDnsEmMassa(row, empresa) {
   const cfg = await window.api.getPublicacaoConfig();
   const ipAntigo = String(cfg?.config?.ipAntigoMpiMassa || '149.18.102.58').trim();
-  const ipNovo = String(cfg?.config?.hestiaIpPublico || '149.18.102.39').trim();
+  // O IP novo é o do servidor de produção do painel, lido uma vez por rodada
+  // (ADR-141); a configuração é a reserva.
+  const ipNovo = bulkIpProducao || String(cfg?.config?.hestiaIpPublico || '149.18.102.60').trim();
 
   const res = await withBusy(`montando a zona de ${row.dominio} na Cloudflare`, () =>
-    window.api.montarZonaCloudflare({ empresa, dominio: row.dominio, hostsExtras: [] })
+    window.api.montarZonaCloudflare({ empresa, dominio: row.dominio, hostsExtras: [], ipNovo })
   );
   if (res.log) for (const e of res.log) log(e.message, e.type);
   if (!res.ok) throw new Error(res.error);
@@ -5031,9 +5036,11 @@ async function registrarLinhaDaPlanilha(row) {
 // domínio resolve para o servidor de produção; pedir antes disso devolve
 // sempre "Não foi possível ativar o SSL de produção", uma mensagem que não
 // diz o que falta. Então o Hub pergunta ao DNS primeiro (ADR-069).
-async function conferirApontamentoDeProducao(dominio) {
+async function conferirApontamentoDeProducao(dominio, ipPreferido) {
   const cfg = await window.api.getPublicacaoConfig();
-  const ip = String(cfg?.config?.hestiaIpPublico || '149.18.102.39').trim();
+  // O IP que a zona recebeu (o do servidor do painel, ADR-141); a configuração
+  // é a reserva para quem chama sem saber.
+  const ip = String(ipPreferido || bulkIpProducao || (typeof pub !== 'undefined' && pub && (pub.zona?.ipNovo || pub.ipProducao)) || cfg?.config?.hestiaIpPublico || '149.18.102.60').trim();
 
   const r = await window.api.conferirApontamento({ dominio, ip });
   if (!r.ok) return { pronto: false, ip, motivo: `não consegui consultar o DNS (${r.error})` };
@@ -5056,9 +5063,11 @@ function anotarSslPendente(dominio, motivo) {
 // para o resumo da linha; estoura quando a publicação falha, e aí a linha não
 // segue para o vínculo (vincular um site que não subiu daria erro pior adiante).
 // O servidor de produção da rodada em massa (ADR-140): escolhido uma vez quando
-// o painel lista dois, e o usado na última publicação, para a planilha.
+// o painel lista dois, e o usado na última publicação, para a planilha. E o IP
+// de produção da rodada para o DNS e o SSL (ADR-141).
 let bulkServidorEscolhido = '';
 let bulkServidorUsado = null;
+let bulkIpProducao = '';
 
 async function publicarSeNecessario(row) {
   const url = normalizePainelUrl(row.painel);
@@ -6073,7 +6082,11 @@ async function pubEtapaContato() {
 async function pubEtapaDns() {
   if (!PLANILHA_ABA_POR_EMPRESA[pub.empresa]) throw new Error('escolha a empresa (Busca Cliente ou MPI Solutions) no seletor: é a conta da Cloudflare que vai receber a zona');
   const hosts = String(pub.hostsExtras || '').split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
-  const res = await withBusy('montando a zona na Cloudflare', () => window.api.montarZonaCloudflare({ empresa: pub.empresa, dominio: pub.dominio, hostsExtras: hosts }));
+  // A raiz e o www vão para o IP do servidor de produção que o painel lista
+  // (ADR-141); a configuração é a reserva.
+  const alvo = await withBusy('lendo o servidor de produção no painel', () => ipProducaoParaDns(pubPrecisaPainel() ? pub.painelUrl : ''));
+  pub.ipProducao = alvo.ip;
+  const res = await withBusy('montando a zona na Cloudflare', () => window.api.montarZonaCloudflare({ empresa: pub.empresa, dominio: pub.dominio, hostsExtras: hosts, ipNovo: alvo.ip }));
   logTudo(res);
   if (!res.ok) throw new Error(res.error);
   pub.foto = res.foto;
@@ -6086,7 +6099,7 @@ async function pubEtapaDns() {
   pubAvancar(
     'dns', true,
     `zona ${res.criada ? 'criada' : 'reaproveitada'}${res.escaneados ? `, scan trouxe ${res.escaneados}` : ''}; ${res.zona.registros.length} registro(s) na zona final, ` +
-      `muda ${p.atualizar.length}, cria ${p.criar.length}, remove ${p.remover.length}, mantém ${p.manter.length}; IP antigo ${res.zona.ipAntigo || '?'}`
+      `muda ${p.atualizar.length}, cria ${p.criar.length}, remove ${p.remover.length}, mantém ${p.manter.length}; IP antigo ${res.zona.ipAntigo || '?'} → novo ${res.zona.ipNovo} (${alvo.origem})`
   );
 }
 
@@ -6226,6 +6239,27 @@ async function pubEtapaPainel(etapa) {
   if (etapa === 'ssl') pub.sslPendente = null;
   pubAvancar(etapa, true, etapa === 'aprovar' ? `status ${res.estado?.siteStatus || 'approved'}` : 'SSL ativo');
   if (etapa === 'ssl') await pubVerificarScPendente();
+}
+
+// O IP de produção para o DNS de um projeto MPI+ (ADR-141): o do servidor de
+// produção que o painel lista, quando é um só e tem IP; senão o configurado
+// (a reserva). Lê o painel uma vez; quem chama guarda o resultado.
+async function ipProducaoParaDns(painelUrl) {
+  const cfg = await window.api.getPublicacaoConfig();
+  const configurado = String(cfg?.config?.hestiaIpPublico || '149.18.102.60').trim();
+  if (!painelUrl) return { ip: configurado, origem: 'configuração', servidor: null };
+  const r = await window.api.painelServidores({ url: normalizePainelUrl(painelUrl) }).catch((e) => ({ ok: false, error: e.message }));
+  if (r && r.log) for (const e of r.log) log(e.message, e.type);
+  if (r && r.ok && r.ipProducao) {
+    const s = (r.producao || [])[0] || {};
+    if (r.ipProducao !== configurado) log(`IP de produção pelo painel: ${r.ipProducao} (servidor ${s.nome || s.host}); a configuração diz ${configurado} e fica como reserva.`, 'info');
+    return { ip: r.ipProducao, origem: `servidor ${s.nome || s.host} do painel`, servidor: s };
+  }
+  const porque = r && r.ok
+    ? ((r.producao || []).length > 1 ? `o painel lista ${r.producao.length} servidores de produção; a escolha fica para a hora de publicar` : 'o painel não informa o IP do servidor')
+    : `não consegui ler os servidores do painel: ${(r && r.error) || '?'}`;
+  log(`IP de produção pela configuração: ${configurado} (${porque}).`, 'info');
+  return { ip: configurado, origem: 'configuração', servidor: null };
 }
 
 // O rótulo de um servidor do painel, para pergunta, planilha e terminal.

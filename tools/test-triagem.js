@@ -12,6 +12,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
 console.log('\n=== Marca pelo IP do apontamento ===');
 check('149.18.103.138 = MPI Solutions', T.marcaPorIp('149.18.103.138') === 'mpisolutions');
 check('149.18.102.39 = MPI+', T.marcaPorIp('149.18.102.39') === 'mpiplus');
+check('149.18.102.60 (Idealplus 03) = MPI+ também (ADR-141)', T.marcaPorIp('149.18.102.60') === 'mpiplus');
 check('149.18.103.98 = Busca Cliente', T.marcaPorIp('149.18.103.98') === 'bc');
 check('149.18.103.106 = Busca Cliente', T.marcaPorIp('149.18.103.106') === 'bc');
 check('IP desconhecido = null', T.marcaPorIp('8.8.8.8') === null);
