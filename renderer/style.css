@@ -1118,6 +1118,11 @@ code {
 .mt-tick { fill: var(--text-faint); }
 .mt-val { fill: var(--text); font-weight: 600; }
 .mt-bar { fill: var(--mt-serie); transition: fill var(--snap); }
+/* A coluna corrente (hoje / esta semana / este mês / este ano): é o número
+   grande do cartão, por isso sai na cor de destaque validada (a do hover) e
+   com o rótulo do eixo em evidência. */
+.mt-bar--atual { fill: var(--mt-serie-hi); }
+.mt-rot--atual { fill: var(--text); font-weight: 600; }
 .mt-col:hover .mt-bar { fill: var(--mt-serie-hi); }
 .mt-col:hover .mt-hit { fill: rgba(255, 255, 255, 0.03); }
 .mt-line { fill: none; stroke: var(--mt-contexto); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }

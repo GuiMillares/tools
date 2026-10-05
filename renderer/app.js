@@ -1907,7 +1907,8 @@ function renderHome() {
 // tarefas dos últimos 3 anos, o que o "Ano" precisa) e ficam 5 min em
 // memória; trocar o período não volta ao Salesforce. O desenho é SVG puro
 // (lib/metricas.js), sem biblioteca e sem animação. Cada cartão tem o número
-// grande (o total da janela mostrada), o gráfico (ou a tabela, no botão),
+// grande (o período corrente: hoje, esta semana, este mês, este ano; o total
+// da janela fica no texto ao lado), o gráfico (ou a tabela, no botão),
 // tooltip por coluna e a legenda quando há duas séries.
 
 let metricasEstado = { dados: null, quando: 0, carregando: false, erro: null, tabela: {} };
@@ -1943,41 +1944,48 @@ async function carregarMetricas(forcar) {
   return metricasEstado.dados;
 }
 
-// O que cada cartão mostra, a partir da janela e da agregação.
+// O que cada cartão mostra, a partir da janela e da agregação. O número
+// grande é o período corrente (a última coluna: hoje, esta semana, este mês,
+// este ano); o total da janela vai no texto ao lado, e a coluna corrente sai
+// destacada no gráfico e marcada na tabela e no tooltip.
 function metricaConteudo(c, j, a) {
   const M = window.Metricas;
+  const u = a.atual.indice;
   const rotulos = j.buckets.map((b) => b.rotulo);
+  const rotuloLinha = (i) => (i === u ? `${rotulos[i]} (${j.atual})` : rotulos[i]);
   const cada = METRICAS_CADA_ROTULO[j.periodo] || 1;
+  const fh = M.formatarHoras;
   if (c.id === 'sla') {
+    const janelaTxt = a.totais.slaN ? `${j.descricao}: ${fh(a.totais.slaMediaHoras)} (${a.totais.slaN} concluída(s), mediana ${fh(a.totais.slaMedianaHoras)})` : `nenhuma concluída nos ${j.descricao}`;
     return {
-      valor: M.formatarHoras(a.totais.slaMediaHoras),
-      sub: a.totais.slaN ? `${a.totais.slaN} concluída(s) nos ${j.descricao} · mediana ${M.formatarHoras(a.totais.slaMedianaHoras)}` : `nenhuma tarefa concluída nos ${j.descricao}`,
-      svg: M.svgColunas({ valores: a.slaHoras, rotulos, cadaRotulo: cada, formatar: (v) => (v ? M.formatarHoras(v) : '0') }),
+      valor: a.atual.slaN ? fh(a.atual.slaMediaHoras) : '—',
+      sub: a.atual.slaN ? `${j.em} · ${a.atual.slaN} concluída(s) · mediana ${fh(a.atual.slaMedianaHoras)} · ${janelaTxt}` : `nenhuma concluída ${j.em} · ${janelaTxt}`,
+      svg: M.svgColunas({ valores: a.slaHoras, rotulos, cadaRotulo: cada, formatar: (v) => (v ? fh(v) : '0'), destacar: u }),
       legenda: '',
       cabecalho: ['Período', 'SLA médio', 'Concluídas'],
-      linhas: j.buckets.map((b, i) => [b.rotulo, a.slaHoras[i] === null ? '—' : M.formatarHoras(a.slaHoras[i]), String(a.concluidas[i])]),
-      dica: (i) => `${rotulos[i]}: ${a.slaHoras[i] === null ? 'sem conclusão' : 'SLA ' + M.formatarHoras(a.slaHoras[i])} · ${a.concluidas[i]} concluída(s)`,
+      linhas: j.buckets.map((b, i) => [rotuloLinha(i), a.slaHoras[i] === null ? '—' : fh(a.slaHoras[i]), String(a.concluidas[i])]),
+      dica: (i) => `${rotuloLinha(i)}: ${a.slaHoras[i] === null ? 'sem conclusão' : 'SLA ' + fh(a.slaHoras[i])} · ${a.concluidas[i]} concluída(s)`,
     };
   }
   if (c.id === 'tarefas') {
     return {
-      valor: String(a.totais.concluidas),
-      sub: `concluída(s) nos ${j.descricao} · ${a.totais.criadas} criada(s) · ${a.totais.abertasAgora} aberta(s) agora`,
-      svg: M.svgColunas({ valores: a.concluidas, linha: a.criadas, rotulos, cadaRotulo: cada, inteiros: true }),
+      valor: String(a.atual.concluidas),
+      sub: `concluída(s) ${j.em} · ${a.atual.criadas} criada(s) ${j.em} · ${a.totais.abertasAgora} aberta(s) agora · ${j.descricao}: ${a.totais.concluidas} concluída(s), ${a.totais.criadas} criada(s)`,
+      svg: M.svgColunas({ valores: a.concluidas, linha: a.criadas, rotulos, cadaRotulo: cada, inteiros: true, destacar: u }),
       legenda: '<div class="metrica-legenda"><span><i></i>concluídas</span><span><i class="linha"></i>criadas</span></div>',
       cabecalho: ['Período', 'Concluídas', 'Criadas'],
-      linhas: j.buckets.map((b, i) => [b.rotulo, String(a.concluidas[i]), String(a.criadas[i])]),
-      dica: (i) => `${rotulos[i]}: ${a.concluidas[i]} concluída(s) · ${a.criadas[i]} criada(s)`,
+      linhas: j.buckets.map((b, i) => [rotuloLinha(i), String(a.concluidas[i]), String(a.criadas[i])]),
+      dica: (i) => `${rotuloLinha(i)}: ${a.concluidas[i]} concluída(s) · ${a.criadas[i]} criada(s)`,
     };
   }
   return {
-    valor: String(a.totais.publicacoes),
-    sub: `publicação(ões) concluída(s) nos ${j.descricao}`,
-    svg: M.svgColunas({ valores: a.publicacoes, rotulos, cadaRotulo: cada, inteiros: true }),
+    valor: String(a.atual.publicacoes),
+    sub: `publicação(ões) concluída(s) ${j.em} · ${j.descricao}: ${a.totais.publicacoes}`,
+    svg: M.svgColunas({ valores: a.publicacoes, rotulos, cadaRotulo: cada, inteiros: true, destacar: u }),
     legenda: '',
     cabecalho: ['Período', 'Publicações'],
-    linhas: j.buckets.map((b, i) => [b.rotulo, String(a.publicacoes[i])]),
-    dica: (i) => `${rotulos[i]}: ${a.publicacoes[i]} publicação(ões)`,
+    linhas: j.buckets.map((b, i) => [rotuloLinha(i), String(a.publicacoes[i])]),
+    dica: (i) => `${rotuloLinha(i)}: ${a.publicacoes[i]} publicação(ões)`,
   };
 }
 

@@ -381,9 +381,12 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
   dias), por **semana** (12), por **mês inteiro** (12) ou por **ano** (3):
   **SLA médio** (da criação à conclusão das concluídas; dia, semana, mês),
   **Tarefas** (concluídas e criadas; dia, semana, mês, ano) e **Publicações
-  feitas** (dia, semana, mês, ano). Número grande com o total da janela,
-  gráfico de colunas com tooltip, e uma tabela no lugar do gráfico pelo
-  botão do cartão. Abaixo, as filas de deploy e o resumo das suas
+  feitas** (dia, semana, mês, ano). O número grande é o **período corrente**
+  da granularidade escolhida — Dia mostra **hoje**, Semana esta semana, Mês
+  este mês, Ano este ano — e o total da janela (os 30 dias, as 12 semanas…)
+  fica no texto ao lado; a coluna corrente sai destacada no gráfico e marcada
+  na tabela. Gráfico de colunas com tooltip, e uma tabela no lugar do gráfico
+  pelo botão do cartão. Abaixo, as filas de deploy e o resumo das suas
   tarefas (abertas, entregas em menos de 24h, sem prazo) (ADR-113, ADR-115).
   WHOIS/DNS não tem mais cartão: um domínio na busca do topo, ou `whois
   <domínio>` no terminal, responde no terminal da direita. As ferramentas

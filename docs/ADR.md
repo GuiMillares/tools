@@ -6096,6 +6096,23 @@ ato), que infla setembro; e o **SLA médio (2d 6h) fica longe da mediana (3h
 3 tarefas no ano foram fechadas pelo usuário sem estar no nome dele; o
 recorte "dono = você" não perde nada relevante.
 
+**Atualização (05/10/2026, à tarde): o número grande é o período corrente.**
+Com "Dia" escolhido, o cartão dizia "300 concluída(s) nos últimos 30 dias" e
+"139 publicação(ões)": "esses dados estão errados, pois no dia de hoje eu não
+fiz 300 tarefas", e "quando eu clico no filtro do dia eu quero ver o dia de
+hoje". A granularidade continua a da atualização anterior (o Mês mostra os
+meses inteiros numa linha), mas o **número grande passa a ser a última
+coluna** — hoje, esta semana (segunda a hoje), este mês, este ano — e o
+total da janela vai para o texto ao lado ("hoje · 3 criada(s) hoje · últimos
+30 dias: 300 concluída(s)"). O SLA médio segue a mesma regra (média das
+concluídas hoje, com a mediana e o n; "—" quando não há nenhuma, com a
+janela ao lado). A coluna corrente sai **destacada** no gráfico (classe
+`mt-bar--atual`, a cor de destaque validada, a mesma do hover) e com o rótulo
+do eixo sempre presente; na tabela e no tooltip ela vem marcada ("01/10
+(hoje)"). `lib/metricas.js` devolve isso em `agregar().atual` e `svgColunas`
+recebe `destacar`; `test-metricas` cobre o período corrente nas quatro
+granularidades e o destaque.
+
 ---
 
 ## ADR-139 — Conta da marca com publicação no container novo mesmo sendo admin da conta

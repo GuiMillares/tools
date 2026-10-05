@@ -78,6 +78,16 @@ console.log('\n=== Agregação ===');
   const ano = M.agregar(tarefas, M.janela('ano', AGORA));
   check('ano: tudo em 2026', ano.concluidas.join() === '0,0,4' && ano.criadas.join() === '0,0,7');
   check('vazio não quebra', M.agregar([], dia).totais.slaMediaHoras === null && M.agregar(null, dia).totais.criadas === 0);
+
+  // O período corrente ("quando eu clico no filtro do dia eu quero ver o dia
+  // de hoje"): a última coluna, com as mesmas contas — o número grande.
+  check('dia → atual é hoje (01/10): 1 concluída, 0 criada, 1 publicação, SLA 24h', a.atual.indice === 29 && a.atual.rotulo === 'hoje' && a.atual.concluidas === 1 && a.atual.criadas === 0 && a.atual.publicacoes === 1 && a.atual.slaMediaHoras === 24 && a.atual.slaN === 1, JSON.stringify(a.atual));
+  const sem = M.agregar(tarefas, M.janela('semana', AGORA));
+  check('semana → atual é a semana de 28/09: 5 criadas, 3 concluídas, 2 publicações, SLA média de 48, 26, 24', sem.atual.indice === 11 && sem.atual.rotulo === 'esta semana' && sem.atual.criadas === 5 && sem.atual.concluidas === 3 && sem.atual.publicacoes === 2 && Math.round(sem.atual.slaMediaHoras * 100) === 3267 && sem.atual.slaMedianaHoras === 26, JSON.stringify(sem.atual));
+  check('mês → atual é outubro: 1 concluída, 1 publicação, 0 criada; o total da janela continua 4', mes.atual.rotulo === 'este mês' && mes.atual.concluidas === 1 && mes.atual.publicacoes === 1 && mes.atual.criadas === 0 && mes.totais.concluidas === 4, JSON.stringify(mes.atual));
+  check('ano → atual é 2026: 4 concluídas, 7 criadas', ano.atual.rotulo === 'este ano' && ano.atual.concluidas === 4 && ano.atual.criadas === 7, JSON.stringify(ano.atual));
+  check('sem conclusão no período corrente: SLA atual é null, n 0', M.agregar([tarefas[4]], dia).atual.slaMediaHoras === null && M.agregar([tarefas[4]], dia).atual.slaN === 0);
+  check('a janela diz como chamar o período corrente ("hoje" / "nesta semana")', M.janela('dia', AGORA).em === 'hoje' && M.janela('semana', AGORA).em === 'nesta semana' && M.janela('mes', AGORA).em === 'neste mês' && M.janela('ano', AGORA).em === 'neste ano' && M.PERIODOS.dia.atual === 'hoje');
 }
 
 console.log('\n=== Formatação ===');
@@ -110,6 +120,14 @@ console.log('\n=== SVG das colunas ===');
   const cont = M.svgColunas({ valores: [1, 0], inteiros: true });
   check('contagem com teto 1: sem rótulo "0.5" no meio (a linha fica)', !/>0\.5</.test(cont) && (cont.match(/class="mt-grid"/g) || []).length === 3 && /mt-tick"[^>]*>1</.test(cont), cont.match(/mt-tick"[^>]*>[^<]*</g).join(' '));
   check('contagem com teto 10: o rótulo 5 do meio aparece', /mt-tick"[^>]*>5</.test(M.svgColunas({ valores: [7], inteiros: true })));
+  // A coluna corrente (hoje) destacada e sempre com rótulo, mesmo quando o
+  // eixo pula rótulos; o rótulo periódico vizinho sai para não encostar.
+  const hoje = M.svgColunas({ valores: [1, 2, 3, 4, 5, 6], rotulos: ['a', 'b', 'c', 'd', 'e', 'f'], cadaRotulo: 5, destacar: 5 });
+  check('destacar: só a coluna corrente ganha mt-bar--atual e mt-col--atual', (hoje.match(/mt-bar--atual/g) || []).length === 1 && /mt-col mt-col--atual" data-i="5"/.test(hoje), hoje.match(/mt-col[^"]*" data-i="\d"/g).join(' '));
+  check('  e o rótulo dela aparece em destaque, além dos periódicos', /mt-rot mt-rot--atual"[^>]*>f</.test(hoje) && /mt-rot"[^>]*>a</.test(hoje) && (hoje.match(/mt-rot/g) || []).length === 3, (hoje.match(/mt-rot[^>]*>[^<]*</g) || []).join(' '));
+  const vizinho = M.svgColunas({ valores: [1, 2, 3, 4, 5], rotulos: ['a', 'b', 'c', 'd', 'e'], cadaRotulo: 3, destacar: 4 });
+  check('  o rótulo periódico colado na corrente (d, a 1 faixa de e) sai', !/>d</.test(vizinho) && />e</.test(vizinho) && />a</.test(vizinho), (vizinho.match(/mt-rot[^>]*>[^<]*</g) || []).join(' '));
+  check('sem destacar nada muda', !/--atual/.test(M.svgColunas({ valores: [1, 2], rotulos: ['a', 'b'] })));
 }
 
 console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
