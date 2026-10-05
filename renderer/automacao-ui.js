@@ -19,10 +19,37 @@
     rodando: false,
     parar: false,
     processados: new Set(),
+    // As tentativas por tarefa precisam viver entre as varreduras: até 05/10
+    // o mapa nascia a cada varredura e o teto de 3 nunca chegava (ADR-142).
+    tentativas: new Map(),
+    // A anotação das tarefas que esperam o DNS (id → { dominio, motivo, cliente }).
+    aguardando: new Map(),
     timer: null,
     ultima: null,
     emailVhost: null, // { to, cc } editados nesta sessão (espelho do state.mailVhost)
   };
+
+  // A lista de espera do app (`esperas`, let de topo do app.js, visível por
+  // identificador): quem está nela já foi publicado e só espera o DNS — a
+  // propagação do Registro.br (ADR-103) ou o apontamento do cliente
+  // (ADR-142). A varredura anota e pula; o vigia da lista termina.
+  function listaDeEspera() {
+    return (typeof esperas !== 'undefined' && Array.isArray(esperas)) ? esperas : [];
+  }
+  function textoEspera(e) {
+    const hora = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const falta = Array.isArray(e.falta) && e.falta.length ? e.falta.join(', ') : 'o SSL e fechar a tarefa';
+    if (e.status === 'falhou') return `já publicado e na lista de espera com pendência (${e.detalhe || 'veja a lista'}); resolva pela lista do Publicar MPI+ ("Tentar de novo")`;
+    if (e.status === 'rodando') return `já publicado; o vigia está terminando o que faltava (${falta})`;
+    if (e.cliente) return `já publicado; o DNS é do cliente e ${e.detalhe || 'ainda não aponta'}${e.ip ? ` (precisa apontar para ${e.ip})` : ''}; falta ${falta}, que o vigia faz quando apontar (confere a cada 30 min, a próxima ~${hora(e.ate)})`;
+    return `já publicado; esperando a propagação do Registro.br (previsão ${hora(e.ate)}) para ${falta}`;
+  }
+  function emEspera(dominio) {
+    const d = String(dominio || '').toLowerCase();
+    if (!d) return null;
+    const e = listaDeEspera().find((x) => x && String(x.dominio || '').toLowerCase() === d && x.status !== 'concluido');
+    return e ? { motivo: textoEspera(e), cliente: !!e.cliente, pendencia: e.status === 'falhou' } : null;
+  }
 
   // Para quem vai o e-mail de vhost da Busca One (ADR-132): o que foi editado
   // no painel (gravado no hub-state como mailVhost); senão o mesmo destino e
@@ -102,14 +129,13 @@
     if (typeof state !== 'undefined' && !state.googleSaPath) return { ok: false, desistir: true, motivo: 'service account do Google não configurada (as tags precisam dela)' };
     const dom = normalizeDomain(p.dominio);
     if (!dom) return { ok: false, desistir: true, motivo: 'sem domínio final na tarefa' };
-    // Já publicado e esperando a propagação (SSL + fechar a tarefa ficam com o
+    // Já publicado e na lista de espera (SSL + fechar a tarefa ficam com o
     // vigia): a tarefa ainda está aberta no Salesforce, mas NÃO é para publicar
     // de novo — a cada Ctrl+R a lista de processadas zera e isso re-rodava o
-    // fluxo inteiro (ADR-124).
-    if (typeof esperas !== 'undefined' && Array.isArray(esperas)) {
-      const naEspera = esperas.find((e) => e && e.dominio === dom && (e.status === 'esperando' || e.status === 'rodando'));
-      if (naEspera) return { ok: true, jaEstava: true, mensagem: `já publicado; esperando a propagação do Registro.br (previsão ${new Date(naEspera.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}) para SSL e fechar a tarefa` };
-    }
+    // fluxo inteiro (ADR-124). O motor já pula antes de chegar aqui
+    // (deps.emEspera, ADR-142); esta é a segunda trava.
+    const naEspera = emEspera(dom);
+    if (naEspera) return { ok: false, aguardando: true, dominio: dom, cliente: naEspera.cliente, motivo: naEspera.motivo };
 
     // 1) Razão social e empresa pelo caminho direto: a tarefa já está pendurada
     //    no caso, e o caso tem a conta (razão social) e o projeto (empresa).
@@ -183,6 +209,31 @@
           continue;
         }
         const f = pub.feitas[antes];
+        // Tudo feito menos o SSL (e, com ele, o Search Console e a tarefa), e
+        // o que falta é o DNS apontar — isso não depende do Hub (ADR-142):
+        //   - DNS do cliente (ou fora do .br): o site vai para a lista de
+        //     espera como "aguardando o cliente", sem prazo; o vigia confere
+        //     a cada 30 min e termina quando apontar. A tarefa fica anotada e
+        //     a fila segue para a próxima;
+        //   - DNS nosso que não propagou nos 30 min da etapa: lista de espera
+        //     normal (o vigia confere a cada minuto, com a folga de 30 min);
+        //   - Registro.br não respondeu e o DNS não foi tocado: repetir não
+        //     resolve; fica para a mão (a parte da Cloudflare).
+        // Repetir a publicação inteira a cada varredura, como acontecia, só
+        // reabria o painel e recriava o que já existia.
+        if (antes === 'salesforce' && pub.sslPendente && typeof pubMandarParaEspera === 'function') {
+          if (pub.dnsNosso === false) {
+            pubMandarParaEspera({ cliente: true });
+            const e = emEspera(dom);
+            return { ok: false, aguardando: true, dominio: dom, cliente: true, motivo: (e && e.motivo) || 'publicado; o DNS é do cliente e ainda não aponta; o vigia termina quando apontar' };
+          }
+          if (pub.dnsNosso === true) {
+            pubMandarParaEspera({ ate: Date.now() });
+            const e = emEspera(dom);
+            return { ok: false, aguardando: true, dominio: dom, motivo: (e && e.motivo) || 'publicado; o DNS ainda não propagou; o vigia termina quando apontar' };
+          }
+          return { ok: false, desistir: true, motivo: `publicado, tags e planilha feitos, mas o Registro.br não respondeu na hora do contato e o DNS não foi tocado (${pub.sslPendente}); rode o Publicar MPI+ à mão para a parte da Cloudflare — o SSL e a tarefa saem depois` };
+        }
         // Etapa que precisa de uma escolha humana (dois servidores de produção
         // no painel, ADR-140): repetir não resolve, desiste de primeira.
         if (pub.semSaida) return { ok: false, desistir: true, motivo: `${etapa.nome}: ${pub.semSaida}` };
@@ -293,6 +344,7 @@
     fecharTarefa: (p) => window.api.salesforceFecharTarefa(p),
     publicar,
     publicarBuscaOne: (p) => window.hubPublicarBuscaOneAuto(p),
+    emEspera,
   };
 
   async function rodarVarredura(manual) {
@@ -312,12 +364,13 @@
     try {
       const dados = await window.api.salesforceTarefas();
       if (!(dados && dados.tarefas)) { log('Automação: não consegui ler a fila.', 'error'); return; }
-      const res = await window.Automacao.varrerFila(dados, deps, { processados: estado.processados, parar: () => estado.parar });
+      const res = await window.Automacao.varrerFila(dados, deps, { processados: estado.processados, tentativas: estado.tentativas, aguardando: estado.aguardando, parar: () => estado.parar });
       const feitas = res.filter((r) => r.ok).length;
-      const puladas = res.filter((r) => r.pulou).length;
-      const erros = res.filter((r) => !r.ok && !r.pulou).length;
-      estado.ultima = { quando: new Date(), feitas, puladas, erros, total: res.length };
-      log(`Automação: varredura concluída — ${feitas} feita(s), ${puladas} pulada(s), ${erros} erro(s).`, feitas || erros ? 'success' : 'info');
+      const aguardando = res.filter((r) => !r.ok && r.aguardando).length;
+      const puladas = res.filter((r) => !r.ok && !r.aguardando && r.pulou).length;
+      const erros = res.filter((r) => !r.ok && !r.aguardando && !r.pulou).length;
+      estado.ultima = { quando: new Date(), feitas, aguardando, puladas, erros, total: res.length };
+      log(`Automação: varredura concluída — ${feitas} feita(s), ${aguardando} aguardando o DNS, ${puladas} pulada(s), ${erros} erro(s).`, feitas || erros ? 'success' : 'info');
     } catch (e) {
       log('Automação: erro na varredura — ' + e.message, 'error');
     } finally {
@@ -372,10 +425,29 @@
     }
     if (st) {
       const on = estado.ligado.bloqueio || estado.ligado.publicacao || estado.ligado.buscaone;
-      st.textContent = estado.rodando ? 'rodando…' : on ? `ligado · monitor a cada 5 min${estado.ultima ? ` · última: ${estado.ultima.feitas}✓ ${estado.ultima.puladas}↷ ${estado.ultima.erros}✗` : ''}` : 'desligado';
+      const u = estado.ultima;
+      st.textContent = estado.rodando ? 'rodando…' : on ? `ligado · monitor a cada 5 min${u ? ` · última: ${u.feitas}✓ ${u.aguardando ? u.aguardando + '⏳ ' : ''}${u.puladas}↷ ${u.erros}✗` : ''}` : 'desligado';
       st.style.color = estado.rodando ? '#22F2EF' : on ? '#5EE970' : '#9fb9ad';
     }
+    renderEsperasPainel();
   }
+
+  // A anotação dos domínios que esperam o DNS (ADR-142), no próprio painel:
+  // quem aguarda o cliente apontar e quem aguarda a propagação do Registro.br.
+  // Vem da lista de espera do app (persistida), por isso sobrevive a reabrir.
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function renderEsperasPainel() {
+    const el = painel && painel.querySelector('#autoEsperas');
+    if (!el) return;
+    const abertas = listaDeEspera().filter((e) => e && e.status !== 'concluido');
+    if (!abertas.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+    const cli = abertas.filter((e) => e.cliente);
+    const prop = abertas.filter((e) => !e.cliente);
+    const linha = (titulo, cor, lista) => lista.length ? `<div><span style="color:${cor}">${titulo} (${lista.length}):</span> ${lista.map((e) => esc(e.dominio) + (e.status === 'falhou' ? ' <em style="color:#ff6b6b;font-style:normal">(falta algo)</em>' : '')).join(', ')}</div>` : '';
+    el.style.display = 'block';
+    el.innerHTML = linha('Aguardando o cliente apontar', '#e9b84a', cli) + linha('Aguardando a propagação', '#9fb9ad', prop);
+  }
+  document.addEventListener('hub:esperas', () => { try { renderEsperasPainel(); } catch (e) {} });
 
   function montarPainel() {
     painel = document.createElement('div');
@@ -388,7 +460,7 @@
       '</div>',
       '<div id="autoBody">',
       '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer"><input type="checkbox" id="autoBloq"><span>Bloqueio de contatos automático</span></label>',
-      '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer" title="Tarefa de publicação MPI+ na fila: acha o contrato no painel, faz backup do DNS do cliente, aplica DNS, aprova, publica, SSL, tags, planilha e fecha a tarefa"><input type="checkbox" id="autoPub"><span>Publicação MPI+ automática <em style="color:#e9b84a;font-style:normal">(beta)</em></span></label>',
+      '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer" title="Tarefa de publicação MPI+ na fila: acha o contrato no painel, faz backup do DNS do cliente, aplica DNS, aprova, publica, SSL, tags, planilha e fecha a tarefa. Se o DNS é do cliente, o site vai para a lista de espera como aguardando o cliente (conferido a cada 30 min) e a fila segue para a próxima tarefa"><input type="checkbox" id="autoPub"><span>Publicação MPI+ automática <em style="color:#e9b84a;font-style:normal">(beta)</em></span></label>',
       '  <label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer" title="Tarefa de publicação Busca One (Busca Cliente / MPI Solutions) na fila: cria ou acha as propriedades no Google, commita o geral.php no repositório do Bitbucket (ID do painel pelo “ID do painel xxxx” da tarefa), manda o e-mail de vhost ao suporte e move a tarefa para Em andamento no seu nome; as chaves saem no terminal. A tarefa fica aberta: vhost, clone no servidor e DNS continuam manuais"><input type="checkbox" id="autoBuscaOne"><span>Publicação Busca One automática <em style="color:#e9b84a;font-style:normal">(beta)</em></span></label>',
       '  <div id="autoVhost" style="margin:0 0 4px 24px;display:grid;gap:4px;color:#9fb9ad" title="Para quem vai o pedido de vhost e banco da Busca One. Fica gravado nesta máquina.">',
       '    <label style="display:flex;align-items:center;gap:6px"><span style="width:62px;flex:none">Vhost para</span><input id="autoVhostPara" type="text" spellcheck="false" style="flex:1;min-width:0;background:#07130f;border:1px solid rgba(94,233,112,.25);color:#dcefe4;border-radius:6px;padding:3px 6px;font:11px ui-monospace,Consolas,monospace"></label>',
@@ -399,6 +471,7 @@
       '    <button id="autoParar" style="flex:1;background:#210f0f;border:1px solid rgba(255,107,107,.4);color:#ff6b6b;border-radius:8px;padding:6px;cursor:pointer">Parar</button>',
       '  </div>',
       '  <div id="autoStatus" style="margin:4px 0 8px;color:#9fb9ad">desligado</div>',
+      '  <div id="autoEsperas" style="display:none;margin:0 0 8px;padding:6px 8px;background:#07130f;border-radius:8px;color:#dcefe4;line-height:1.5" title="Sites já publicados pela automação que só esperam o DNS. O vigia da lista de espera (Publicar MPI+) termina SSL, Search Console e tarefa quando apontarem; a fila não publica de novo."></div>',
       '  <div id="autoMiniLog" style="max-height:120px;overflow:auto;font:11px/1.35 ui-monospace,Consolas,monospace;background:#07130f;border-radius:8px;padding:6px"></div>',
       '</div>',
     ].join('');

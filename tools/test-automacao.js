@@ -204,6 +204,59 @@ function fakeDeps(over = {}) {
     check('pulou não conta tentativa nem marca', !processados.has('p9') && !t2.has('p9'));
   }
 
+  console.log('\n=== Aguardando o DNS do cliente: anota e segue para a próxima (ADR-142) ===');
+  {
+    // O caso de 05/10: wveletrica.com.br, DNS do cliente, publicado e com tags,
+    // só o SSL (e a tarefa) esperando o apontamento. Repetir a publicação não
+    // resolve nada: o driver devolve "aguardando" e a fila vai para a próxima.
+    const dados = {
+      instancia: 'https://sf',
+      tarefas: [
+        { id: 'w1', assunto: 'Publicação (Troca de DNS) [MPI+] - wveletrica.com.br', descricao: 'http://wveletricaeservicosl.mpitemporario.com.br/ https://wveletrica.com.br/', fechada: false },
+        { id: 'w2', assunto: 'Publicação (Troca de DNS) [MPI+] - preserve.vet.br', descricao: 'http://preservepetshop.mpitemporario.com.br/ https://preserve.vet.br/', fechada: false },
+      ],
+    };
+    const logs = [];
+    let { deps, chamadas } = fakeDeps({ deps: { log: (m, t) => logs.push({ m, t }), publicar: async (p) => { chamadas.publicar.push(p); return p.dominio === 'wveletrica.com.br' ? { ok: false, aguardando: true, cliente: true, dominio: p.dominio, motivo: 'o DNS é do cliente e ainda aponta para 149.18.102.39' } : { ok: true, dominio: p.dominio }; } } });
+    let processados = new Set(); let tentativas = new Map(); let aguardando = new Map();
+    let res = await A.varrerFila(dados, deps, { processados, tentativas, aguardando });
+    check('o driver devolveu "aguardando": a tarefa é marcada, sem contar tentativa', processados.has('w1') && !tentativas.has('w1'), JSON.stringify([...tentativas]));
+    check('a anotação guarda domínio, motivo e que é o cliente', aguardando.get('w1') && aguardando.get('w1').dominio === 'wveletrica.com.br' && aguardando.get('w1').cliente === true && /149\.18\.102\.39/.test(aguardando.get('w1').motivo), JSON.stringify(aguardando.get('w1')));
+    check('o resultado sai como aguardando (nem feita, nem erro)', res.some((r) => r.id === 'w1' && r.aguardando && !r.ok && !r.pulou));
+    check('o log diz "aguardando" e que segue para a próxima', logs.some((l) => /wveletrica\.com\.br: aguardando — o DNS é do cliente.*Sigo para a próxima tarefa/.test(l.m) && l.t === 'info'), logs.map((l) => l.m).join(' | '));
+    check('e a próxima tarefa MPI+ foi publicada na mesma varredura', chamadas.publicar.length === 2 && chamadas.publicar[1].dominio === 'preserve.vet.br' && processados.has('w2'));
+    check('a anotação da fila sai antes de agir, com os domínios por tipo', logs[0] && /^Fila: 2 aberta\(s\) — publicação MPI\+ 2: wveletrica\.com\.br, preserve\.vet\.br\.$/.test(logs[0].m), logs[0] && logs[0].m);
+
+    // Na varredura seguinte, com o domínio na lista de espera do app
+    // (deps.emEspera), o motor nem chama o driver: anota e pula.
+    ({ deps, chamadas } = fakeDeps({ deps: { log: (m, t) => logs.push({ m, t }), emEspera: (d) => (d === 'wveletrica.com.br' ? { motivo: 'já publicado; o DNS é do cliente e ainda aponta para 149.18.102.39 (precisa apontar para 149.18.102.60)', cliente: true } : null) } }));
+    processados = new Set(); tentativas = new Map(); aguardando = new Map(); logs.length = 0;
+    res = await A.varrerFila(dados, deps, { processados, tentativas, aguardando });
+    check('domínio na lista de espera: o driver NÃO é chamado para ele', !chamadas.publicar.some((p) => p.dominio === 'wveletrica.com.br') && chamadas.publicar.some((p) => p.dominio === 'preserve.vet.br'), JSON.stringify(chamadas.publicar.map((p) => p.dominio)));
+    check('  e a tarefa fica anotada como aguardando o cliente', processados.has('w1') && aguardando.get('w1') && aguardando.get('w1').cliente === true && res.some((r) => r.id === 'w1' && r.aguardando));
+    check('  a anotação da fila lista quem está na espera e não será tocado', /Na lista de espera, não mexo: wveletrica\.com\.br \(cliente\)\./.test(logs[0].m), logs[0].m);
+
+    // A anotação da fila, sozinha: tipos, outras, já tratadas.
+    const filaMista = { tarefas: [
+      ...dados.tarefas,
+      { id: 'o1', assunto: 'Publicação (Troca de DNS) - c.com.br', descricao: 'link temporário - http://producao.mpitemporario.com.br/c/ ID 321', fechada: false },
+      { id: 'b1', assunto: 'BLOQUEIO DE CONTATOS - a.com.br', descricao: '', fechada: false },
+      { id: 'x1', assunto: 'Ligar para o cliente', descricao: '', fechada: false },
+      { id: 'f1', assunto: 'BLOQUEIO DE CONTATOS - d.com.br', fechada: true },
+    ] };
+    const resumo = A.resumirFila(filaMista, { processados: new Set(['w2']), emEspera: (d) => (d === 'wveletrica.com.br' ? { cliente: true } : null) });
+    check('resumirFila: conta as abertas e agrupa por tipo', /^Fila: 5 aberta\(s\) — publicação MPI\+ 2: wveletrica\.com\.br, preserve\.vet\.br · Busca One 1: c\.com\.br · bloqueio 1: a\.com\.br · 1 outra\(s\)\./.test(resumo), resumo);
+    check('  diz quem está na espera e quantas já foram tratadas', / Na lista de espera, não mexo: wveletrica\.com\.br \(cliente\)\. Já tratada\(s\) nesta sessão: 1\.$/.test(resumo), resumo);
+    check('  fechada não conta', !/d\.com\.br/.test(resumo));
+
+    // O teto de tentativas só funciona com o mapa vivo entre varreduras (era
+    // o bug: o mapa nascia a cada varredura e ficava "tentativa 1 de 3").
+    ({ deps } = fakeDeps({ publicar: { ok: false, motivo: 'painel fora do ar' } }));
+    processados = new Set(); const vivo = new Map();
+    for (let i = 0; i < A.MAX_TENTATIVAS; i++) await A.varrerFila({ tarefas: [dados.tarefas[1]] }, deps, { processados, tentativas: vivo });
+    check(`com o mapa de tentativas vivo entre varreduras, desiste na ${A.MAX_TENTATIVAS}ª`, processados.has('w2') && vivo.get('w2') === A.MAX_TENTATIVAS, JSON.stringify([...vivo]));
+  }
+
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
   process.exit(falhas ? 1 : 0);
 })();

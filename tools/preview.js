@@ -471,7 +471,14 @@ const SCENES = {
       pub.dnsNosso = true;
       pub.feitas.dns = { ok: true, detalhe: 'zona criada, scan trouxe 6; 8 registro(s) na zona final, muda 3, cria 3, remove 1, mantém 2; IP antigo 200.1.1.1' };
       pub.etapa = 'cloudflare';
+      // A lista de espera com os dois tipos (ADR-103, ADR-142): um site do
+      // Registro.br com previsão e um do cliente, sem prazo.
+      esperas = [
+        { id: 'w', dominio: 'wveletrica.com.br', painelUrl: 'u', sfTarefa: 't', ate: Date.now() + 25 * 60000, cliente: true, ip: '149.18.102.60', scPendente: true, sslFeito: false, v: null, falta: ['o SSL de produção', 'o Search Console e o relatório do painel', 'fechar a tarefa do Salesforce'], status: 'esperando', detalhe: 'ainda aponta para 149.18.102.39, não para 149.18.102.60', desde: Date.now() },
+        { id: 'p', dominio: 'preserve.vet.br', painelUrl: 'u', sfTarefa: 't', ate: Date.now() + 95 * 60000, scPendente: false, sslFeito: false, v: null, falta: ['o SSL de produção', 'fechar a tarefa do Salesforce'], status: 'esperando', detalhe: '', desde: Date.now() },
+      ];
       renderPublishTool();
+      renderEsperas();
     });
   },
   pergunta: async (page) => {

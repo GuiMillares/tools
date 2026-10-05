@@ -5269,7 +5269,7 @@ function renderPublishTool() {
     <div id="pubEtapas"></div>
     <div id="pubDetalhe"></div>
     </div>
-    ${infoBoxHtml(`<p>Um botão, uma parada. O Hub procura o domínio nas duas contas do Registro.br (contato técnico BCTDL é Busca Cliente, MPSOL83 é MPI Solutions), cria a zona na Cloudflare e deixa a própria Cloudflare varrer o DNS atual, completa com a fotografia dos autoritativos e monta a zona final: tudo replicado, só a raiz e o www vão para o servidor novo, e-mail e o resto ficam onde estão. Aí ele para e mostra o antes e o depois; você confirma e o resto segue sozinho: nameservers, aprovar, publicar, SSL quando o DNS apontar, tags e planilha. Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto e pergunta a empresa antes da planilha. Domínio fora do .br (.com, por exemplo): não há Registro.br para perguntar; o Hub confere se a raiz já aponta para o servidor de produção e segue para aprovar e publicar; se não aponta, avisa em destaque para você pedir o apontamento ao analista. O campo de hosts é para subdomínio que só aquele cliente usa e nenhuma varredura adivinharia. Antes de tudo o Hub procura o cliente no painel pela razão social e fica com o contrato do link temporário; não achando, pede o link do painel no terminal e segue por ele. Com o link da tarefa, a última etapa assume e conclui a tarefa no seu nome e comenta "Site publicado" no caso, marcando quem criou. Quando o Registro.br só publica a troca de DNS daqui a horas, o site vai para a lista "Aguardando a propagação" com o que falta, e a tela fica livre para outro site; o Hub termina cada um sozinho quando o DNS apontar, um de cada vez, primeiro o de previsão mais cedo.</p>`)}
+    ${infoBoxHtml(`<p>Um botão, uma parada. O Hub procura o domínio nas duas contas do Registro.br (contato técnico BCTDL é Busca Cliente, MPSOL83 é MPI Solutions), cria a zona na Cloudflare e deixa a própria Cloudflare varrer o DNS atual, completa com a fotografia dos autoritativos e monta a zona final: tudo replicado, só a raiz e o www vão para o servidor novo, e-mail e o resto ficam onde estão. Aí ele para e mostra o antes e o depois; você confirma e o resto segue sozinho: nameservers, aprovar, publicar, SSL quando o DNS apontar, tags e planilha. Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto e pergunta a empresa antes da planilha. Domínio fora do .br (.com, por exemplo): não há Registro.br para perguntar; o Hub confere se a raiz já aponta para o servidor de produção e segue para aprovar e publicar; se não aponta, avisa em destaque para você pedir o apontamento ao analista. O campo de hosts é para subdomínio que só aquele cliente usa e nenhuma varredura adivinharia. Antes de tudo o Hub procura o cliente no painel pela razão social e fica com o contrato do link temporário; não achando, pede o link do painel no terminal e segue por ele. Com o link da tarefa, a última etapa assume e conclui a tarefa no seu nome e comenta "Site publicado" no caso, marcando quem criou. Quando o Registro.br só publica a troca de DNS daqui a horas, o site vai para a lista "Aguardando a propagação" com o que falta, e a tela fica livre para outro site; o Hub termina cada um sozinho quando o DNS apontar, um de cada vez, primeiro o de previsão mais cedo. Na publicação automática da fila, o site cujo DNS é do cliente também entra nessa lista, como "aguardando o cliente", sem prazo: o Hub confere a cada 30 min e termina SSL, Search Console e tarefa quando o cliente apontar; "Conferir agora" não espera os 30 min.</p>`)}
   `;
 
   document.getElementById('backToHub').addEventListener('click', goHome);
@@ -5637,6 +5637,9 @@ async function pubRodarTudo() {
 const ESPERAS_CHAVE = 'hub.esperasPropagacao.v1';
 const ESPERA_FOLGA_MS = 30 * 60 * 1000;   // depois da previsão do Registro.br
 const ESPERA_PASSO_MS = 60 * 1000;
+// Site cujo DNS é do cliente (ADR-142): não há previsão nem prazo — o cliente
+// aponta quando aponta. Confere a cada 30 min, sem nunca dar por "falhou".
+const ESPERA_CLIENTE_PASSO_MS = 30 * 60 * 1000;
 let esperas = [];
 let vigiaRodando = false;
 let vigiaTimer = null;
@@ -5663,35 +5666,55 @@ function carregarEsperas() {
   }
   // Quem estava no meio quando o app fechou volta a esperar.
   for (const e of esperas) if (e.status === 'rodando') e.status = 'esperando';
-  if (esperas.some((e) => e.status === 'esperando')) {
-    log(`${esperas.filter((e) => e.status === 'esperando').length} site(s) esperando a propagação: ${esperas.filter((e) => e.status === 'esperando').map((e) => e.dominio).join(', ')}. Continuo conferindo.`, 'info');
+  const esperando = esperas.filter((e) => e.status === 'esperando');
+  if (esperando.length) {
+    const prop = esperando.filter((e) => !e.cliente);
+    const cli = esperando.filter((e) => e.cliente);
+    const partes = [];
+    if (prop.length) partes.push(`${prop.length} site(s) esperando a propagação: ${prop.map((e) => e.dominio).join(', ')}`);
+    if (cli.length) partes.push(`${cli.length} site(s) aguardando o cliente apontar o DNS: ${cli.map((e) => e.dominio).join(', ')}`);
+    log(`${partes.join('; ')}. Continuo conferindo.`, 'info');
     vigiarEsperas();
   }
 }
 
-function pubMandarParaEspera() {
+// O site publicado sai da tela e entra na lista com o que falta. Dois motivos
+// (ADR-103, ADR-142): o Registro.br publica a troca de DNS daqui a horas
+// (`ate` é a previsão dele; depois dela o vigia confere a cada minuto, com 30
+// min de folga) ou o DNS é do cliente (`cliente: true`: sem previsão nem
+// prazo, o vigia confere a cada 30 min e nunca dá por falhado — o cliente
+// aponta quando aponta). `ate` explícito serve para a espera sem previsão.
+function pubMandarParaEspera({ cliente = false, ate } = {}) {
   const falta = ['o SSL de produção'];
   if (pub.scPendente) falta.push('o Search Console e o relatório do painel');
   if (pub.sfTarefa) falta.push('fechar a tarefa do Salesforce');
+  const agora = Date.now();
+  const ip = pub.zona?.ipNovo || pub.ipProducao || '';
   const e = {
-    id: `${pub.dominio}-${Date.now()}`,
+    id: `${pub.dominio}-${agora}`,
     dominio: pub.dominio,
     painelUrl: pub.painelUrl,
     sfTarefa: pub.sfTarefa || '',
-    ate: pub.sslAdiado.ate,
+    ate: ate != null ? ate : cliente ? agora + ESPERA_CLIENTE_PASSO_MS : (pub.sslAdiado && pub.sslAdiado.ate) || agora,
+    cliente: !!cliente,
+    ip,
     scPendente: !!pub.scPendente,
     sslFeito: false,
     v: vSemSegredos(pub.v),
     falta,
     status: 'esperando',
-    detalhe: '',
-    desde: Date.now(),
+    detalhe: cliente ? (pub.sslPendente || 'ainda não aponta para o servidor novo') : '',
+    desde: agora,
   };
   esperas = esperas.filter((x) => x.dominio !== e.dominio);
   esperas.push(e);
   salvarEsperas();
   const hora = new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  log(`${e.dominio} foi para a lista de espera: o Registro.br publica a troca de DNS por volta de ${hora}. Falta ${falta.join(', ')}; faço sozinho quando o DNS apontar. Pode publicar outro site.`, 'success');
+  if (cliente) {
+    log(`${e.dominio} foi para a lista de espera: o DNS é do cliente e ${e.detalhe}${ip ? ` (precisa apontar para ${ip})` : ''}. Falta ${falta.join(', ')}; confiro a cada 30 min (a próxima ~${hora}) e termino sozinho quando apontar. Pode publicar outro site.`, 'success');
+  } else {
+    log(`${e.dominio} foi para a lista de espera: o Registro.br publica a troca de DNS por volta de ${hora}. Falta ${falta.join(', ')}; faço sozinho quando o DNS apontar. Pode publicar outro site.`, 'success');
+  }
   const empresa = pub.empresa;
   pub = { ...pubNovo(), empresa };
   if (state.view === 'publish' || document.getElementById('pubEtapas')) renderPublishTool();
@@ -5699,19 +5722,25 @@ function pubMandarParaEspera() {
 }
 
 function renderEsperas() {
+  // Quem mais mostra a lista (o painel da automação, ADR-142) é avisado.
+  try { document.dispatchEvent(new CustomEvent('hub:esperas')); } catch (e) {}
   const wrap = document.getElementById('pubEsperas');
   if (!wrap) return;
   if (!esperas.length) { wrap.innerHTML = ''; return; }
   const badge = { esperando: ['neutral', 'esperando'], rodando: ['neutral', 'terminando'], concluido: ['ok', 'concluído'], falhou: ['err', 'falta algo'] };
-  let html = `<div class="section-label">Aguardando a propagação (${esperas.filter((e) => e.status !== 'concluido').length})</div><div class="rows">`;
+  const abertas = esperas.filter((e) => e.status !== 'concluido');
+  const rotulo = abertas.some((e) => e.cliente) ? (abertas.some((e) => !e.cliente) ? 'Aguardando a propagação ou o cliente' : 'Aguardando o cliente apontar o DNS') : 'Aguardando a propagação';
+  let html = `<div class="section-label">${rotulo} (${abertas.length})</div><div class="rows">`;
   for (const e of [...esperas].sort((a, b) => a.ate - b.ate)) {
-    const [cls, texto] = badge[e.status] || badge.esperando;
+    const [cls, texto] = e.cliente && e.status === 'esperando' ? ['neutral', 'aguardando o cliente'] : (badge[e.status] || badge.esperando);
     const hora = new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const sub = e.status === 'concluido' ? (e.detalhe || 'tudo feito') : `${e.status === 'esperando' ? `previsto ~${hora} · ` : ''}falta ${e.falta.join(', ')}${e.detalhe ? ` · ${e.detalhe}` : ''}`;
+    const quando = e.status !== 'esperando' ? '' : e.cliente ? `DNS do cliente${e.ip ? `, precisa apontar para ${e.ip}` : ''} · confiro ~${hora} · ` : `previsto ~${hora} · `;
+    const sub = e.status === 'concluido' ? (e.detalhe || 'tudo feito') : `${quando}falta ${e.falta.join(', ')}${e.detalhe ? ` · ${e.detalhe}` : ''}`;
     html += `<div class="row ${e.status === 'concluido' ? 'is-ok' : e.status === 'falhou' ? 'is-err' : e.status === 'rodando' ? 'is-running' : ''}">
       <div class="row__main"><div class="row__title">${escapeHtml(e.dominio)}</div><div class="row__sub">${escapeHtml(sub)}</div></div>
       <span class="badge ${cls}">${texto}</span>
       ${e.status === 'falhou' ? `<button class="btn ghost compact" data-espera-tentar="${escapeHtml(e.id)}">Tentar de novo</button>` : ''}
+      ${e.cliente && e.status === 'esperando' ? `<button class="btn ghost compact" data-espera-tentar="${escapeHtml(e.id)}">Conferir agora</button>` : ''}
       ${e.status !== 'rodando' ? `<button class="btn ghost compact" data-espera-remover="${escapeHtml(e.id)}">${e.status === 'concluido' ? 'Tirar da lista' : 'Remover'}</button>` : ''}
     </div>`;
   }
@@ -5721,9 +5750,10 @@ function renderEsperas() {
     const e = esperas.find((x) => x.id === b.dataset.esperaTentar);
     if (!e) return;
     e.status = 'esperando';
-    e.detalhe = 'tentando de novo';
-    // Nova chance: a folga recomeça a contar agora.
-    e.ate = Math.max(e.ate, Date.now());
+    e.detalhe = e.cliente ? 'conferindo agora' : 'tentando de novo';
+    // Nova chance: a folga recomeça a contar agora (e o site do cliente é
+    // conferido já, em vez de esperar os 30 min).
+    e.ate = e.cliente ? Date.now() : Math.max(e.ate, Date.now());
     salvarEsperas();
     renderEsperas();
     vigiarEsperas({ agora: true });
@@ -5765,8 +5795,10 @@ async function vigiarEsperas({ agora = false } = {}) {
             log(`Aguardando ${e.dominio}: ${e.detalhe}`, 'warn');
           }
         }
-        // Quem ainda espera a previsão: avisa uma vez quando é a primeira conferência.
-        for (const e of esperas.filter((x) => x.status === 'esperando' && x.ate > t)) {
+        // Quem ainda espera a previsão: avisa uma vez quando é a primeira
+        // conferência. O site do cliente (ADR-142) não tem previsão: o `ate`
+        // dele é só a próxima conferência, já anunciada ao entrar na lista.
+        for (const e of esperas.filter((x) => x.status === 'esperando' && x.ate > t && !x.cliente)) {
           if (!e.avisouAdiado) {
             e.avisouAdiado = true;
             e.detalhe = `aguardando a previsão do Registro.br (${new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`;
@@ -5797,17 +5829,29 @@ async function vigiarEsperas({ agora = false } = {}) {
 let vigiaAcordar = null;
 
 async function vigiarUma(e) {
-  const ap = await conferirApontamentoDeProducao(e.dominio);
+  // O IP é o que o site recebeu quando foi publicado (ADR-141); sem ele, a
+  // conferência cai na reserva.
+  const ap = await conferirApontamentoDeProducao(e.dominio, e.ip || undefined);
   // Aviso na primeira conferência, quando o motivo muda, e a cada 10 min, para
-  // dar para ver que o vigia está vivo sem encher o terminal (ADR-104).
+  // dar para ver que o vigia está vivo sem encher o terminal (ADR-104). No
+  // site do cliente (ADR-142) a conferência já é a cada 30 min: avisa quando
+  // o motivo muda e a cada 2 h.
   const agora = Date.now();
   const mudou = e.ultimoMotivo !== ap.motivo;
-  if (!ap.pronto && (mudou || !e.ultimoAviso || agora - e.ultimoAviso > 10 * 60 * 1000)) {
-    log(`Aguardando ${e.dominio}: ${ap.motivo}. Confiro de novo em 1 min.`, 'info');
+  const cadaAviso = e.cliente ? 2 * 60 * 60 * 1000 : 10 * 60 * 1000;
+  if (!ap.pronto && (mudou || !e.ultimoAviso || agora - e.ultimoAviso > cadaAviso)) {
+    log(`Aguardando ${e.dominio}: ${ap.motivo}. Confiro de novo em ${e.cliente ? '30 min' : '1 min'}.`, 'info');
     e.ultimoAviso = agora;
   }
   e.ultimoMotivo = ap.motivo;
   if (!ap.pronto) {
+    if (e.cliente) {
+      // Sem prazo: o cliente aponta quando aponta. Só marca a próxima
+      // conferência, daqui a 30 min.
+      e.ate = agora + ESPERA_CLIENTE_PASSO_MS;
+      e.detalhe = ap.motivo;
+      return;
+    }
     if (agora > e.ate + ESPERA_FOLGA_MS) {
       e.status = 'falhou';
       e.detalhe = `não apontou até 30 min depois da previsão (${ap.motivo})`;

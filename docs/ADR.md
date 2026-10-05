@@ -4323,6 +4323,8 @@ servidor.
 
 ## ADR-103 — Publicar outro site enquanto um espera a propagação
 
+**Status:** aceita — pela ADR-142 a mesma lista recebe o site cujo DNS é do cliente ("aguardando o cliente", sem previsão nem prazo, conferido a cada 30 min)
+
 **Contexto.** Quando o Registro.br publica a troca de DNS só daqui a ~2 horas,
 o Publicar MPI+ ficava esperando com a tela presa (ADR-080): não dava para
 publicar outro site nesse tempo.
@@ -5085,6 +5087,8 @@ valida a sintaxe com `new Function`.
 
 ## ADR-122 — Publicação MPI+ automática: a mesma máquina de etapas, sem perguntar
 
+**Status:** aceita — a falha de etapa que é só "o DNS ainda não aponta" deixou de ser erro comum na ADR-142 (vai para a lista de espera, e a fila segue); o teto de 3 tentativas só passou a valer de fato ali (o mapa de tentativas nascia a cada varredura)
+
 **Contexto.** "Toda vez que detectar uma tarefa de publicação, se for MPI+ ele
 já faz toda a publicação sozinho e fecha a tarefa." O "Publicar MPI+" manual já
 faz tudo em 11 etapas (contato → DNS → Cloudflare → Registro.br → aprovar →
@@ -5148,6 +5152,8 @@ texto → empresa, recortado do `main.js` para não divergir.
 
 
 ## ADR-124 — Esperar a previsão do Registro.br antes de conferir (2º plano leve)
+
+**Status:** aceita — pela ADR-142 o domínio que está na lista de espera é pulado já pelo motor (`deps.emEspera`), antes do driver, e sai como "aguardando" em vez de "já estava feito"
 
 **Contexto.** Numa troca de DNS no Registro.br a publicação leva ~2h. A etapa de
 propagação já adiava o SSL e mandava o site para a lista de espera (ADR-103),
@@ -6211,6 +6217,81 @@ cobre a cura do `.39` e o respeito a outro IP; `test-triagem`, o `.60` como
 MPI+. Projeto publicado hoje: zona com raiz e `www` em `149.18.102.60`,
 e-mail preservado onde estava (ADR-071), SSL só quando o DNS apontar para
 `.60`. Os sites já publicados no `.39` não são tocados.
+
+## ADR-142 — Publicação automática com o DNS do cliente: anota o domínio como "aguardando o cliente" e segue para a próxima tarefa
+
+**Contexto.** Em 05/10/2026 a fila publicou `wveletrica.com.br` (MPI
+Solutions): o domínio não está em nenhuma das contas do Registro.br, então o
+DNS é do cliente. O Hub aprovou, publicou no Idealplus 03 (`149.18.102.60`),
+criou GA4, GTM e reCAPTCHA, sincronizou o painel e registrou na planilha. O
+domínio ainda apontava para `149.18.102.39`, o SSL ficou pendente e a etapa
+"Fechar a tarefa" falhou, como manda a ADR-101 (a tarefa só fecha com tudo
+feito). O motor da fila tratou isso como **erro comum** e **rodou a
+publicação inteira de novo** às 12:05 e às 12:07 (painel, tags reaproveitadas,
+planilha "não vou duplicar"), e ia continuar a cada 5 minutos: o contador de
+tentativas era criado de novo a cada varredura (`estado.tentativas` nascia
+num objeto descartado), por isso o log dizia sempre "tentativa 1 de 3" e o
+teto de três nunca chegava. O pedido: "preciso esperar o cliente, então ele
+pula para a próxima tarefa de publicação MPI+", e "ler toda a fila e fazer uma
+anotação de domínios".
+
+**Decisão.**
+
+1. **Publicado e só falta o DNS não é erro: é "aguardando".** No driver
+   automático, quando a etapa do Salesforce falha com o SSL pendente:
+   - **DNS do cliente** (contato técnico não é nosso, ou fora do .br): o site
+     vai para a lista de espera da ADR-103 como **"aguardando o cliente"**
+     (`cliente: true`), com o IP que recebeu, o que falta (SSL, Search Console
+     e relatório, fechar a tarefa) e o motivo ("ainda aponta para .39, não
+     para .60"). O driver devolve `aguardando: true`; o motor **marca a
+     tarefa, não conta tentativa e segue para a próxima**. O terminal diz
+     "aguardando — … Sigo para a próxima tarefa";
+   - **DNS nosso** que não apontou nos 30 min da etapa de propagação: a mesma
+     lista, como entrada normal do Registro.br (conferida a cada minuto, com a
+     folga de 30 min);
+   - **Registro.br não respondeu** e o DNS não foi tocado: repetir não resolve;
+     `desistir`, com a instrução de rodar o Publicar MPI+ à mão para a parte
+     da Cloudflare.
+2. **A entrada do cliente não tem previsão nem prazo.** O vigia confere o
+   apontamento a cada **30 min** (`ESPERA_CLIENTE_PASSO_MS`; o `ate` é só a
+   próxima conferência, remarcado a cada vez), com o IP que o site recebeu,
+   e **nunca marca "falta algo" por tempo**: o cliente aponta quando aponta.
+   Avisa no terminal quando o motivo muda e a cada 2 h. Quando aponta,
+   termina como sempre: SSL, Search Console e relatório, e a tarefa. A linha
+   na lista mostra "DNS do cliente, precisa apontar para .60 · confiro ~hh:mm"
+   e um botão **"Conferir agora"**; o rótulo da lista passa a dizer "ou o
+   cliente" quando há entradas assim. A lista continua gravada na máquina,
+   sem segredo.
+3. **A anotação da fila.** Antes de agir, cada varredura lê a fila inteira e
+   escreve uma linha (`resumirFila`): quantas abertas, os domínios por tipo
+   (publicação MPI+, Busca One, bloqueio, outras), **quem está na lista de
+   espera e não será tocado** (com "cliente" ou "Registro.br") e quantas já
+   foram tratadas na sessão. O motor consulta a lista pelo `deps.emEspera`
+   **antes de chamar o driver**: domínio que está nela sai como "aguardando"
+   sem abrir painel nenhum (a trava da ADR-124 no driver fica como segunda
+   barreira e passa a devolver "aguardando" em vez de "já estava feito"). A
+   entrada da lista com pendência (`falhou`) também segura a tarefa: resolve
+   pela lista, não republicando.
+4. **O painel mostra a anotação**: embaixo do status, "Aguardando o cliente
+   apontar (n): …" e "Aguardando a propagação (n): …", lidos da lista de
+   espera (o `renderEsperas` do app avisa por um evento `hub:esperas`); o
+   resumo da varredura ganha "n aguardando o DNS", à parte de feitas, puladas
+   e erros.
+5. **O teto de tentativas passa a valer**: o mapa vive em `estado.tentativas`
+   do painel, entre as varreduras, como `processados`.
+
+**Consequências.** `wveletrica.com.br` e qualquer site com DNS do cliente
+custam **uma** publicação; depois é uma consulta de DNS a cada 30 min até o
+cliente apontar, e então SSL, Search Console e tarefa saem sozinhos. A fila
+não para nessa tarefa: segue para a próxima publicação MPI+. O que ficou de
+hoje: a tarefa `00TbL00000fqbghUAA` segue aberta e não está na lista (foi
+publicada pela 1.0.62); na primeira varredura da 1.0.63 ela é publicada de
+novo uma única vez (painel "já estava", tags reaproveitadas, planilha não
+duplica) e entra na lista como aguardando o cliente. `test-automacao` cobre o
+"aguardando", a consulta à lista antes do driver, a anotação da fila e o
+teto com o mapa vivo; `test-esperas`, a entrada do cliente (30 min, nunca
+"falta algo", termina quando aponta); `test-automacao-browser`, a anotação
+no painel e no log com a lista de espera do app presente.
 
 ---
 

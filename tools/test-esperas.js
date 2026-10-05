@@ -27,7 +27,8 @@ function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = (
     const renderPublishTool = () => {};
     const escapeHtml = (x) => String(x);
     const normalizePainelUrl = (u) => u;
-    const conferirApontamentoDeProducao = async (d) => apontamentos[d] || { pronto: false, motivo: 'ainda não resolve' };
+    const conferidos = [];
+    const conferirApontamentoDeProducao = async (d, ip) => { conferidos.push({ d, ip }); return apontamentos[d] || { pronto: false, motivo: 'ainda não resolve' }; };
     const verificarScERelatorio = async () => { ordem.push('sc'); return sc(); };
     const window = { api: {
       publicarPainel: async (o) => { ordem.push('ssl:' + o.dominio); return ssl(o); },
@@ -35,7 +36,8 @@ function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = (
     } };
     ${recorta(app, '// ----- Sites esperando a propagação (ADR-103) -----', '// A espera adiada: até o fim')}
     return {
-      pubMandarParaEspera, vigiarEsperas, terminarEspera, carregarEsperas, vSemSegredos, logs,
+      pubMandarParaEspera, vigiarEsperas, vigiarUma, terminarEspera, carregarEsperas, vSemSegredos, logs, conferidos,
+      ESPERA_CLIENTE_PASSO_MS,
       get esperas() { return esperas; }, set esperas(v) { esperas = v; }, get pub() { return pub; },
     };`;
   const M = new Function('apontamentos', 'ssl', 'sc', 'tarefa', 'ordem', 'guardado', 'pubInicial', corpo)(apontamentos, ssl, sc, tarefa, ordem, guardado, pubInicial);
@@ -106,12 +108,57 @@ function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = (
   console.log('\n=== Reabrindo o app: a lista volta ===');
   {
     const { M, guardado } = montar();
-    guardado['hub.esperasPropagacao.v1'] = JSON.stringify([{ id: 'f', dominio: 'f.com.br', ate: Date.now() + 3600000, falta: ['o SSL de produção'], status: 'rodando', sfTarefa: '' }]);
+    guardado['hub.esperasPropagacao.v1'] = JSON.stringify([
+      { id: 'f', dominio: 'f.com.br', ate: Date.now() + 3600000, falta: ['o SSL de produção'], status: 'rodando', sfTarefa: '' },
+      { id: 'g', dominio: 'g.com.br', ate: Date.now() + 1800000, cliente: true, falta: ['o SSL de produção'], status: 'esperando', sfTarefa: '' },
+    ]);
     M.carregarEsperas();
     check('quem estava terminando volta a esperar', M.esperas[0].status === 'esperando');
-    check('e avisa no terminal', M.logs.some((l) => /esperando a propagação: f\.com\.br/.test(l.m)));
-    M.esperas[0].status = 'concluido';
+    check('e avisa no terminal, separando propagação e cliente', M.logs.some((l) => /1 site\(s\) esperando a propagação: f\.com\.br; 1 site\(s\) aguardando o cliente apontar o DNS: g\.com\.br/.test(l.m)), M.logs.map((l) => l.m).join(' | '));
+    M.esperas[0].status = 'concluido'; M.esperas[1].status = 'concluido';
     await M.vigiarEsperas({ agora: true });
+  }
+
+  console.log('\n=== DNS do cliente: aguardando sem prazo, conferido a cada 30 min (ADR-142) ===');
+  {
+    const MIN = 60 * 1000;
+    // O caso de 05/10: wveletrica.com.br publicado no .60, DNS do cliente ainda
+    // no .39; tags e planilha feitas; SSL, Search Console e tarefa esperando.
+    const pubCliente = {
+      empresa: 'mpisolutions', dominio: 'wveletrica.com.br', painelUrl: 'https://idealplus.idealtrends.io/clientes/2893/hub?projeto=2990&contrato=3006', sfTarefa: 'https://x/lightning/r/Task/00TbL00000fqbghUAA/view',
+      dnsNosso: false, sslAdiado: null, sslPendente: 'ainda aponta para 149.18.102.39, não para 149.18.102.60', ipProducao: '149.18.102.60', scPendente: true, feitas: {},
+      v: { domain: 'wveletrica.com.br', siteUrl: 'https://wveletrica.com.br/', idAnalytics: 'G-2NK5B8X866', secretKey: 'SEGREDO' },
+    };
+    const antes = Date.now();
+    const { M, guardado, ordem } = montar({ pubInicial: pubCliente });
+    M.pubMandarParaEspera({ cliente: true });
+    const e = M.esperas[0];
+    check('entrou como aguardando o cliente, com o IP de produção e o que falta', e && e.cliente === true && e.ip === '149.18.102.60' && e.falta.join(' | ') === 'o SSL de produção | o Search Console e o relatório do painel | fechar a tarefa do Salesforce', JSON.stringify(e));
+    check('a primeira conferência fica para daqui a 30 min (não há previsão do Registro.br)', e.ate >= antes + M.ESPERA_CLIENTE_PASSO_MS - 1000 && e.ate <= Date.now() + M.ESPERA_CLIENTE_PASSO_MS, String(e.ate - antes));
+    check('o detalhe é o motivo do SSL pendente', /ainda aponta para 149\.18\.102\.39/.test(e.detalhe), e.detalhe);
+    check('o log diz que o DNS é do cliente, o IP e a cadência, e que pode publicar outro', M.logs.some((l) => /wveletrica\.com\.br foi para a lista de espera: o DNS é do cliente e ainda aponta para 149\.18\.102\.39.*precisa apontar para 149\.18\.102\.60.*confiro a cada 30 min.*Pode publicar outro site/.test(l.m)), M.logs.map((l) => l.m).join(' | '));
+    check('a tela ficou livre (mesma empresa)', M.pub.dominio === '' && M.pub.empresa === 'mpisolutions');
+    check('guardou sem segredo', /wveletrica/.test(JSON.stringify(guardado)) && !/SEGREDO/.test(JSON.stringify(guardado)));
+    // Encerra o vigia que o pubMandarParaEspera acordou (ele dorme até o ate).
+    e.status = 'concluido'; await M.vigiarEsperas({ agora: true }); e.status = 'esperando';
+
+    // O vigia confere com o IP do site e, não apontando, só remarca para
+    // daqui a 30 min — nunca "falhou", por mais tempo que passe.
+    e.ate = Date.now() - 3 * 24 * 60 * MIN; // três dias atrasado
+    const t0 = Date.now();
+    await M.vigiarUma(e);
+    check('confere o apontamento com o IP que o site recebeu', M.conferidos.some((c) => c.d === 'wveletrica.com.br' && c.ip === '149.18.102.60'), JSON.stringify(M.conferidos));
+    check('não aponta: continua esperando (não vira "falta algo"), nada chamado', e.status === 'esperando' && ordem.length === 0 && /ainda não resolve/.test(e.detalhe), JSON.stringify(e));
+    check('a próxima conferência é daqui a 30 min', e.ate >= t0 + M.ESPERA_CLIENTE_PASSO_MS - 1000 && e.ate <= Date.now() + M.ESPERA_CLIENTE_PASSO_MS, String(e.ate - t0));
+    check('o aviso diz que confere de novo em 30 min', M.logs.some((l) => /Aguardando wveletrica\.com\.br: ainda não resolve\. Confiro de novo em 30 min\./.test(l.m)), M.logs.map((l) => l.m).join(' | '));
+
+    // Cliente apontou: o vigia termina SSL, Search Console e a tarefa.
+    const { M: M2, ordem: ordem2 } = montar({ apontamentos: { 'wveletrica.com.br': { pronto: true, ip: '149.18.102.60' } } });
+    const e2 = { id: 'w', dominio: 'wveletrica.com.br', painelUrl: 'u', sfTarefa: 't-w', ate: Date.now() - MIN, cliente: true, ip: '149.18.102.60', scPendente: true, v: { siteUrl: 'x' }, sslFeito: false, falta: ['o SSL de produção', 'o Search Console e o relatório do painel', 'fechar a tarefa do Salesforce'], status: 'esperando', detalhe: '' };
+    M2.esperas = [e2];
+    await M2.vigiarEsperas();
+    check('apontou: SSL, Search Console e tarefa, nessa ordem', ordem2.join() === 'ssl:wveletrica.com.br,sc,tarefa:t-w', ordem2.join());
+    check('concluído', e2.status === 'concluido' && /SSL ativo, Search Console e relatório, tarefa fechada/.test(e2.detalhe), e2.detalhe);
   }
 
   console.log('\n=== main: o painel atende uma chamada por vez ===');

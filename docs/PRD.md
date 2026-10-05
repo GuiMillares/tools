@@ -343,6 +343,14 @@ de um servidor de produção.
 Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto, e
 pergunta a empresa no terminal antes da planilha (ADR-064).
 
+A lista **"Aguardando a propagação"** (ADR-103) guarda o site publicado que só
+espera o DNS, com o que falta (SSL, Search Console e relatório, fechar a
+tarefa), e o vigia termina cada um quando o domínio aponta. Ela tem dois tipos
+de entrada: a do Registro.br, com previsão e 30 min de folga; e a do **cliente**
+(ADR-142), que a publicação automática cria quando o DNS não é nosso: sem
+previsão nem prazo, conferida a cada 30 min, com "Conferir agora" para não
+esperar. A lista sobrevive a fechar o Hub.
+
 Falha para a publicação com "Tentar de novo". Conferência do contato e troca de
 nameservers, quando falham, perguntam no terminal se pula. Não existe botão
 "Pular" fixo, e não há confirmação antes de publicar nem antes da planilha.
@@ -424,14 +432,20 @@ Um monitor que lê a fila de deploy do Salesforce a cada 5 minutos e executa
 sozinho o que já sabe fazer, uma tarefa por vez (ADR-119, ADR-120). Mora num
 painel flutuante no canto da tela, com **três interruptores que começam sempre
 desligados** — um automatizador não religa sozinho ao abrir o app —, "Rodar
-agora" e o freio de emergência, que desliga tudo. Cada tarefa tem o desfecho
-no terminal (feito / pulei, com o motivo / erro), não só o resumo; erro comum
-tenta de novo até três varreduras e aí deixa para a mão.
+agora" e o freio de emergência, que desliga tudo. Antes de agir, cada
+varredura escreve a **anotação da fila** numa linha: quantas tarefas abertas,
+os domínios por tipo (publicação MPI+, Busca One, bloqueio), quem está na
+lista de espera e não será tocado, e quantas já foram tratadas na sessão
+(ADR-142). Cada tarefa tem o desfecho no terminal (feito / aguardando, com o
+motivo / pulei, com o motivo / erro), não só o resumo; erro comum tenta de novo
+até três varreduras e aí deixa para a mão. O painel mostra, embaixo do status,
+os domínios que **aguardam o cliente apontar** e os que aguardam a propagação,
+lidos da lista de espera do Publicar MPI+ (sobrevive a reabrir o Hub).
 
 | Interruptor | Tarefa da fila | O que o Hub faz | Como termina |
 | --- | --- | --- | --- |
 | Bloqueio de contatos | `BLOQUEIO DE CONTATOS - {domínio}` / `RETIRAR CONTATOS…` | descobre a marca pelo IP e censura os contatos no /doutor (Busca Cliente, MPI Solutions) ou no painel MPI+ (ADR-116, ADR-121) | fecha a tarefa comentando "Contatos removidos" |
-| Publicação MPI+ | `Publicação (Troca de DNS) [MPI+] - {domínio}` com temporário `cliente.mpitemporario.com.br` | o Publicar MPI+ (4.7) inteiro, sem perguntar: backup do DNS do cliente no lugar da parada, empresa pelo caso/fila (ADR-122, ADR-123) | fecha a tarefa quando o site está no ar (SSL com o vigia, se o DNS demorar) |
+| Publicação MPI+ | `Publicação (Troca de DNS) [MPI+] - {domínio}` com temporário `cliente.mpitemporario.com.br` | o Publicar MPI+ (4.7) inteiro, sem perguntar: backup do DNS do cliente no lugar da parada, empresa pelo caso/fila (ADR-122, ADR-123) | fecha a tarefa quando o site está no ar (SSL com o vigia, se o DNS demorar). **DNS do cliente**: publica, faz tags e planilha, e o site vai para a lista de espera como "aguardando o cliente" (ADR-142); a tarefa fica anotada e a fila segue para a próxima; o vigia confere a cada 30 min e termina SSL, Search Console e tarefa quando o cliente apontar |
 | Publicação Busca One | `Publicação (Troca de DNS) - …` com o temporário `deploy.buscaclientes.com.br/{repo}/` (Busca Cliente) ou `producao.mpitemporario.com.br/{repo}/` (MPI Solutions) no comentário, ou "Apontado via registro." | a **parte automática** (ADR-132, ADR-133): cria ou acha as propriedades no Google na marca da empresa, commita o `geral.php` no repositório do Bitbucket com `$idProjetoBusca` = o "ID do painel xxxx" da tarefa (MPI Solutions: fixo 39) e manda o e-mail de criação de vhost e banco ao suporte, com o modelo da empresa | a tarefa vai para **Em andamento** no seu nome e **fica aberta**: vhost, clone no servidor e DNS são manuais. As chaves e o resumo saem no terminal, nunca em comentário no Salesforce (ADR-134) |
 
 Na Busca One, tudo vem da própria tarefa, escrita no modelo combinado com o
