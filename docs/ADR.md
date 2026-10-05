@@ -6065,6 +6065,31 @@ do próprio SLA: ele mede o tempo da criação da tarefa (quem abriu o pedido) �
 conclusão, inclusive o tempo na fila antes de você assumir. Substitui o
 cartão de WHOIS da ADR-113 e o destino de domínio da ADR-127.
 
+**Atualização (05/10/2026): os períodos são granularidade, e os números foram
+conferidos.** "Quando eu colocar Mês, quero ver o mês inteiro de janeiro, o
+mês inteiro de fevereiro, tudo em uma linha só, não dias do mês." A primeira
+versão tratava o filtro como janela (Dia = as horas de hoje, Semana = 7 dias,
+Mês = 30 dias, Ano = 12 meses). Agora o filtro é **a granularidade da
+coluna**: Dia = uma coluna por dia (últimos 30 dias), Semana = por semana de
+segunda a domingo (últimas 12), Mês = por mês inteiro (últimos 12), Ano = por
+ano (últimos 3); o número grande é o total da janela mostrada, e o texto diz
+qual ("nos últimos 12 meses"). A consulta passou a trazer 3 anos (o que o Ano
+precisa; hoje são as mesmas 1.264 tarefas, porque o histórico do usuário
+começa em 10/2025). Padrão: Mês.
+
+E "valide se esses dados estão certos no Salesforce, achei meio estranhos":
+conferidos com consultas agregadas independentes (`GROUP BY
+CALENDAR_MONTH(convertTimezone(…))`, dono = o usuário), em 05/10: concluídas
+por mês jan 30, fev 55, mar 86, abr 114, mai 132, jun 144, jul 143, ago 250,
+set 289, out 21; publicações concluídas set 142; criadas set 279. A lib,
+sobre as mesmas tarefas, deu os mesmos totais no recorte. O que parece
+estranho é real: em **23/09/2026 houve 69 conclusões e 64 publicações num dia
+só**, a rodada do Publicar em massa (tarefas V1→V2 criadas e concluídas no
+ato), que infla setembro; e o **SLA médio (2d 6h) fica longe da mediana (3h
+29min)** porque algumas tarefas levaram 13 dias da abertura à conclusão. Só
+3 tarefas no ano foram fechadas pelo usuário sem estar no nome dele; o
+recorte "dono = você" não perde nada relevante.
+
 ---
 
 ## ADR-139 — Conta da marca com publicação no container novo mesmo sendo admin da conta
@@ -6091,6 +6116,53 @@ container (é admin da conta, mas a permissão de container é separada)".
 **Consequências.** Containers criados antes de 02/10 para as contas admin
 podem estar em leitura; é ajuste manual no Tag Manager (ou recriar). A
 ADR-020 continua valendo no resto.
+
+---
+
+## ADR-140 — O servidor de produção é o que o painel MPI+ lista; com dois, o Hub pergunta
+
+**Contexto.** 05/10/2026, publicações MPI+ falhando em série: "Painel:
+servidor 11 não está na lista do painel: 13 (192.168.3.157), 14
+(192.168.3.124)". O servidor Hestia de produção estava fixo na configuração
+(`hestiaServidorPadrao: '11'`, 192.168.3.143, com um select de dois ids na
+tela de Configurações), e o painel trocou de servidor: a lista passou a ter
+`13 Homologação (staging, 149.18.102.76)` e `14 Idealplus 03 (production,
+192.168.3.124, IP 149.18.102.60)`, agora com `tipo`, `ip`, `internal_ip` e
+`cname` — em setembro vinha só `id`, `nome`, `host`. Pedido: "usar sempre o
+servidor que aparecer no menu dropdown; sempre vai ter apenas um; caso tenha
+dois ele pergunta qual dos dois deve usar".
+
+**Decisão.**
+
+1. `painelPublicarProducao` escolhe pela **lista do painel**: com `tipo`, só
+   os `production`; sem `tipo` (painel antigo), todos. **Um só, é ele.** Dois
+   ou mais e ninguém escolheu: devolve a lista (`precisaEscolher`) sem
+   publicar. Nenhum: erro dizendo a lista. O id configurado deixou de existir
+   na decisão; o select saiu das Configurações (fica uma nota) e a auditoria
+   de credenciais diz "o de produção que o painel lista".
+2. **Quem pergunta é o Hub**, no terminal (`perguntarNoTerminal`, ADR-064):
+   no Publicar MPI+, por publicação; no Publicar em massa, **uma vez por
+   rodada** (a escolha vale para todos os sites). Na publicação automática
+   (ADR-122) ninguém responde: a etapa marca `pub.semSaida` e o driver
+   **desiste de primeira**, em vez de tentar três vezes.
+3. O servidor usado volta na resposta (`servidor: { id, nome, host, ip }`) e
+   vai para o terminal e para a coluna "Em qual servidor" da planilha
+   (nome e host, em vez do "Hestia 192.168.3.143" fixo).
+4. **O IP de produção do DNS não muda sozinho.** Os sites MPI+ publicados até
+   aqui respondem em `149.18.102.39` (conferido em 05/10: embratecbombas,
+   rrdesentupidora, cemiteriosemsaopaulo24hrs, wveletrica), e o servidor de
+   produção que o painel lista hoje tem IP `149.18.102.60`
+   (`srv-wp-03.idealplus.idealtrends.io`). Se `.39` continua na frente dos
+   sites, nada muda; se os sites novos devem responder em `.60`, o IP de
+   produção das Configurações precisa ser trocado, e isso é decisão de quem
+   conhece a infraestrutura, não do Hub. Por isso, quando o IP do servidor
+   escolhido difere do configurado, o terminal avisa com as duas hipóteses,
+   e a zona continua apontando para o configurado.
+
+**Consequências.** As publicações voltam a passar sem mexer em configuração
+quando o painel troca de servidor. O que não dá para automatizar sem risco é
+o IP do DNS: fica o aviso. `test-publicacao` continua aceitando a chave antiga
+`hestiaServidorPadrao` na configuração (ignorada).
 
 ---
 

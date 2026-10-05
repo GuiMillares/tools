@@ -13,34 +13,38 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
 const AGORA = new Date(2026, 9, 1, 14, 30);
 const iso = (y, m, d, h = 12, mi = 0) => new Date(y, m - 1, d, h, mi).toISOString();
 
-console.log('\n=== Janelas ===');
+console.log('\n=== Janelas (granularidade das colunas) ===');
 {
   const dia = M.janela('dia', AGORA);
-  check('dia: 24 buckets de uma hora, começando à meia-noite de hoje', dia.buckets.length === 24 && dia.inicio.getHours() === 0 && dia.inicio.getDate() === 1 && dia.buckets[8].rotulo === '08h', JSON.stringify(dia.buckets[8]));
+  check('dia: 30 colunas de um dia, de 02/09 a 01/10', dia.buckets.length === 30 && dia.buckets[0].rotulo === '02/09' && dia.buckets[29].rotulo === '01/10' && dia.inicio.getHours() === 0, dia.buckets.map((b) => b.rotulo).join(','));
   const sem = M.janela('semana', AGORA);
-  check('semana: 7 dias terminando hoje', sem.buckets.length === 7 && sem.buckets[6].inicio.getDate() === 1 && sem.buckets[0].inicio.getDate() === 25 && sem.buckets[0].inicio.getMonth() === 8, sem.buckets.map((b) => b.rotulo).join(','));
-  check('  rótulo com o dia da semana', sem.buckets[6].rotulo === 'qui 01' && sem.buckets[0].rotulo === 'sex 25', sem.buckets.map((b) => b.rotulo).join(','));
+  check('semana: 12 colunas de 7 dias, segunda a domingo; a última começa em 28/09 (segunda)', sem.buckets.length === 12 && sem.buckets[11].inicio.getDate() === 28 && sem.buckets[11].inicio.getDay() === 1 && sem.buckets[11].rotulo === '28/09', sem.buckets.map((b) => b.rotulo).join(','));
+  check('  a primeira começa 11 semanas antes (13/07) e cada uma dura 7 dias', sem.buckets[0].rotulo === '13/07' && (sem.buckets[0].fim - sem.buckets[0].inicio) === 7 * 86400000, sem.buckets[0].rotulo);
   const mes = M.janela('mes', AGORA);
-  check('mês: 30 dias, rótulo dd/mm', mes.buckets.length === 30 && mes.buckets[0].rotulo === '02/09' && mes.buckets[29].rotulo === '01/10', mes.buckets[0].rotulo);
+  check('mês: 12 colunas de mês inteiro, nov/25 a out/26', mes.buckets.length === 12 && mes.buckets[0].rotulo === 'nov/25' && mes.buckets[11].rotulo === 'out/26' && mes.buckets[11].inicio.getDate() === 1, mes.buckets.map((b) => b.rotulo).join(','));
+  check('  o último mês termina no dia 1 do mês seguinte', mes.buckets[11].fim.getMonth() === 10 && mes.buckets[11].fim.getDate() === 1);
   const ano = M.janela('ano', AGORA);
-  check('ano: 12 meses, do mesmo mês do ano passado até este', ano.buckets.length === 12 && ano.buckets[0].rotulo === 'nov/25' && ano.buckets[11].rotulo === 'out/26', ano.buckets.map((b) => b.rotulo).join(','));
-  check('  último bucket termina no mês que vem', ano.buckets[11].fim.getMonth() === 10 && ano.buckets[11].fim.getDate() === 1);
-  check('período desconhecido vira semana', M.janela('xpto', AGORA).periodo === 'semana');
+  check('ano: 3 colunas de ano inteiro, 2024 a 2026', ano.buckets.length === 3 && ano.buckets.map((b) => b.rotulo).join() === '2024,2025,2026' && ano.buckets[0].inicio.getMonth() === 0 && ano.buckets[2].fim.getFullYear() === 2027, ano.buckets.map((b) => b.rotulo).join(','));
+  check('período desconhecido vira mês', M.janela('xpto', AGORA).periodo === 'mes');
+  check('descrição da janela', mes.descricao === 'últimos 12 meses' && dia.descricao === 'últimos 30 dias');
+  check('diasNecessarios: dia 30, semana 84, mês 366, ano 1100', M.diasNecessarios('dia') === 30 && M.diasNecessarios('semana') === 84 && M.diasNecessarios('mes') === 366 && M.diasNecessarios('ano') === 1100);
+  check('inicioDaSemana de uma quinta é a segunda', M.inicioDaSemana(AGORA).getDate() === 28 && M.inicioDaSemana(new Date(2026, 9, 4)).getDate() === 28 && M.inicioDaSemana(new Date(2026, 9, 5)).getDate() === 5);
 }
 
 console.log('\n=== indiceBucket ===');
 {
-  const sem = M.janela('semana', AGORA);
-  check('hoje de manhã cai no último bucket', M.indiceBucket(sem, iso(2026, 10, 1, 9)) === 6);
-  check('há 6 dias cai no primeiro', M.indiceBucket(sem, iso(2026, 9, 25, 23, 59)) === 0);
-  check('há 7 dias fica fora', M.indiceBucket(sem, iso(2026, 9, 24, 23, 59)) === -1);
-  check('no futuro fica fora', M.indiceBucket(sem, iso(2026, 10, 1, 15)) === -1);
-  check('data inválida fica fora', M.indiceBucket(sem, 'nada') === -1);
   const dia = M.janela('dia', AGORA);
-  check('dia: 14:05 cai no bucket das 14h', M.indiceBucket(dia, iso(2026, 10, 1, 14, 5)) === 14);
+  check('dia: hoje de manhã cai na última coluna', M.indiceBucket(dia, iso(2026, 10, 1, 9)) === 29);
+  check('dia: 02/09 cai na primeira; 01/09 fica fora', M.indiceBucket(dia, iso(2026, 9, 2, 0, 1)) === 0 && M.indiceBucket(dia, iso(2026, 9, 1, 23, 59)) === -1);
+  check('no futuro fica fora', M.indiceBucket(dia, iso(2026, 10, 1, 15)) === -1);
+  check('data inválida fica fora', M.indiceBucket(dia, 'nada') === -1);
+  const sem = M.janela('semana', AGORA);
+  check('semana: domingo 27/09 é a penúltima; segunda 28/09 é a última', M.indiceBucket(sem, iso(2026, 9, 27, 23)) === 10 && M.indiceBucket(sem, iso(2026, 9, 28, 0, 1)) === 11);
+  check('semana: 12/07 fica fora', M.indiceBucket(sem, iso(2026, 7, 12, 23)) === -1);
+  const mes = M.janela('mes', AGORA);
+  check('mês: 15/11/2025 cai no primeiro; 31/10/2025 fica fora', M.indiceBucket(mes, iso(2025, 11, 15)) === 0 && M.indiceBucket(mes, iso(2025, 10, 31)) === -1);
   const ano = M.janela('ano', AGORA);
-  check('ano: 15/11/2025 cai no primeiro mês', M.indiceBucket(ano, iso(2025, 11, 15)) === 0);
-  check('ano: 31/10/2025 fica fora', M.indiceBucket(ano, iso(2025, 10, 31)) === -1);
+  check('ano: 2024 é a primeira coluna, 2026 a última', M.indiceBucket(ano, iso(2024, 6, 1)) === 0 && M.indiceBucket(ano, iso(2026, 10, 1, 9)) === 2 && M.indiceBucket(ano, iso(2023, 12, 31)) === -1);
 }
 
 console.log('\n=== Agregação ===');
@@ -55,19 +59,25 @@ console.log('\n=== Agregação ===');
     T(iso(2026, 9, 1, 9), null),                                              // aberta, criada fora da semana
     { fechada: true, criada: iso(2026, 9, 29, 9), concluida: null },          // fechada sem data de conclusão: não conta
   ];
-  const sem = M.janela('semana', AGORA);
-  const a = M.agregar(tarefas, sem);
-  check('criadas por dia: 1 (seg 28) 2 (ter 29) 2 (qua 30)', a.criadas.join() === '0,0,0,1,2,2,0', a.criadas.join());
-  check('concluídas por dia', a.concluidas.join() === '0,1,0,0,0,2,1', a.concluidas.join());
-  check('publicações por dia (só as concluídas de publicação)', a.publicacoes.join() === '0,1,0,0,0,1,1', a.publicacoes.join());
+  // Colunas de um dia (02/09 … 01/10): o dia d/09 é a coluna d-2; 01/10 é a 29.
+  const dia = M.janela('dia', AGORA);
+  const a = M.agregar(tarefas, dia);
+  const soma = (xs) => xs.reduce((s, x) => s + x, 0);
+  check('criadas por dia: 1 em 28/09, 2 em 29/09, 2 em 30/09; as de 01/09 ficam fora', a.criadas[26] === 1 && a.criadas[27] === 2 && a.criadas[28] === 2 && soma(a.criadas) === 5, a.criadas.join());
+  check('concluídas por dia: 1 em 26/09, 2 em 30/09, 1 em 01/10', a.concluidas[24] === 1 && a.concluidas[28] === 2 && a.concluidas[29] === 1 && soma(a.concluidas) === 4, a.concluidas.join());
+  check('publicações por dia (só as concluídas de publicação)', a.publicacoes[24] === 1 && a.publicacoes[28] === 1 && a.publicacoes[29] === 1 && soma(a.publicacoes) === 3, a.publicacoes.join());
   check('totais', a.totais.criadas === 5 && a.totais.concluidas === 4 && a.totais.publicacoes === 3 && a.totais.abertasAgora === 2, JSON.stringify(a.totais));
   check('SLA médio = média de 48, 26, 24, 600 horas', Math.round(a.totais.slaMediaHoras) === 175 && a.totais.slaN === 4, String(a.totais.slaMediaHoras));
   check('SLA mediana = (26+48)/2 = 37h', a.totais.slaMedianaHoras === 37, String(a.totais.slaMedianaHoras));
-  check('SLA por bucket: ter 30 = (48+26)/2 = 37; qui 01 = 24; sem conclusão = null', a.slaHoras[5] === 37 && a.slaHoras[6] === 24 && a.slaHoras[0] === null, a.slaHoras.join());
-  check('abertasAgora não depende do período', M.agregar(tarefas, M.janela('dia', AGORA)).totais.abertasAgora === 2);
-  const dia = M.agregar(tarefas, M.janela('dia', AGORA));
-  check('dia: só a concluída de hoje às 08h', dia.concluidas[8] === 1 && dia.totais.concluidas === 1 && dia.totais.publicacoes === 1, dia.concluidas.join());
-  check('vazio não quebra', M.agregar([], sem).totais.slaMediaHoras === null && M.agregar(null, sem).totais.criadas === 0);
+  check('SLA por coluna: 30/09 = (48+26)/2 = 37; 01/10 = 24; 26/09 = 600; sem conclusão = null', a.slaHoras[28] === 37 && a.slaHoras[29] === 24 && a.slaHoras[24] === 600 && a.slaHoras[0] === null, a.slaHoras.join());
+  check('abertasAgora não depende do período', M.agregar(tarefas, M.janela('ano', AGORA)).totais.abertasAgora === 2);
+  // Colunas de mês inteiro: setembro é a 10, outubro a 11.
+  const mes = M.agregar(tarefas, M.janela('mes', AGORA));
+  check('mês: setembro junta tudo (criadas 7, concluídas 3, publicações 2); outubro 1 concluída', mes.criadas[10] === 7 && mes.concluidas[10] === 3 && mes.publicacoes[10] === 2 && mes.concluidas[11] === 1 && mes.publicacoes[11] === 1, JSON.stringify({ c: mes.criadas, k: mes.concluidas, p: mes.publicacoes }));
+  check('mês: SLA médio de setembro = média de 48, 26, 600', Math.round(mes.slaHoras[10]) === 225 && mes.slaHoras[11] === 24, mes.slaHoras.join());
+  const ano = M.agregar(tarefas, M.janela('ano', AGORA));
+  check('ano: tudo em 2026', ano.concluidas.join() === '0,0,4' && ano.criadas.join() === '0,0,7');
+  check('vazio não quebra', M.agregar([], dia).totais.slaMediaHoras === null && M.agregar(null, dia).totais.criadas === 0);
 }
 
 console.log('\n=== Formatação ===');

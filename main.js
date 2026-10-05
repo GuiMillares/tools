@@ -4270,19 +4270,34 @@ async function painelAprovar(win, push) {
   return r.estado;
 }
 
+// O servidor de produção é o que o PAINEL lista na hora (ADR-140): com `tipo`,
+// só os de produção; sem (painel antigo), todos. Um só: é ele. Dois ou mais e
+// ninguém escolheu (`servidorId` vazio): devolve a lista para o Hub perguntar.
+// A configuração não decide mais — em 05/10/2026 o servidor 11 configurado
+// tinha sumido do painel e toda publicação falhava.
 async function painelPublicarProducao(win, { dominio, servidorId }, push) {
-  push(`Painel: publicando em produção ${dominio} no servidor ${servidorId}`, 'cmd');
+  const cfg = readPublicacaoConfig();
+  const pedido = servidorId ? String(servidorId) : '';
+  push(`Painel: publicando em produção ${dominio}${pedido ? ' no servidor ' + pedido : ' no servidor de produção que o painel lista'}`, 'cmd');
   const r = await rodarNoPainel(win, `${JS_PUBLICACAO}
     const antes = estado();
     if (antes.concluido && !antes.falhou) return { ok: true, jaEstava: true, estado: antes };
     if (!antes.podePublicar) {
       return { erro: 'o painel não deixa publicar agora (canStartProductionPublish=false). Status do site: ' + antes.siteStatus + ', job: ' + JSON.stringify(antes.job), estado: antes };
     }
-    const servidorOk = (root.servidores || []).some(s => String(s.id) === ${JSON.stringify(String(servidorId))});
-    if (!servidorOk) {
-      return { erro: 'servidor ' + ${JSON.stringify(String(servidorId))} + ' não está na lista do painel: ' + (root.servidores || []).map(s => s.id + ' (' + s.host + ')').join(', '), estado: antes };
+    const lista = (root.servidores || []).map(s => ({ id: String(s.id), nome: String(s.nome || ''), tipo: String(s.tipo || ''), host: String(s.host || ''), ip: String(s.ip || '') }));
+    const producao = lista.filter(s => !s.tipo || s.tipo === 'production');
+    const pedido = ${JSON.stringify(pedido)};
+    let escolhido = pedido ? lista.find(s => s.id === pedido) : null;
+    if (pedido && !escolhido) {
+      return { erro: 'servidor ' + pedido + ' não está na lista do painel: ' + (lista.map(s => s.id + ' ' + (s.nome || s.host)).join(', ') || 'lista vazia'), estado: antes };
     }
-    root.publicarProducaoForm = { dominio: ${JSON.stringify(dominio)}, servidorId: ${JSON.stringify(String(servidorId))} };
+    if (!escolhido) {
+      if (!producao.length) return { erro: 'o painel não lista nenhum servidor de produção (lista: ' + (lista.map(s => s.id + ' ' + (s.nome || s.host) + (s.tipo ? ' [' + s.tipo + ']' : '')).join(', ') || 'vazia') + ')', estado: antes };
+      if (producao.length > 1) return { ok: true, escolher: producao, estado: antes };
+      escolhido = producao[0];
+    }
+    root.publicarProducaoForm = { dominio: ${JSON.stringify(dominio)}, servidorId: escolhido.id };
     root.publicarProducaoModalOpen = true;
     await espera(80);
     const dominioOk = await P.validarDominioProducao(root);
@@ -4295,11 +4310,20 @@ async function painelPublicarProducao(win, { dominio, servidorId }, push) {
     if (alertas.length) return { erro: 'o painel respondeu: ' + alertas.join(' | '), estado: estado() };
     const comecou = await ate(() => (root.productionPublishInProgress || (root.productionPublishJob && root.productionPublishJob.status)) ? estado() : null, 20000);
     if (!comecou) return { erro: 'enfileirei a publicação, mas o painel não registrou job nenhum em 20s', estado: estado() };
-    return { ok: true, estado: comecou };
+    return { ok: true, estado: comecou, servidor: escolhido };
   `);
-  if (r.jaEstava) { push('Painel: produção já estava publicada.', 'info'); return r.estado; }
+  if (r.jaEstava) { push('Painel: produção já estava publicada.', 'info'); return { estado: r.estado, servidor: null }; }
+  if (r.escolher) {
+    push(`Painel: a lista tem ${r.escolher.length} servidores de produção (${r.escolher.map((s) => `${s.nome || s.host}, id ${s.id}`).join('; ')}). Preciso que alguém escolha.`, 'warn');
+    return { precisaEscolher: true, servidores: r.escolher, estado: r.estado };
+  }
+  const s = r.servidor || {};
+  push(`Painel: servidor de produção ${s.nome || s.host || s.id} (id ${s.id}${s.host ? ', ' + s.host : ''}${s.ip ? ', IP ' + s.ip : ''}), o que o painel lista.`, 'info');
+  if (s.ip && cfg.hestiaIpPublico && s.ip !== cfg.hestiaIpPublico) {
+    push(`Atenção: o servidor escolhido tem IP público ${s.ip}, e o IP de produção configurado para o DNS e o SSL é ${cfg.hestiaIpPublico}. Se os sites novos devem responder em ${s.ip}, troque o IP nas Configurações; se ${cfg.hestiaIpPublico} continua na frente, está tudo certo.`, 'warn');
+  }
   push(`Painel: publicação enfileirada (job ${r.estado.job?.id || '?'}, passo ${r.estado.job?.step || '?'}).`, 'success');
-  return r.estado;
+  return { estado: r.estado, servidor: r.servidor || null };
 }
 
 // Espera o job terminar, lendo o snapshot do painel a cada 2s.
@@ -4478,11 +4502,14 @@ handleNoPainel('painel:publicar', async (event, payload) => {
     }
     if (etapa === 'publicar') {
       if (!dominio) throw new Error('Sem domínio para publicar.');
-      const cfg = readPublicacaoConfig();
-      const servidor = String(servidorId || cfg.hestiaServidorPadrao);
-      await painelPublicarProducao(win, { dominio, servidorId: servidor }, push);
+      // O servidor vem da lista do painel (ADR-140); servidorId só vem
+      // preenchido quando a pessoa escolheu entre dois.
+      const r = await painelPublicarProducao(win, { dominio, servidorId: servidorId ? String(servidorId) : '' }, push);
+      if (r.precisaEscolher) {
+        return { ok: false, precisaEscolher: true, servidores: r.servidores, error: `o painel lista ${r.servidores.length} servidores de produção; escolha um`, log, estado: r.estado };
+      }
       const estado = await painelEsperarPublicacao(win, push);
-      return { ok: true, log, estado };
+      return { ok: true, log, estado, servidor: r.servidor || null };
     }
     if (etapa === 'ssl') {
       const estado = await painelAtivarSsl(win, push, dominio);
@@ -8713,7 +8740,8 @@ ipcMain.handle('sistema:credenciais', () => {
     ],
     hestia: {
       ip: pub.hestiaIpPublico || '',
-      servidor: ((pub.hestiaServidores || {})[pub.hestiaServidorPadrao]) || '',
+      // O servidor de produção não é mais configurado: é o que o painel lista (ADR-140).
+      servidor: 'o de produção que o painel lista',
     },
   };
 });

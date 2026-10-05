@@ -331,6 +331,13 @@ fica e sai, e espera "Confirmar e aplicar o DNS". Depois segue sozinho:
 nameservers no Registro.br, aprovar, publicar em produção, esperar o
 apontamento, SSL (ou pendente, com aviso), tags e a linha na planilha.
 
+**O servidor de produção é o que o painel lista** na hora de publicar
+(ADR-140): um só, o Hub usa; dois ou mais, pergunta no terminal qual (na
+rodada em massa, uma vez por rodada; na automática, desiste e deixa para a
+mão). Não há mais servidor fixo nas Configurações. O IP de produção do DNS
+continua configurado, e o terminal avisa quando o IP do servidor escolhido é
+outro.
+
 Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto, e
 pergunta a empresa no terminal antes da planilha (ADR-064).
 
@@ -360,11 +367,13 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
 
 - **Tela inicial (Hub):** saudação com o nome de quem está logado e, em
   cima, três indicadores das **suas** tarefas do Salesforce (ADR-138), cada
-  um com o período no próprio cartão: **SLA médio** (da criação à conclusão
-  das concluídas; dia, semana, mês), **Tarefas** (concluídas e criadas; dia,
-  semana, mês, ano) e **Publicações feitas** (dia, semana, mês, ano). Número
-  grande, gráfico de colunas com tooltip, e uma tabela no lugar do gráfico
-  pelo botão do cartão. Abaixo, as filas de deploy e o resumo das suas
+  um com a granularidade no próprio cartão — uma coluna por **dia** (30
+  dias), por **semana** (12), por **mês inteiro** (12) ou por **ano** (3):
+  **SLA médio** (da criação à conclusão das concluídas; dia, semana, mês),
+  **Tarefas** (concluídas e criadas; dia, semana, mês, ano) e **Publicações
+  feitas** (dia, semana, mês, ano). Número grande com o total da janela,
+  gráfico de colunas com tooltip, e uma tabela no lugar do gráfico pelo
+  botão do cartão. Abaixo, as filas de deploy e o resumo das suas
   tarefas (abertas, entregas em menos de 24h, sem prazo) (ADR-113, ADR-115).
   WHOIS/DNS não tem mais cartão: um domínio na busca do topo, ou `whois
   <domínio>` no terminal, responde no terminal da direita. As ferramentas

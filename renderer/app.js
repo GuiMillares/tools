@@ -211,8 +211,9 @@ const state = {
   // (ADR-132): { to, cc }. Editado no painel da automação; os modelos de
   // assunto e corpo são fixos, em lib/busca-one.js.
   mailVhost: null,
-  // Período escolhido em cada indicador da tela inicial (ADR-138). Lembrado.
-  homePeriodos: { sla: 'semana', tarefas: 'semana', pub: 'mes' },
+  // Granularidade escolhida em cada indicador da tela inicial (ADR-138):
+  // dia, semana, mês ou ano por coluna. Lembrado.
+  homePeriodos: { sla: 'mes', tarefas: 'mes', pub: 'mes' },
   sslProjeto: 'Busca Cliente', // vira {projeto} no assunto da ativação de SSL
   oauthPending: null, // { url } enquanto o login está aberto esperando o callback
 };
@@ -268,7 +269,6 @@ const el = {
   sfAssuntoInput: document.getElementById('sfAssuntoInput'),
   sfComentarioInput: document.getElementById('sfComentarioInput'),
   sfTextoFeedInput: document.getElementById('sfTextoFeedInput'),
-  pubServidorSelect: document.getElementById('pubServidorSelect'),
   cfTokenBcInput: document.getElementById('cfTokenBcInput'),
   cfAccountBcInput: document.getElementById('cfAccountBcInput'),
   rbrUserBcInput: document.getElementById('rbrUserBcInput'),
@@ -1901,23 +1901,25 @@ function renderHome() {
 
 // ---------- Indicadores das suas tarefas na tela inicial (ADR-138) ----------
 //
-// SLA médio, tarefas e publicações, cada um com o período (dia, semana, mês,
-// ano) escolhido no próprio cartão e lembrado. Os dados vêm de uma consulta só
-// (salesforce:metricas: as suas tarefas do último ano) e ficam 5 min em
+// SLA médio, tarefas e publicações, cada um com a granularidade (uma coluna
+// por dia, semana, mês inteiro ou ano) escolhida no próprio cartão e
+// lembrada. Os dados vêm de uma consulta só (salesforce:metricas: as suas
+// tarefas dos últimos 3 anos, o que o "Ano" precisa) e ficam 5 min em
 // memória; trocar o período não volta ao Salesforce. O desenho é SVG puro
 // (lib/metricas.js), sem biblioteca e sem animação. Cada cartão tem o número
-// grande, o gráfico (ou a tabela, no botão), tooltip por coluna e a legenda
-// quando há duas séries.
+// grande (o total da janela mostrada), o gráfico (ou a tabela, no botão),
+// tooltip por coluna e a legenda quando há duas séries.
 
 let metricasEstado = { dados: null, quando: 0, carregando: false, erro: null, tabela: {} };
 const METRICAS_CARDS = [
-  { id: 'sla', titulo: 'SLA médio', sub: 'da criação à conclusão, nas suas tarefas concluídas no período', periodos: ['dia', 'semana', 'mes'] },
-  { id: 'tarefas', titulo: 'Tarefas', sub: 'suas tarefas concluídas (colunas) e criadas (linha) no período', periodos: ['dia', 'semana', 'mes', 'ano'] },
-  { id: 'pub', titulo: 'Publicações feitas', sub: 'suas tarefas de publicação concluídas no período', periodos: ['dia', 'semana', 'mes', 'ano'] },
+  { id: 'sla', titulo: 'SLA médio', sub: 'da criação à conclusão, nas suas tarefas concluídas', periodos: ['dia', 'semana', 'mes'] },
+  { id: 'tarefas', titulo: 'Tarefas', sub: 'suas tarefas concluídas (colunas) e criadas (linha)', periodos: ['dia', 'semana', 'mes', 'ano'] },
+  { id: 'pub', titulo: 'Publicações feitas', sub: 'suas tarefas de publicação concluídas', periodos: ['dia', 'semana', 'mes', 'ano'] },
 ];
-// Quantos rótulos do eixo x cabem: no dia (24 horas) um a cada 6; no mês (30
-// dias) um a cada 5; no ano (12 meses) um a cada 2.
-const METRICAS_CADA_ROTULO = { dia: 6, semana: 1, mes: 5, ano: 2 };
+// Quantos rótulos do eixo x cabem: 30 dias um a cada 5; 12 semanas e 12
+// meses um a cada 2; 3 anos todos.
+const METRICAS_CADA_ROTULO = { dia: 5, semana: 2, mes: 2, ano: 1 };
+const METRICAS_DIAS = 1100; // 3 anos, o que a coluna por ano precisa
 
 async function carregarMetricas(forcar) {
   if (metricasEstado.carregando) return metricasEstado.dados;
@@ -1925,7 +1927,7 @@ async function carregarMetricas(forcar) {
   if (!hubSfConectado) return null;
   metricasEstado.carregando = true;
   renderHomeMetricas();
-  const r = await window.api.salesforceMetricas({ dias: 366 }).catch((e) => ({ ok: false, error: e.message }));
+  const r = await window.api.salesforceMetricas({ dias: METRICAS_DIAS }).catch((e) => ({ ok: false, error: e.message }));
   metricasEstado.carregando = false;
   metricasEstado.quando = Date.now();
   if (r && r.log && forcar) for (const e of r.log) log(e.message, e.type);
@@ -1935,7 +1937,7 @@ async function carregarMetricas(forcar) {
   } else {
     metricasEstado.erro = null;
     metricasEstado.dados = r;
-    if (forcar) log(`Indicadores: ${r.tarefas.length} tarefa(s) suas no último ano.`, 'success');
+    if (forcar) log(`Indicadores: ${r.tarefas.length} tarefa(s) suas nos últimos ${r.dias} dias.`, 'success');
   }
   renderHomeMetricas();
   return metricasEstado.dados;
@@ -1949,7 +1951,7 @@ function metricaConteudo(c, j, a) {
   if (c.id === 'sla') {
     return {
       valor: M.formatarHoras(a.totais.slaMediaHoras),
-      sub: a.totais.slaN ? `${a.totais.slaN} concluída(s) · mediana ${M.formatarHoras(a.totais.slaMedianaHoras)}` : 'nenhuma tarefa concluída no período',
+      sub: a.totais.slaN ? `${a.totais.slaN} concluída(s) nos ${j.descricao} · mediana ${M.formatarHoras(a.totais.slaMedianaHoras)}` : `nenhuma tarefa concluída nos ${j.descricao}`,
       svg: M.svgColunas({ valores: a.slaHoras, rotulos, cadaRotulo: cada, formatar: (v) => (v ? M.formatarHoras(v) : '0') }),
       legenda: '',
       cabecalho: ['Período', 'SLA médio', 'Concluídas'],
@@ -1960,7 +1962,7 @@ function metricaConteudo(c, j, a) {
   if (c.id === 'tarefas') {
     return {
       valor: String(a.totais.concluidas),
-      sub: `concluída(s) · ${a.totais.criadas} criada(s) · ${a.totais.abertasAgora} aberta(s) agora`,
+      sub: `concluída(s) nos ${j.descricao} · ${a.totais.criadas} criada(s) · ${a.totais.abertasAgora} aberta(s) agora`,
       svg: M.svgColunas({ valores: a.concluidas, linha: a.criadas, rotulos, cadaRotulo: cada, inteiros: true }),
       legenda: '<div class="metrica-legenda"><span><i></i>concluídas</span><span><i class="linha"></i>criadas</span></div>',
       cabecalho: ['Período', 'Concluídas', 'Criadas'],
@@ -1970,7 +1972,7 @@ function metricaConteudo(c, j, a) {
   }
   return {
     valor: String(a.totais.publicacoes),
-    sub: 'publicação(ões) concluída(s) no período',
+    sub: `publicação(ões) concluída(s) nos ${j.descricao}`,
     svg: M.svgColunas({ valores: a.publicacoes, rotulos, cadaRotulo: cada, inteiros: true }),
     legenda: '',
     cabecalho: ['Período', 'Publicações'],
@@ -4387,8 +4389,10 @@ async function rodarBulk({ retomando = false } = {}) {
   if (!fila.length) return;
 
   const cfg = await window.api.getPublicacaoConfig();
-  const servidorId = String(cfg?.config?.hestiaServidorPadrao || '11');
-  const host = cfg?.config?.hestiaServidores?.[servidorId] || servidorId;
+  // O servidor é o de produção que o painel lista (ADR-140); com dois, o Hub
+  // pergunta uma vez e vale para a rodada toda.
+  bulkServidorEscolhido = '';
+  bulkServidorUsado = null;
 
   // Sem confirmação de lista (ADR-072): o botão diz o que vai acontecer, e a
   // lista já está na tela. A parada que fica é a do DNS, uma por domínio.
@@ -4418,7 +4422,7 @@ async function rodarBulk({ retomando = false } = {}) {
     } catch (e) { bulkSfConectado = false; }
   }
   const marca = state.brand;
-  log(`Publicar e vincular: ${fila.length} site(s) de ${brandName(marca)}, um por vez, no servidor Hestia ${host} (id ${servidorId}). Quem já estiver publicado é só vinculado.`, 'cmd');
+  log(`Publicar e vincular: ${fila.length} site(s) de ${brandName(marca)}, um por vez, no servidor de produção que o painel lista (com dois, pergunto uma vez). Quem já estiver publicado é só vinculado.`, 'cmd');
   log(fila.map((r) => r.dominio).join(', '), 'info');
   renderBulkLista();
 
@@ -4471,7 +4475,7 @@ async function rodarBulk({ retomando = false } = {}) {
         );
       }
 
-      publicou = await publicarSeNecessario(row, servidorId);
+      publicou = await publicarSeNecessario(row);
       // Voltou sem erro = o site está no ar (já estava, ou acabou de subir).
       // Daqui para frente, o que falhar é vínculo, não publicação (ADR-092).
       row.publicado = true;
@@ -5001,14 +5005,13 @@ async function registrarLinhaDaPlanilha(row) {
 
   const aba = PLANILHA_ABA_POR_EMPRESA[empresa];
   const cfg = await window.api.getPublicacaoConfig();
-  const servidorId = String(cfg?.config?.hestiaServidorPadrao || '11');
-  const servidor = cfg?.config?.hestiaServidores?.[servidorId] || servidorId;
+  // O servidor que o painel usou nesta rodada (ADR-140); sem publicação nova, o genérico.
   const linha = montarLinhaPlanilha({
     dominio: row.dominio,
     razao: row.razao,
     marca: 'mpiplus',
     desenvolvedor: cfg?.config?.desenvolvedor || '',
-    servidor: `Hestia ${servidor}`,
+    servidor: bulkServidorUsado ? `${bulkServidorUsado.nome || 'Hestia'}${bulkServidorUsado.host ? ' ' + bulkServidorUsado.host : ''}` : 'Hestia (produção do painel)',
     // Só "Finalizado" quando o DNS foi de fato nosso; sem consulta é "Não se aplica".
     dnsNosso: row.dnsNosso === true,
   });
@@ -5052,15 +5055,41 @@ function anotarSslPendente(dominio, motivo) {
 // Publica o site se ele ainda não estiver publicado. Devolve o que aconteceu,
 // para o resumo da linha; estoura quando a publicação falha, e aí a linha não
 // segue para o vínculo (vincular um site que não subiu daria erro pior adiante).
-async function publicarSeNecessario(row, servidorId) {
+// O servidor de produção da rodada em massa (ADR-140): escolhido uma vez quando
+// o painel lista dois, e o usado na última publicação, para a planilha.
+let bulkServidorEscolhido = '';
+let bulkServidorUsado = null;
+
+async function publicarSeNecessario(row) {
   const url = normalizePainelUrl(row.painel);
   const passo = async (etapa, rotulo, extra = {}) => {
     const res = await withBusy(`${rotulo} ${row.dominio}`, () =>
       window.api.publicarPainel({ url, etapa, dominio: row.dominio, ...extra })
     );
     if (res.log) for (const e of res.log) log(e.message, e.type);
-    if (!res.ok) throw new Error(res.error || `falhou ao ${rotulo}`);
+    if (!res.ok) {
+      const err = new Error(res.error || `falhou ao ${rotulo}`);
+      err.precisaEscolher = !!res.precisaEscolher;
+      err.servidores = res.servidores || [];
+      throw err;
+    }
+    if (etapa === 'publicar' && res.servidor) bulkServidorUsado = res.servidor;
     return res.estado || {};
+  };
+  // Publicar com o servidor que o painel lista; com dois, pergunta uma vez
+  // por rodada e repete com a escolha.
+  const publicar = async () => {
+    try {
+      return await passo('publicar', 'publicando', { servidorId: bulkServidorEscolhido || '' });
+    } catch (e) {
+      if (!e.precisaEscolher) throw e;
+      const escolha = await perguntarNoTerminal(
+        `O painel lista ${e.servidores.length} servidores de produção. Em qual publicar (vale para a rodada toda)?`,
+        e.servidores.map((s) => ({ valor: String(s.id), rotulo: servidorRotulo(s) }))
+      );
+      bulkServidorEscolhido = escolha;
+      return passo('publicar', 'publicando', { servidorId: escolha });
+    }
   };
 
   const antes = await passo('estado', 'conferindo');
@@ -5072,7 +5101,7 @@ async function publicarSeNecessario(row, servidorId) {
   }
 
   await passo('aprovar', 'aprovando');
-  const depois = await passo('publicar', 'publicando', { servidorId });
+  const depois = await publicar();
   let detalhe = depois.urlProducao || 'publicado';
 
   // O SSL falhar não desfaz a publicação nem impede o vínculo: registra e segue.
@@ -6199,20 +6228,41 @@ async function pubEtapaPainel(etapa) {
   if (etapa === 'ssl') await pubVerificarScPendente();
 }
 
+// O rótulo de um servidor do painel, para pergunta, planilha e terminal.
+function servidorRotulo(s) {
+  if (!s) return '';
+  return `${s.nome || s.host || ('id ' + s.id)}${s.host && s.nome ? ' · ' + s.host : ''}${s.ip ? ' · ' + s.ip : ''}`;
+}
+
 async function pubEtapaPublicar() {
   if (!pubPrecisaPainel()) throw new Error('link do painel inválido');
-  const cfg = await window.api.getPublicacaoConfig();
-  const servidor = String(cfg?.config?.hestiaServidorPadrao || '11');
-  const host = cfg?.config?.hestiaServidores?.[servidor] || servidor;
-  // Sem parada aqui (ADR-072): a única confirmação da publicação é a do DNS.
-  // O que vai acontecer fica dito no terminal, antes de acontecer.
-  log(`Publicando ${pub.dominio} em produção no servidor Hestia ${host} (id ${servidor}), sem www, como o painel espera.`, 'cmd');
-  const res = await withBusy('publicando em produção', () =>
-    window.api.publicarPainel({ url: normalizePainelUrl(pub.painelUrl), etapa: 'publicar', dominio: pub.dominio, servidorId: servidor })
+  // O servidor é o de produção que o painel lista (ADR-140): um só, é ele; dois
+  // ou mais, o Hub pergunta aqui — e no automático desiste, porque ninguém
+  // responde. Sem parada de confirmação (ADR-072): o que vai acontecer fica
+  // dito no terminal, antes de acontecer.
+  log(`Publicando ${pub.dominio} em produção no servidor de produção que o painel lista, sem www, como o painel espera.`, 'cmd');
+  const pedir = (servidorId) => withBusy('publicando em produção', () =>
+    window.api.publicarPainel({ url: normalizePainelUrl(pub.painelUrl), etapa: 'publicar', dominio: pub.dominio, servidorId: servidorId || '' })
   );
+  let res = await pedir(pub.servidorEscolhido || '');
   logTudo(res);
+  if (!res.ok && res.precisaEscolher) {
+    const lista = res.servidores || [];
+    if (pub.auto) {
+      pub.semSaida = `o painel lista ${lista.length} servidores de produção (${lista.map(servidorRotulo).join('; ')}); escolha no Publicar MPI+ à mão`;
+      throw new Error(pub.semSaida);
+    }
+    const escolha = await perguntarNoTerminal(
+      `O painel lista ${lista.length} servidores de produção. Em qual publicar ${pub.dominio}?`,
+      lista.map((s) => ({ valor: String(s.id), rotulo: servidorRotulo(s) }))
+    );
+    pub.servidorEscolhido = escolha;
+    res = await pedir(escolha);
+    logTudo(res);
+  }
   if (!res.ok) throw new Error(res.error);
-  pubAvancar('publicar', true, res.estado?.urlProducao || 'concluída');
+  pub.servidorUsado = res.servidor || null;
+  pubAvancar('publicar', true, `${res.estado?.urlProducao || 'concluída'}${res.servidor ? ' · ' + (res.servidor.nome || res.servidor.host) : ''}`);
 }
 
 async function pubEtapaTags() {
@@ -6419,12 +6469,11 @@ async function pubEtapaPlanilha() {
     if (sel) sel.value = escolha;
     aba = PLANILHA_ABA_POR_EMPRESA[escolha];
   }
-  const servidorId = String(cfg?.config?.hestiaServidorPadrao || '11');
-  const servidor = cfg?.config?.hestiaServidores?.[servidorId] || servidorId;
+  // O servidor que o painel usou (ADR-140); sem ele (site já estava publicado), o genérico.
   const linha = montarLinhaPlanilha({
     dominio: pub.dominio, razao, marca: 'mpiplus',
     desenvolvedor: cfg?.config?.desenvolvedor || '',
-    servidor: `Hestia ${servidor}`,
+    servidor: pub.servidorUsado ? `${pub.servidorUsado.nome || 'Hestia'}${pub.servidorUsado.host ? ' ' + pub.servidorUsado.host : ''}` : 'Hestia (produção do painel)',
     // Só "Finalizado" quando o DNS foi de fato nosso e feito por aqui.
     dnsNosso: pub.dnsNosso === true,
   });
@@ -7588,7 +7637,6 @@ function openSettings(tab) {
   window.api.getPublicacaoConfig().then((r) => {
     if (!r || !r.ok) return;
     el.pubIpInput.value = r.config.hestiaIpPublico || '';
-    el.pubServidorSelect.value = String(r.config.hestiaServidorPadrao || '11');
     el.planilhaUrlInput.value = r.config.planilhaUrl || '';
     el.desenvolvedorInput.value = r.config.desenvolvedor || '';
     const marca = (input, tem, texto) => { input.value = ''; input.placeholder = tem ? texto : '••••••••'; };
@@ -7708,7 +7756,6 @@ el.saveSettingsBtn.addEventListener('click', async () => {
     const resPub = await window.api.setPublicacaoConfig({
       config: {
         hestiaIpPublico: el.pubIpInput.value.trim() || undefined,
-        hestiaServidorPadrao: el.pubServidorSelect.value,
         planilhaUrl: el.planilhaUrlInput.value.trim(),
         desenvolvedor: el.desenvolvedorInput.value.trim(),
       },

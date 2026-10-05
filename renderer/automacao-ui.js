@@ -183,6 +183,9 @@
           continue;
         }
         const f = pub.feitas[antes];
+        // Etapa que precisa de uma escolha humana (dois servidores de produção
+        // no painel, ADR-140): repetir não resolve, desiste de primeira.
+        if (pub.semSaida) return { ok: false, desistir: true, motivo: `${etapa.nome}: ${pub.semSaida}` };
         if (!f || f.ok) return { ok: false, motivo: `parou em "${etapa.nome}"` };
         return { ok: false, motivo: `${etapa.nome} falhou: ${f.detalhe || 'sem detalhe'}` };
       }

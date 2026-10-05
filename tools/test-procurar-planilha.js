@@ -53,6 +53,7 @@ function montarRenderer(api) {
     const perguntarNoTerminal = async () => { perguntas++; return 'bc'; };
     const PLANILHA_ABA_POR_EMPRESA = { bc: 'Busca Cliente', mpisolutions: 'MPI' };
     const montarLinhaPlanilha = () => new Array(10).fill('');
+    let bulkServidorUsado = null; // o servidor da rodada (ADR-140), que a função lê para a planilha
     const window = { api };
     ${recorta(app, 'async function registrarLinhaDaPlanilha(row)', '\n// Dá para pedir o SSL agora?')}
     return { registrar: registrarLinhaDaPlanilha, logs, get perguntas() { return perguntas; } };`;
