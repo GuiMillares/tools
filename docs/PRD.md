@@ -518,26 +518,42 @@ hoje** nas duas telas do vínculo, sem gravar nada (ADR-144):
   manda. Termo largo só abre projeto cujo nome cita o domínio, com teto de
   páginas por site. Não achando, a conta do Salesforce dá outro nome. Nada
   disso clica ou grava no painel.
-- **Ler.** Configuração → 5. Integrações (Analytics `G-…`, Tag Manager
-  `GTM-…`, Search Console, reCAPTCHA) e Relatório → Conexão (propriedade GA4,
-  site do Search Console, as contas e o selo OK/Pendente), depois de o
-  contrato remoto carregar.
+- **Ler.** Depois de o painel se montar (o gancho da aba Publicação, o
+  `enabled` da configuração, o contrato remoto do Relatório; vindo vazio, lê de
+  novo): Configuração → 5. Integrações (Analytics `G-…`, Tag Manager `GTM-…`,
+  Search Console, reCAPTCHA), Relatório → Conexão (propriedade GA4, site do
+  Search Console, as contas e o selo OK/Pendente) e o estado da publicação. E,
+  fora do painel, o **HTML do site**: as tags que estão de fato no ar
+  (ADR-145).
 - **Veredito.** *Vinculado*: as três tags nas Integrações e o Relatório com
-  Analytics e Search Console preenchidos e conexão validada. *Incompleto*: diz
-  o que falta, pelo nome (inclusive Search Console do Relatório apontando para
-  outro site). *Não consegui ler*: para conferir à mão; nunca vira pronto.
-  *Não achei no painel*: com os termos tentados e os contratos vistos. O
-  reCAPTCHA é observação, não falta.
+  Analytics e Search Console preenchidos e conexão validada. *Incompleto*: o
+  painel carregou e falta algo, dito pelo nome (inclusive Search Console do
+  Relatório apontando para outro site), e o HTML do site concorda. *Não
+  consegui ler*: o painel não carregou a tempo ou leu vazio com tag no ar
+  (leitura suspeita); nunca vira pronto. *Não achei no painel*: com os termos
+  tentados e os contratos vistos. O reCAPTCHA é observação, não falta.
+- **504 e segunda passada.** Página do painel que responde 504 é repetida (20
+  s, 40 s) e não derruba o cliente; no fim da rodada, quem ficou com erro
+  passageiro ou leitura suspeita é conferido de novo.
+- **Vincular os incompletos.** Um botão, com a caixa "Criar no Google o que não
+  existir": para cada "Incompleto" ou "Não consegui ler" com link do painel,
+  o mesmo caminho do Publicar MPI+: procura (ou cria) Analytics, Tag Manager,
+  reCAPTCHA e Search Console, sincroniza Integrações e Relatório no painel e
+  lê de novo; o veredito é a releitura, e a coluna "Ação do Hub" diz o que foi
+  feito e o que não fechou. "Não achei" não entra: não há onde vincular.
 - **Saída.** A lista na tela com um selo por cliente, "Copiar resultado" e
   **"Salvar planilha (.xlsx)"** com três abas: **Resumo** (totais e
   percentuais, por empresa, o que mais falta), **Clientes** (tudo, com o link
-  do painel e como o contrato foi achado) e **Pendências** (só quem não está
-  vinculado). A aba Clientes serve de entrada para a próxima conferência, sem
-  procurar os contratos de novo.
+  do painel, as tags no HTML, se está publicado, a ação do Hub e como o
+  contrato foi achado) e **Pendências** (só quem não está vinculado). A aba
+  Clientes serve de entrada para a próxima conferência, sem procurar os
+  contratos de novo.
 
 Um cliente por vez; "Parar depois deste" interrompe sem perder o que já foi
-lido. A rodada nunca para por um cliente não achado: ele vai para as
-Pendências e o próximo começa.
+lido. A conferência fica **salva em arquivo** a cada cliente: fechar o Hub não
+perde nada, "Continuar" retoma de onde parou e "Descartar" limpa. A rodada
+nunca para por um cliente não achado: ele vai para as Pendências e o próximo
+começa.
 
 ## 5. Fora de escopo
 

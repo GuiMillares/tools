@@ -158,6 +158,34 @@ const PAINEL_OK = () => ({
     check('texto do resumo', V.textoResumo(itens) === '1 vinculado(s), 1 incompleto(s), 0 sem leitura, 1 não achado(s) no painel, 0 erro(s), de 3', V.textoResumo(itens));
   }
 
+  console.log('\n=== ADR-145: as tags no HTML do site e a leitura suspeita ===');
+  {
+    const html = '<html><head><script async src="https://www.googletagmanager.com/gtag/js?id=G-ABC123"></script><script>gtag("config","G-ABC123");</script>' +
+      '<script>(function(w,d,s,l,i){})(window,document,"script","dataLayer","GTM-XYZ9");</script><meta name="google-site-verification" content="abc" /></head></html>';
+    const t = V.tagsDoHtml(html);
+    check('acha G- e GTM- sem repetir, e a meta', t.ga.join() === 'G-ABC123' && t.gtm.join() === 'GTM-XYZ9' && t.metaVerificacao === 'abc', JSON.stringify(t));
+    check('página sem tags', V.tagsDoHtml('<html></html>').ga.length === 0 && V.tagsDoHtml('').gtm.length === 0);
+
+    const vazio = () => { const p = PAINEL_OK(); p.integracoes = { ga: false, gtm: false, gsc: false, recaptcha: true }; p.valores = { ga: '', gtm: '', gscPreenchido: false, recaptcha: true }; return p; };
+    const r = V.avaliarConferencia(vazio(), { dominio: 'cliente.com.br', site: { ok: true, ga: ['G-ABC123'], gtm: ['GTM-XYZ9'], metaVerificacao: '' } });
+    check('painel vazio com tag no ar: leitura suspeita, não incompleto', r.situacao === 'nao-lido' && r.suspeita === true && r.observacoes.some((o) => /leitura suspeita/.test(o)), JSON.stringify(r));
+    const r2 = V.avaliarConferencia(vazio(), { dominio: 'cliente.com.br', site: { ok: true, ga: [], gtm: [], metaVerificacao: '' } });
+    check('painel vazio e site sem tags: incompleto mesmo', r2.situacao === 'incompleto' && !r2.suspeita, JSON.stringify(r2));
+    const r3 = V.avaliarConferencia(PAINEL_OK(), { dominio: 'cliente.com.br', site: { ok: true, ga: ['G-OUTRA'], gtm: [], metaVerificacao: '' } });
+    check('painel cheio mas o site mostra outra tag: vinculado, com observação', r3.situacao === 'vinculado' && r3.observacoes.some((o) => /G-ABC123 do painel não aparece/.test(o) && /G-OUTRA/.test(o)) && r3.observacoes.some((o) => /GTM-XYZ9 do painel não aparece/.test(o)), JSON.stringify(r3.observacoes));
+    const r4 = V.avaliarConferencia(PAINEL_OK(), { dominio: 'cliente.com.br', site: { ok: false, erro: 'tempo esgotado' } });
+    check('site fora do ar vira observação', r4.situacao === 'vinculado' && r4.observacoes.some((o) => /não acessível/.test(o)), JSON.stringify(r4.observacoes));
+    const s = vazio(); s.integracoesProntas = false;
+    const r5 = V.avaliarConferencia(s, { dominio: 'cliente.com.br' });
+    check('painel não liberou a configuração e veio vazio: não lido', r5.situacao === 'nao-lido' && /não liberou/.test(r5.faltando.join()), JSON.stringify(r5));
+    const u = PAINEL_OK(); u.releitura = true;
+    check('2ª leitura vira observação', V.avaliarConferencia(u, { dominio: 'cliente.com.br' }).observacoes.some((o) => /2ª leitura/.test(o)));
+    check('texto das tags do site', V.textoTagsDoSite({ ok: true, ga: ['G-1'], gtm: ['GTM-2'], metaVerificacao: 'x' }) === 'G-1, GTM-2 · meta Search Console' && V.textoTagsDoSite({ ok: true, ga: [], gtm: [] }) === 'nenhuma tag' && /não acessível/.test(V.textoTagsDoSite({ ok: false, erro: 'x' })) && V.textoTagsDoSite(null) === '');
+    check('texto da publicação', V.textoPublicacao({ concluido: true, sslAtivo: true, urlProducao: 'https://x.com.br' }) === 'Sim, SSL ativo (https://x.com.br)' && /^Não \(approved\)/.test(V.textoPublicacao({ concluido: false, siteStatus: 'approved' })) && V.textoPublicacao(null) === '');
+    const linha = V.linhaCliente({ ...itens[0], site: { ok: true, ga: ['G-ABC123'], gtm: ['GTM-XYZ9'] }, acao: 'vinculou agora: G-ABC123', conferencia: { ...PAINEL_OK(), publicacao: { concluido: true, sslAtivo: false } } });
+    check('colunas novas na planilha: ação do Hub, tags no site, publicado', linha.length === V.COLUNAS_CLIENTES.length && linha[V.COLUNAS_CLIENTES.indexOf('Ação do Hub')] === 'vinculou agora: G-ABC123' && linha[V.COLUNAS_CLIENTES.indexOf('Tags no site (HTML)')] === 'G-ABC123, GTM-XYZ9' && linha[V.COLUNAS_CLIENTES.indexOf('Publicado em produção')] === 'Sim, sem SSL', JSON.stringify(linha));
+  }
+
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
   process.exit(falhas ? 1 : 0);
 })();

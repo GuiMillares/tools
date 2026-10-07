@@ -6381,7 +6381,7 @@ redefinido aqui.
 
 ## ADR-144 — Conferir vínculos no painel: a leitura em massa pela planilha de publicações, e o contrato pela URL de produção
 
-**Status:** aceita (estende a ADR-087 e a ADR-098)
+**Status:** aceita (estende a ADR-087 e a ADR-098), estendida pela ADR-145 (ler depois de o painel carregar, prova pelo HTML, 504, CNPJ e nome parecido, vincular os incompletos)
 
 **Contexto.** Pedido de 07/10/2026: validar se **todos os clientes MPI+ da
 planilha de publicações** estão com as tags vinculadas no painel, na aba
@@ -6476,6 +6476,90 @@ de data streams (ADR-131) permitiria, e fica como pendência. Testes:
 `test-achar-painel` (produção, escada, termo largo, teto) e `test-planilha`
 (`planilha:listar`). O miolo Alpine continua sem teste, pelo motivo da
 ADR-037.
+
+---
+
+## ADR-145 — Conferir vínculos: ler depois de o painel carregar, provar pelo HTML do site, repetir o 504, achar por CNPJ e nome parecido, e vincular os incompletos
+
+**Status:** aceita (estende a ADR-144)
+
+**Contexto.** A primeira rodada real (07/10/2026, 204 clientes MPI+) parou em
+87 conferidos e mostrou quatro coisas. (1) 29 dos 38 "incompletos" estavam com
+as **cinco** leituras vazias, e o log mostra a leitura no mesmo segundo em que
+a página abriu: o "conferir" era o primeiro script na página e lia antes de o
+painel buscar a configuração no servidor (ADR-050, ADR-121); no Publicar em
+massa isso nunca apareceu porque a leitura do estado da publicação vinha antes
+e dava tempo. (2) Seis "não achei" eram **504** da página pesada de projetos, e
+um 504 derrubava o cliente inteiro. (3) Dois "não achei" tinham **CNPJ** na
+razão social da planilha ("59.256.865 Thiago Mattos da Silva"), e a busca do
+painel acha por CNPJ; outro ("Guinchos Goiania") estava na lista de um termo
+largo, mas o nome do projeto não citava o domínio e o Hub não abriu. (4) O
+pedido: *"não sei o que é o incompleto; quero que ele funcione sem erros,
+sempre ache o cliente e consiga fazer a vinculação, e resolva os 504"*.
+
+**Decisão.**
+
+1. **Ler depois de o painel se montar.** `painelConferirVinculo` espera o
+   gancho da aba Publicação (`window.__mpiHubPubPublication`, até 20 s, a
+   prova de que os scripts subiram), espera o componente da configuração
+   dizer `enabled` (até 10 s) e lê; vindo tudo vazio, espera 4 s e lê de novo
+   (`releitura`). No Relatório, além de `connectionOptions`, espera o
+   **`remotePayload`** (o contrato que `applyRemoteData` guarda, até 20 s), e
+   `carregouContrato` diz se chegou. A leitura devolve também o estado da
+   publicação (publicado em produção? SSL?), que vira coluna.
+2. **Prova pelo HTML do site** (`site:tags`): a página inicial é baixada (GET,
+   seguindo redirecionamento do mesmo site, pelo `buscarInicioDaPagina` da
+   ADR-084), e os `G-…`, `GTM-…` e a meta do Search Console viram a coluna
+   "Tags no site (HTML)". **Painel vazio com tag no ar é leitura suspeita**
+   ("Não consegui ler"), não "Incompleto"; painel cheio com tag diferente no ar
+   é observação. É a prova que não depende de o Alpine ter carregado.
+3. **504 é passageiro.** `comRepeticao` repete até 3 vezes (20 s, depois 40 s)
+   a busca, a página do cliente, a página do projeto e o status do contrato;
+   uma página que não carrega mesmo assim não derruba o cliente: entra em
+   `naoCarregaram`, o resto segue, e o resultado sai marcado `passageiro`. No
+   `painel:sync`, bloco que falha com 5xx ou prazo é repetido uma vez depois
+   de 10 s (erro de validação, o vermelho do painel, não se repete). Na tela,
+   **segunda passada** no fim da rodada para quem ficou passageiro ou suspeito.
+4. **Mais jeitos de achar.** CNPJ (ou a raiz dele) escrito na razão social
+   vira termo certeiro, com pontos, como o painel mostra; número sai da base
+   da razão social. `clienteParecidoComDominio` (nome colado igual ao rótulo
+   do domínio, ou dentro dele, ou todas as palavras do nome dentro do rótulo
+   cobrindo pelo menos 60% dele, sem acento e sem plural) marca o cliente como
+   **forte**: os projetos dele abrem mesmo sem citar o domínio, e termo com
+   mais de 25 clientes examina só os fortes em vez de ser pulado. Quem
+   confirma segue sendo a produção ou o temporário.
+5. **"Vincular os incompletos"**, pelo mesmo caminho do Publicar MPI+ e do
+   Publicar em massa, sem a parte de publicar: `google:createProject` com
+   `brand: 'mpiplus'` e `empresaGtm` pela aba da planilha (MPI → MPI Solutions,
+   Busca Cliente → Busca Cliente), com a caixa "Criar no Google o que não
+   existir" (desmarcada, só reaproveita); depois `publicarMpiPlus` →
+   Integrações, Search Console, Relatório; e **o veredito é o painel lido de
+   novo**, nunca o "mandei". Entra quem está "Incompleto" ou "Não consegui
+   ler" e tem link do painel; "Não achei" não tem onde vincular. A coluna
+   "Ação do Hub" diz o que foi feito e o que não fechou (sem Measurement ID,
+   Search Console adiado pelo SSL, painel recusou um bloco).
+6. **A conferência sobrevive a fechar o Hub.** `vinculos:salvar/ler/apagar`
+   gravam itens e resultados a cada cliente (`conferir-vinculos.json`, escrita
+   atômica como a da rodada em massa); ao abrir a ferramenta, restaura;
+   "Continuar" segue de onde parou (quem ainda não tem resultado); "Descartar"
+   apaga.
+
+**Consequências.** "Incompleto" passa a significar o que diz: o painel
+carregou, falta algo, e o HTML do site concorda. Os 29 "tudo vazio" da rodada
+real voltam como suspeitos e são relidos na segunda passada. Um 504 custa até
+60 s a mais por página, não um cliente perdido. Achar pelo CNPJ e pelo nome
+parecido cobre os três "não achei" que não eram 504; o que sobrar continua na
+Pendências com os termos tentados, sem parar a rodada. O vínculo refeito tem os
+limites do Publicar MPI+: sem SSL o Search Console e o Relatório ficam para
+depois (ADR-100), sem propriedade e com a criação desmarcada fica "sem GA4", e a
+chave da service account recusada para a passada inteira (ADR-092). Risco
+assumido: esperar `enabled` e reler é inferência sobre uma tela que não é
+nossa; por isso a prova do HTML e a segunda passada existem, e o selo OK do
+painel continua sendo o que decide o Relatório. Testes: `test-achar-painel`
+(CNPJ, nome parecido, termo largo com forte, 504 com espera injetada, erro não
+passageiro não repete), `test-vinculos` (tags do HTML, suspeita, não liberou,
+colunas novas). O miolo Alpine e o `site:tags` contra a rede continuam sem
+teste automatizado.
 
 ---
 

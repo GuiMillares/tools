@@ -1960,6 +1960,28 @@ function buscarInicioDaPagina(url, { saltos = 5 } = {}) {
   })();
 }
 
+// As tags que estão de fato no HTML do site (ADR-145): todos os G-… e GTM-…
+// da página inicial e a meta de verificação. É a prova que não depende de o
+// painel carregar o estado: painel vazio com tag no ar é leitura suspeita.
+// Só GET, seguindo redirecionamentos do mesmo site; outro domínio é avisado.
+ipcMain.handle('site:tags', async (event, { dominio } = {}) => {
+  const d = normalizeDomain(String(dominio || ''));
+  if (!d) return { ok: false, erro: 'domínio inválido' };
+  try {
+    const Vinculos = require(path.join(__dirname, 'lib', 'vinculos'));
+    let r = await buscarInicioDaPagina(`https://${d}/`);
+    if ((r.erro || !r.html) && !/outro domínio/.test(r.erro || '')) {
+      const www = await buscarInicioDaPagina(`https://www.${d}/`);
+      if (www.html && !www.erro) r = www;
+    }
+    if (r.erro && !r.html) return { ok: false, erro: r.erro, status: r.status || 0, urlFinal: r.urlFinal || '' };
+    if (!r.html) return { ok: false, erro: `o site respondeu ${r.status} sem HTML`, status: r.status, urlFinal: r.urlFinal || '' };
+    return { ok: true, status: r.status, urlFinal: r.urlFinal || '', ...Vinculos.tagsDoHtml(r.html) };
+  } catch (e) {
+    return { ok: false, erro: e.message };
+  }
+});
+
 // O conteúdo da meta tag de verificação que está no ar, ou ''.
 function metaVerificacaoDaPagina(html) {
   const m = String(html || '').match(
@@ -3472,25 +3494,63 @@ async function painelConferirVinculo(win, push) {
   push('Painel: conferindo o que já está preenchido', 'cmd');
   const r = await rodarNoPainel(win, `
     ${JS_HELPERS}
-    const d = dados('#hub-pub-config-accordion-trigger-integrations');
     const texto = (v) => String(v == null ? '' : v).trim();
     const preenchido = (v) => !!texto(v);
-    const integracoes = { recaptcha: false, gtm: false, ga: false, gsc: false };
-    const valores = { ga: '', gtm: '', gscPreenchido: false, recaptcha: false };
-    let achouConfig = false;
-    if (d && d.config && d.config.integrations) {
-      achouConfig = true;
-      const i = d.config.integrations;
-      const bloco = (nome) => i[nome] || {};
-      integracoes.recaptcha = preenchido(bloco('recaptcha').site_key) && preenchido(bloco('recaptcha').secret_key);
-      integracoes.gtm = preenchido(bloco('google-tag-manager').key);
-      integracoes.ga = preenchido(bloco('google-analytics').key);
-      integracoes.gsc = preenchido(bloco('google-search-console').key);
-      valores.ga = texto(bloco('google-analytics').key);
-      valores.gtm = texto(bloco('google-tag-manager').key);
-      valores.gscPreenchido = integracoes.gsc;
-      valores.recaptcha = integracoes.recaptcha;
+
+    // A página se monta sozinha depois de carregar (ADR-050, ADR-121): o
+    // componente da configuração busca o contrato no servidor e troca o config
+    // inteiro. Ler no mesmo segundo em que a página abriu é ler o vazio e
+    // acusar "incompleto" um cliente certo (ADR-145). Então: espera a aba
+    // Publicação expor o gancho (prova de que os scripts subiram), espera o
+    // componente dizer que está liberado (enabled), e lê; se vier tudo vazio,
+    // espera mais um pouco e lê de novo.
+    const P = await ate(() => window.__mpiHubPubPublication, 20000);
+    let publicacao = null;
+    try {
+      const botaoRaiz = P ? await ate(() => Array.from(document.querySelectorAll('button')).find(b => (b.getAttribute('@click')||'').includes('openSiteAprovarDlg')), 10000) : null;
+      if (botaoRaiz) {
+        const root = window.Alpine.$data(botaoRaiz.closest('[x-data]'));
+        publicacao = {
+          siteStatus: String(root.wordpressSiteStatus || ''),
+          concluido: !!root.productionPublishCompleted,
+          falhou: !!root.productionPublishFailed,
+          urlProducao: root.wordpressProductionUrl || null,
+          sslAtivo: !!root.wpProductionSslActive,
+          urlTemporaria: root.wordpressTemporaryUrl || null,
+        };
+      }
+    } catch (e) { publicacao = null; }
+
+    const dConfig = () => dados('#hub-pub-config-accordion-trigger-integrations');
+    const integracoesProntas = !!(await ate(() => { const d = dConfig(); return d && d.enabled === true ? d : null; }, 10000));
+    const lerIntegracoes = () => {
+      const d = dConfig();
+      const integracoes = { recaptcha: false, gtm: false, ga: false, gsc: false };
+      const valores = { ga: '', gtm: '', gscPreenchido: false, recaptcha: false };
+      let achouConfig = false;
+      if (d && d.config && d.config.integrations) {
+        achouConfig = true;
+        const i = d.config.integrations;
+        const bloco = (nome) => i[nome] || {};
+        integracoes.recaptcha = preenchido(bloco('recaptcha').site_key) && preenchido(bloco('recaptcha').secret_key);
+        integracoes.gtm = preenchido(bloco('google-tag-manager').key);
+        integracoes.ga = preenchido(bloco('google-analytics').key);
+        integracoes.gsc = preenchido(bloco('google-search-console').key);
+        valores.ga = texto(bloco('google-analytics').key);
+        valores.gtm = texto(bloco('google-tag-manager').key);
+        valores.gscPreenchido = integracoes.gsc;
+        valores.recaptcha = integracoes.recaptcha;
+      }
+      return { achouConfig, integracoes, valores };
+    };
+    let lido = lerIntegracoes();
+    let releitura = false;
+    if (lido.achouConfig && !lido.integracoes.ga && !lido.integracoes.gtm && !lido.integracoes.gsc) {
+      await espera(4000);
+      const denovo = lerIntegracoes();
+      if (denovo.integracoes.ga || denovo.integracoes.gtm || denovo.integracoes.gsc) { lido = denovo; releitura = true; }
     }
+    const { achouConfig, integracoes, valores } = lido;
 
     // O relatório é outro componente. Sem ele na página, devolvo desconhecido
     // em vez de inventar que está pronto.
@@ -3500,11 +3560,13 @@ async function painelConferirVinculo(win, push) {
       const dr = window.Alpine.$data(botaoGa.closest('[x-data]'));
       // O contrato chega depois e troca o config inteiro (ADR-050). Ler antes
       // dele é ler o vazio da partição do Hub e acusar "incompleto" à toa:
-      // connectionOptions cheio prova que o init() rodou; só então o
-      // loadingRemoteContract === false quer dizer "o contrato já voltou".
+      // connectionOptions cheio prova que o init() rodou; o remotePayload é o
+      // contrato que chegou (applyRemoteData guarda ele); sem ele, vale o
+      // loadingRemoteContract === false como antes.
       const temOpcoes = () => Array.isArray(dr.connectionOptions) && dr.connectionOptions.length > 0;
       await ate(temOpcoes, 15000);
-      await ate(() => dr.loadingRemoteContract === false, 15000);
+      const chegouContrato = !!(await ate(() => (dr.remotePayload !== undefined && dr.remotePayload !== null) ? true : null, 20000));
+      if (!chegouContrato) await ate(() => dr.loadingRemoteContract === false, 5000);
       const cfg = dr.config || {};
       const opcoes = temOpcoes() ? dr.connectionOptions : [];
       const nomeConexao = (id) => { const op = opcoes.find((o) => String(o && o.value) === String(id)); return op ? texto(op.name) : ''; };
@@ -3517,7 +3579,8 @@ async function painelConferirVinculo(win, push) {
         leads: typeof dr.leadsLane === 'function' ? dr.leadsLane() : null,
         legado: dr.isClienteLegado === true,
         projeto: texto(dr.projectName),
-        carregouContrato: temOpcoes() && dr.loadingRemoteContract === false,
+        carregouContrato: chegouContrato || (temOpcoes() && dr.loadingRemoteContract === false),
+        chegouContrato,
         config: {
           ga_connection_id: texto(cfg.ga_connection_id), ga_account_key: texto(cfg.ga_account_key), ga_property_id: texto(cfg.ga_property_id),
           gsc_connection_id: texto(cfg.gsc_connection_id), gsc_site_url: texto(cfg.gsc_site_url), leads_external_id: texto(cfg.leads_external_id),
@@ -3526,7 +3589,7 @@ async function painelConferirVinculo(win, push) {
         lastError: texto(ultimoErro),
       };
     }
-    return { ok: true, achouConfig, integracoes, valores, relatorio };
+    return { ok: true, achouConfig, integracoes, valores, relatorio, publicacao, integracoesProntas, releitura };
   `);
 
   const faltando = [];
@@ -3850,10 +3913,22 @@ handleNoPainel('painel:sync', async (event, payload) => {
 
     const feitos = [];
     const falhas = [];
+    // 504 e companhia no salvar de um bloco são do gateway do painel, não do
+    // valor: uma repetição depois de 10 s costuma passar (ADR-145). Erro de
+    // validação (vermelho do painel) não se repete.
+    const passageiro = (m) => /\b50[234]\b|gateway|timeout|tempo esgotado|não respondeu/i.test(String(m || ''));
     for (const [bloco, valores] of (quer('integracoes') ? blocos : [])) {
       try {
         feitos.push({ bloco, mensagem: await painelSincronizarBloco(win, bloco, valores, push) });
       } catch (e) {
+        if (passageiro(e.message)) {
+          push(`Painel: ${e.message}; tento ${bloco} de novo em 10 s.`, 'warn');
+          await dormir(10000);
+          try {
+            feitos.push({ bloco, mensagem: await painelSincronizarBloco(win, bloco, valores, push) });
+            continue;
+          } catch (e2) { e = e2; }
+        }
         falhas.push({ bloco, erro: e.message });
         push(`Painel: ${e.message}`, 'warn');
       }
@@ -6323,6 +6398,42 @@ ipcMain.handle('rodada:ler', () => {
 ipcMain.handle('rodada:apagar', () => {
   try {
     if (fs.existsSync(rodadaPath())) fs.unlinkSync(rodadaPath());
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// A conferência dos vínculos (ADR-145) também sobrevive a fechar o Hub: a
+// lista e os resultados ficam num arquivo próprio, gravados a cada cliente,
+// para a segunda passada e o vínculo dos incompletos não dependerem de a
+// janela ter ficado aberta. Mesma escrita atômica da rodada em massa.
+const vinculosPath = () => path.join(app.getPath('userData'), 'conferir-vinculos.json');
+
+ipcMain.handle('vinculos:salvar', (event, estado) => {
+  try {
+    const destino = vinculosPath();
+    const tmp = `${destino}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ ...(estado || {}), salvoEm: new Date().toISOString() }), 'utf-8');
+    fs.renameSync(tmp, destino);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('vinculos:ler', () => {
+  try {
+    if (!fs.existsSync(vinculosPath())) return { ok: true, estado: null };
+    return { ok: true, estado: JSON.parse(fs.readFileSync(vinculosPath(), 'utf-8')) };
+  } catch (e) {
+    return { ok: true, estado: null, aviso: `não consegui ler a conferência salva (${e.message})` };
+  }
+});
+
+ipcMain.handle('vinculos:apagar', () => {
+  try {
+    if (fs.existsSync(vinculosPath())) fs.unlinkSync(vinculosPath());
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };

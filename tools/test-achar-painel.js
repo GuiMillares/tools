@@ -171,9 +171,15 @@ const HP = {
     const r = await P.acharContratoNoPainel(f.rodar, { razao: 'ACME INDUSTRIAL E COMERCIO LTDA ME', temporario: '', dominio: 'acmeindustrial.com.br' });
     check('achou pela palavra "acme" entre 3 clientes', r.ok && r.contrato.contrato === '200' && r.conferidoPelaProducao === true, JSON.stringify(r));
     check('abriu uma página pesada só (o projeto com o domínio no nome)', f.pesadas() === 1 && f.chamadas.find((c) => c[0] === 'contratos')[1] === '20', JSON.stringify(f.chamadas));
+    // "ACME INDUSTRIAL LTDA" tem o nome parecido com acmeindustrial.com.br: o
+    // projeto dele ("loja") abre mesmo sem citar o domínio (ADR-145); os outros
+    // dois não. Sem contrato publicado no domínio, o erro diz isso.
     const g = painelPorTermo({ porTermo: (t) => (/^acme$/i.test(t) ? MUITOS : []), projetos: { 1: [{ projeto: '10', nome: 'outra.com.br' }], 2: [{ projeto: '20', nome: 'loja' }], 3: [] } });
     const r2 = await P.acharContratoNoPainel(g.rodar, { razao: 'ACME INDUSTRIAL E COMERCIO LTDA ME', temporario: '', dominio: 'acmeindustrial.com.br' });
-    check('clientes achados mas nenhum projeto cita o domínio: não abre nada e diz isso', !r2.ok && /achei 3 cliente\(s\).*nenhum projeto deles cita acmeindustrial\.com\.br/.test(r2.erro) && g.pesadas() === 0, JSON.stringify(r2));
+    check('clientes achados: abre só o de nome parecido, e diz que nenhum está publicado no domínio', !r2.ok && /achei 3 cliente\(s\).*abri 1 projeto\(s\) de cliente com nome parecido e nenhum tem contrato publicado em acmeindustrial\.com\.br/.test(r2.erro) && g.pesadas() === 1 && g.chamadas.find((c) => c[0] === 'contratos')[1] === '20', JSON.stringify(r2));
+    const g2 = painelPorTermo({ porTermo: (t) => (/^acme$/i.test(t) ? [MUITOS[0], MUITOS[2]] : []), projetos: { 1: [{ projeto: '10', nome: 'outra.com.br' }], 3: [{ projeto: '30', nome: 'loja' }] } });
+    const r2b = await P.acharContratoNoPainel(g2.rodar, { razao: 'ACME INDUSTRIAL E COMERCIO LTDA ME', temporario: '', dominio: 'acmeindustrial.com.br' });
+    check('clientes de nome diferente e projetos que não citam o domínio: não abre nada e diz isso', !r2b.ok && /achei 2 cliente\(s\).*nenhum projeto deles cita acmeindustrial\.com\.br; não abri nenhum/.test(r2b.erro) && g2.pesadas() === 0, JSON.stringify(r2b));
     const h = painelPorTermo({ porTermo: () => [] });
     const r3 = await P.acharContratoNoPainel(h.rodar, { razao: 'NINGUEM LTDA', temporario: '', dominio: 'ninguem.com.br' });
     // "ninguem" do domínio é o mesmo termo que "NINGUEM" da razão social: não repete.
@@ -189,6 +195,79 @@ const HP = {
     const f = painelPorTermo({ porTermo: (t) => (t === 'GIGANTE LTDA' ? [{ id: '9', empresa: 'GIGANTE LTDA' }] : []), projetos: { 9: projetos }, contratos, sites });
     const r = await P.acharContratoNoPainel(f.rodar, { razao: 'GIGANTE LTDA', temporario: '', dominio: 'naoexiste.com.br' });
     check(`para em ${P.MAX_PAGINAS_PESADAS} páginas pesadas e diz isso`, !r.ok && f.pesadas() === P.MAX_PAGINAS_PESADAS && /parei em 8 projetos abertos/.test(r.erro), JSON.stringify({ erro: r.erro, pesadas: f.pesadas() }));
+  }
+
+  const semEspera = { esperar: async () => {} };
+  console.log('\n=== ADR-145: CNPJ na razão social e nome parecido com o domínio ===');
+  {
+    check('CNPJ (ou a raiz) da razão social vira termo', P.cnpjsDaRazao('59.256.865 Thiago Mattos da Silva').join() === '59.256.865' && P.cnpjsDaRazao('EMPRESA 12.345.678/0001-90 LTDA').join('|') === '12.345.678/0001-90|12.345.678' && P.cnpjsDaRazao('ACME LTDA').length === 0, JSON.stringify(P.cnpjsDaRazao('EMPRESA 12.345.678/0001-90 LTDA')));
+    const t = P.termosDeBusca({ razao: '59.256.865 Thiago Mattos da Silva', dominio: 'guinchogoianiacentral.com.br' });
+    check('o CNPJ entra logo depois da razão inteira, e o número sai da base', t[1].termo === '59.256.865' && t[1].tipo === 'cnpj' && t[2].termo === 'Thiago Mattos Silva', JSON.stringify(t));
+    check('nome parecido com o domínio', P.clienteParecidoComDominio('Guinchos Goiania', 'guinchogoianiacentral.com.br') && P.clienteParecidoComDominio('Moreira Uniformes', 'moreirauniformes.com.br') && P.clienteParecidoComDominio('confeccoeshp', 'camisas.confeccoeshp.com.br'));
+    check('nome diferente não parece', !P.clienteParecidoComDominio('TGO GUINCHO E MANUTENCAO DE VEICULOS', 'guinchogoianiacentral.com.br') && !P.clienteParecidoComDominio('Vieira guincho leve e pesado', 'guinchogoianiacentral.com.br') && !P.clienteParecidoComDominio('Moreira 5', 'moreirauniformes.com.br') && !P.clienteParecidoComDominio('ACME', 'acme.com.br'));
+    check('erro passageiro é 504, gateway, prazo', P.ehPassageiro(new Error('a página do projeto respondeu 504')) && P.ehPassageiro('a página do projeto não carregou em 150s') && !P.ehPassageiro(new Error('o painel pediu login de novo')));
+
+    const f = painelPorTermo({
+      porTermo: (t) => (t === '59.256.865' ? [{ id: '2580', empresa: 'Guinchos Goiania', cnpj: '59.256.865/0001-10' }] : []),
+      projetos: { 2580: [{ projeto: '9', nome: 'Guinchos Goiânia' }] },
+      contratos: { 9: ['90'] },
+      sites: { 90: { temporario: '', producao: 'https://guinchogoianiacentral.com.br' } },
+    });
+    const r = await P.acharContratoNoPainel(f.rodar, { razao: '59.256.865 Thiago Mattos da Silva', temporario: '', dominio: 'guinchogoianiacentral.com.br' }, () => {}, semEspera);
+    check('achou pelo CNPJ e confirmou pela produção', r.ok && r.contrato.contrato === '90' && r.conferidoPelaProducao === true, JSON.stringify(r));
+    check('o CNPJ foi a 2ª busca', f.buscas()[1] === '59.256.865', JSON.stringify(f.buscas()));
+  }
+  {
+    const f = painelPorTermo({
+      porTermo: (t) => (t === 'guinch' ? [{ id: '2656', empresa: 'TGO GUINCHO E MANUTENCAO DE VEICULOS' }, { id: '2580', empresa: 'Guinchos Goiania' }] : []),
+      projetos: { 2656: [{ projeto: '1', nome: 'tgoguincho.com.br' }], 2580: [{ projeto: '9', nome: 'Guinchos Goiânia' }] },
+      contratos: { 1: ['10'], 9: ['90'] },
+      sites: { 10: { temporario: '', producao: 'https://tgoguincho.com.br' }, 90: { temporario: '', producao: 'https://www.guinchogoianiacentral.com.br/' } },
+    });
+    const r = await P.acharContratoNoPainel(f.rodar, { razao: 'THIAGO MATTOS DA SILVA', temporario: '', dominio: 'guinchogoianiacentral.com.br' }, () => {}, semEspera);
+    check('termo largo: o cliente de nome parecido abre o projeto mesmo sem citar o domínio, e a produção confirma', r.ok && r.contrato.contrato === '90' && r.conferidoPelaProducao === true, JSON.stringify(r));
+    check('não abriu o projeto do cliente de nome diferente', f.pesadas() === 1 && f.chamadas.find((c) => c[0] === 'contratos')[1] === '9', JSON.stringify(f.chamadas));
+  }
+  {
+    const muitos = Array.from({ length: 30 }, (_, i) => ({ id: String(100 + i), empresa: `Moreira ${i}` }));
+    muitos.push({ id: '777', empresa: 'Moreira Uniformes' });
+    const f = painelPorTermo({
+      porTermo: (t) => (t === 'moreir' ? muitos : []),
+      projetos: { 777: [{ projeto: '7', nome: 'Moreira Uniformes' }] },
+      contratos: { 7: ['70'] },
+      sites: { 70: { temporario: '', producao: 'https://moreirauniformes.com.br' } },
+    });
+    const r = await P.acharContratoNoPainel(f.rodar, { razao: 'PLASMONTEC GUEDES LTDA', temporario: '', dominio: 'moreirauniformes.com.br' }, () => {}, semEspera);
+    check('termo largo demais (31 clientes): só o de nome parecido foi examinado e confirmado', r.ok && r.contrato.contrato === '70' && f.chamadas.filter((c) => c[0] === 'projetos').length === 1, JSON.stringify({ contrato: r.contrato && r.contrato.contrato, projetos: f.chamadas.filter((c) => c[0] === 'projetos').length, erro: r.erro }));
+  }
+
+  console.log('\n=== ADR-145: 504 na página pesada repete, e não derruba o cliente ===');
+  {
+    const base = painelPorTermo({
+      porTermo: (t) => (t === 'X LTDA' ? [{ id: '1', empresa: 'X LTDA' }] : []),
+      projetos: { 1: [{ projeto: '10', nome: 'x.com.br' }] },
+      contratos: { 10: ['100'] },
+      sites: { 100: { temporario: '', producao: 'https://x.com.br' } },
+    });
+    let vezes = 0;
+    const esperas = [];
+    const avisos = [];
+    const rodar504 = async (script) => ((/const p = "10"/.test(script) && vezes++ < 2) ? { erro: 'a página do projeto respondeu 504' } : base.rodar(script));
+    const r = await P.acharContratoNoPainel(rodar504, { razao: 'X LTDA', temporario: '', dominio: 'x.com.br' }, (m) => avisos.push(m), { esperar: async (ms) => { esperas.push(ms); } });
+    // vezes conta as chamadas à página pesada: duas com 504 e a terceira boa.
+    check('duas falhas 504 e a terceira passa', r.ok && r.contrato.contrato === '100' && vezes === 3, JSON.stringify({ ok: r.ok, vezes, erro: r.erro }));
+    check('esperou 20 s e depois 40 s', esperas.join() === '20000,40000', JSON.stringify(esperas));
+    check('avisou que ia tentar de novo', avisos.some((m) => /tento de novo em 20 s/.test(m)), JSON.stringify(avisos));
+
+    const sempre504 = async (script) => (/const p = "10"/.test(script) ? { erro: 'a página do projeto respondeu 504' } : base.rodar(script));
+    const r2 = await P.acharContratoNoPainel(sempre504, { razao: 'X LTDA', temporario: '', dominio: 'x.com.br' }, () => {}, semEspera);
+    check('504 persistente: não acha, diz qual página não carregou e marca como passageiro', !r2.ok && /não carregaram mesmo repetindo/.test(r2.erro) && r2.passageiro === true && r2.naoCarregaram.length === 1, JSON.stringify(r2));
+
+    let tentativas = 0;
+    const login = async (script) => { if (/busca=/.test(script)) { tentativas++; return { erro: 'o painel pediu login de novo' }; } return base.rodar(script); };
+    let lancou = '';
+    try { await P.acharContratoNoPainel(login, { razao: 'X LTDA', temporario: '', dominio: 'x.com.br' }, () => {}, semEspera); } catch (e) { lancou = e.message; }
+    check('login pedido de novo: estoura na hora, sem repetir', tentativas === 1 && /pediu login/.test(lancou), JSON.stringify({ tentativas, lancou }));
   }
 
   console.log('\n=== Busca do cliente ===');

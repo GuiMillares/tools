@@ -113,6 +113,12 @@ contextBridge.exposeInMainWorld('api', {
   procurarNaPlanilha: (payload) => ipcRenderer.invoke('planilha:procurar', payload),
   // Os sites da planilha de publicações, com aba, linha e tipo (ADR-144). Só leitura.
   listarPlanilha: () => ipcRenderer.invoke('planilha:listar'),
+  // As tags que estão no HTML do site (G-…, GTM-…, meta do Search Console), fora do painel (ADR-145).
+  lerTagsDoSite: (payload) => ipcRenderer.invoke('site:tags', payload),
+  // A conferência dos vínculos salva em arquivo, para sobreviver a fechar o Hub (ADR-145).
+  salvarVinculos: (estado) => ipcRenderer.invoke('vinculos:salvar', estado),
+  lerVinculos: () => ipcRenderer.invoke('vinculos:ler'),
+  apagarVinculos: () => ipcRenderer.invoke('vinculos:apagar'),
   prepareSearchConsole: (payload) => ipcRenderer.invoke('searchconsole:prepare', payload),
   listGtmBrandAccounts: (payload) => ipcRenderer.invoke('tagmanager:listBrandAccounts', payload),
   grantGtmAccessBulk: (payload) => ipcRenderer.invoke('tagmanager:grantAccessBulk', payload),
