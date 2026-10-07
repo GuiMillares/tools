@@ -111,6 +111,8 @@ contextBridge.exposeInMainWorld('api', {
   registrobrConsultar: (payload) => ipcRenderer.invoke('registrobr:consultar', payload),
   registrarPlanilha: (payload) => ipcRenderer.invoke('planilha:registrar', payload),
   procurarNaPlanilha: (payload) => ipcRenderer.invoke('planilha:procurar', payload),
+  // Os sites da planilha de publicações, com aba, linha e tipo (ADR-144). Só leitura.
+  listarPlanilha: () => ipcRenderer.invoke('planilha:listar'),
   prepareSearchConsole: (payload) => ipcRenderer.invoke('searchconsole:prepare', payload),
   listGtmBrandAccounts: (payload) => ipcRenderer.invoke('tagmanager:listBrandAccounts', payload),
   grantGtmAccessBulk: (payload) => ipcRenderer.invoke('tagmanager:grantAccessBulk', payload),

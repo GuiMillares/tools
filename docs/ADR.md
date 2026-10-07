@@ -4189,6 +4189,8 @@ esses pedem o link à mão.
 
 ## ADR-098 — Achar o link do painel pela razão social, confirmado pelo temporário
 
+**Status:** aceita, estendida pela ADR-144 (com mais de um contrato, fica o publicado no domínio da planilha; a busca sobe uma escada de termos quando a razão social não acha)
+
 **Contexto.** Cada linha do Publicar em massa precisava do link do painel colado
 na planilha. O painel dá para achar pela razão social, mas um cliente pode ter
 vários projetos (um por site) e cada projeto seus contratos; escolher "o
@@ -6374,6 +6376,106 @@ reais do relatório (sexta → segunda = 1, quinta 24/09 → sexta 02/10 = 6),
 a cancelada que não conta e o formato; os dados falsos do preview seguem
 válidos. As ADR-138 e as atualizações dela ficam como estão, com o SLA
 redefinido aqui.
+
+---
+
+## ADR-144 — Conferir vínculos no painel: a leitura em massa pela planilha de publicações, e o contrato pela URL de produção
+
+**Status:** aceita (estende a ADR-087 e a ADR-098)
+
+**Contexto.** Pedido de 07/10/2026: validar se **todos os clientes MPI+ da
+planilha de publicações** estão com as tags vinculadas no painel, na aba
+Publicação → Configuração (5. Integrações) e na aba Relatório (Conexão), em
+massa, e devolver algo apresentável ao líder. O Hub já sabia fazer as três
+partes, separadas: ler a planilha pelo Graph (ADR-062, ADR-069, ADR-095),
+achar o contrato no painel pela razão social (ADR-098) e ler o painel sem
+escrever (ADR-087, a etapa `conferir` do `painel:sync`). Faltava juntar, e o
+pedido trouxe duas regras de busca no meio do caminho: *"quando o cliente
+tiver mais de um contrato, ele procura qual contrato está publicado com aquele
+domínio da planilha"*, e *"alguns ele não vai achar pela razão social nem pelo
+domínio, mas se ele pesquisar parte do domínio pode ser que ache; ele tem que
+sempre achar e continuar, em vez de precisar de intervenção manual"*.
+
+**Decisão.**
+
+1. **Ferramenta "Conferir vínculos"** (`vinculos`), só leitura. A entrada é um
+   botão que lê a planilha de publicações (`planilha:listar`: as duas abas pelo
+   Graph, e a tela fica só com o Tipo **MPI+**, porque MPI e Busca não moram no
+   painel) ou uma lista própria (as colunas reconhecidas do Publicar em massa:
+   razão social, domínio, link do painel, link temporário). Por cliente: acha o
+   contrato quando a linha não tem link, abre o painel na janela oculta
+   (`painel:sync` com `etapas: ['conferir']`) e lê. Um por vez, "Parar depois
+   deste", e a máquina não dorme no meio.
+2. **A leitura devolve os valores, não só "tem/não tem".**
+   `painelConferirVinculo` passa a trazer o `G-…`, o `GTM-…`, se o Search
+   Console e o reCAPTCHA estão preenchidos, e do Relatório o `config` inteiro
+   (conexões, account key, propriedade, site, External ID), as contas pelo
+   rótulo das `connectionOptions`, `isClienteLegado`, os trilhos, o selo e o
+   `lastError`. E **espera o contrato remoto como manda a ADR-050**:
+   `connectionOptions` cheio e só então `loadingRemoteContract === false`.
+   Antes esperava só a segunda, por 8 s; a partição do Hub começa com o
+   `localStorage` vazio, e ler antes do contrato chegar acusaria "incompleto"
+   um cliente que está certo. `carregouContrato` diz se a espera venceu, e
+   quando não venceu o veredito é "não consegui ler", não "incompleto".
+3. **O veredito é do `lib/vinculos.js`**, puro e testado, igual no processo
+   principal e na tela. *Vinculado* = Analytics, Tag Manager e Search Console
+   nas Integrações **e** Relatório com Analytics e Search Console preenchidos
+   **e** conexão validada pelo painel (o selo OK). Cliente legado exige o
+   External ID. Search Console do Relatório apontando para outro domínio é
+   falta, não observação: é vínculo com o site errado. O reCAPTCHA não é tag:
+   entra como observação. O que o Hub não conseguiu ler nunca vira pronto
+   (ADR-087): sai como "Não consegui ler", para conferir à mão. O
+   `completo`/`faltando` que o Publicar em massa usa fica como está, com o
+   reCAPTCHA dentro, porque lá a pergunta é outra ("precisa sincronizar?").
+4. **O contrato é o publicado no domínio da planilha.** O status de cada
+   contrato (`wordpress-full-install/status`) já trazia
+   `wordpress_production_url`, e o `painel-achar` já lia e ignorava. Agora,
+   com mais de um contrato e sem temporário na planilha, fica o contrato cuja
+   produção é o domínio; temporário da planilha que não bate com nenhum, mas
+   produção que bate, fica a produção **com aviso** de que a planilha está
+   diferente do painel. A ordem é: temporário, produção, único contrato do
+   único cliente. Ao bater, para de abrir projetos.
+5. **Escada de termos, para não parar por não achar.** A busca do painel é
+   por nome ou CNPJ, e o nome do cliente no painel às vezes é um apelido do
+   domínio ("confeccoeshp"). `termosDeBusca` monta, nesta ordem: a razão
+   social inteira; sem sufixo societário (LTDA, ME, EIRELI…); os rótulos do
+   domínio (o registrável primeiro, depois os subdomínios; com hífen, o
+   colado e as partes; rótulo de 9 letras ou mais ganha o prefixo de 6); as
+   palavras fortes da razão social (4 letras ou mais, fora uma lista de
+   genéricas como "comercio" e "servicos"); dez termos no máximo, sem repetir.
+   Só a razão social com até 5 clientes é **certeira**: dela o Hub abre todos
+   os projetos. Termo **largo** (os outros, ou razão social com mais de 5
+   clientes) só abre a página pesada de um projeto cujo **nome cita o
+   domínio**; termo com mais de 25 clientes é pulado; e há um teto de **8
+   páginas pesadas por site**, porque cada uma leva de 20 a 50 s. Quem decide
+   é sempre o temporário ou a produção, nunca o termo que achou o cliente, e
+   "o único do cliente" só vale entre os contratos da busca certeira. Na tela,
+   uma **reserva pelo Salesforce**: não achando, a conta do domínio
+   (ADR-117) dá outro nome para buscar.
+6. **A saída é para apresentar.** A lista na tela tem um selo por cliente e o
+   detalhe (os valores das duas abas, o que falta, o contrato e como foi
+   achado). "Copiar resultado" dá o resumo e uma linha por cliente. "Salvar
+   planilha (.xlsx)" grava três abas: **Resumo** (totais e percentuais, por
+   empresa, o que mais falta, gerado em), **Clientes** (21 colunas, com o link
+   do painel) e **Pendências** (só quem não está vinculado). A aba Clientes
+   serve de **entrada da próxima rodada**: com o link do painel colado, o Hub
+   não procura o contrato de novo.
+
+**Consequências.** Uma busca por termo custa ~1 s, uma página de projeto de
+20 a 50 s e a leitura do painel ~10 s; uma rodada de 100 clientes sem link
+pode levar de 1 a 3 h, e a planilha que sai faz a seguinte levar uns 20 min.
+Publicar em massa e Publicar MPI+ herdam a escada e a regra da produção, porque
+é a mesma função (ADR-047: um caminho só). Quem não é achado mesmo assim sai na
+aba Pendências com os termos tentados e os contratos vistos, e a rodada segue:
+a intervenção manual vira uma lista curta no fim, não uma parada no meio. O
+risco assumido é o da ADR-087: o Hub confia no que o painel mostra e validou;
+um valor errado gravado à mão passa como vinculado. O Hub ainda não confere no
+Google se o `G-…` das Integrações pertence à propriedade do Relatório; o cache
+de data streams (ADR-131) permitiria, e fica como pendência. Testes:
+`test-vinculos` (quem é MPI+, o veredito, a planilha de saída),
+`test-achar-painel` (produção, escada, termo largo, teto) e `test-planilha`
+(`planilha:listar`). O miolo Alpine continua sem teste, pelo motivo da
+ADR-037.
 
 ---
 

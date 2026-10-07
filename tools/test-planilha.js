@@ -162,6 +162,35 @@ const texto = (r) => (r.log || []).map((l) => l.message).join(' | ');
   check('aba que nao existe na planilha diz quais existem', r.ok === false && /nao existe na planilha|não existe na planilha/.test(r.error) && /MPI/.test(r.error), r.error);
   graph.abas = [{ name: 'MPI' }, { name: 'Busca Cliente' }];
 
+  console.log('\n=== Listar os sites das duas abas (ADR-144) ===');
+  {
+    const antes = graph.valores;
+    graph.valores = [
+      ['Data', 'Domínio', 'Razão Social', 'Chave Única', 'Tipo'],
+      ['01/02/2026', 'https://asasys.com.br/', 'ASASYS LTDA', '', 'MPI+'],
+      ['02/02/2026', 'https://outro.com.br/', 'OUTRO LTDA', '', 'MPI'],
+      ['', '', '', '', ''],
+    ];
+    graph.chamadas = [];
+    r = await handlers['planilha:listar'](null, {});
+    check('lê', r.ok === true, r.error || texto(r));
+    check('pediu as abas e leu o intervalo usado das duas', graph.chamadas.filter((c) => /usedRange/.test(c)).length === 2 && graph.chamadas.some((c) => /workbook\/worksheets$/.test(c)), graph.chamadas.join(' . '));
+    check('devolve o nome da planilha e as abas lidas', r.nome === 'Book.xlsx' && r.abas.map((a) => a.aba).join() === 'MPI,Busca Cliente', JSON.stringify(r.abas));
+    check('todos os tipos vêm (quem filtra MPI+ é a tela), com aba, linha e tipo', r.clientes.length === 2 && r.clientes[0].tipo === 'MPI+' && r.clientes[0].origemLinha === 'MPI!2' && r.clientes[1].tipo === 'MPI', JSON.stringify(r.clientes));
+    check('conta os tipos', r.tipos['MPI+'] === 2 && r.tipos.MPI === 2, JSON.stringify(r.tipos));
+    check('o mesmo domínio nas duas abas é avisado como repetido', r.duplicados.length === 2 && /aparece duas vezes/.test(texto(r)), JSON.stringify(r.duplicados));
+    check('não escreveu nada', graph.escritas.every((e) => e) && !graph.chamadas.some((c) => /^(PATCH|POST)/.test(c)), graph.chamadas.join(' . '));
+    graph.valores = antes;
+    fs.writeFileSync(path.join(DIR, 'publicacao-config.json'), JSON.stringify({}));
+    r = await handlers['planilha:listar'](null, {});
+    check('sem link configurado, diz onde configurar', r.ok === false && /configurações/.test(r.error), r.error);
+    fs.writeFileSync(path.join(DIR, 'publicacao-config.json'), JSON.stringify({ planilhaUrl: 'https://buscacliente-my.sharepoint.com/:x:/r/personal/g/Doc.aspx?sourcedoc=%7BABC%7D&file=Book.xlsx' }));
+    graph.recusar403 = true;
+    r = await handlers['planilha:listar'](null, {});
+    check('403 pede reconexão', r.ok === false && r.reauth === true, r.error);
+    graph.recusar403 = false;
+  }
+
   console.log('\n=== Recusas ===');
   r = await handlers['planilha:registrar'](null, { aba: 'OUTRA', linha });
   check('aba fora de MPI/Busca Cliente é recusada', r.ok === false && /MPI ou Busca Cliente/.test(r.error), r.error);

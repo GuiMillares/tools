@@ -235,11 +235,15 @@ Uma planilha de sites da MPI+ e, por site, as duas coisas na ordem que a
 publicação exige: **publicar**, se ainda não estiver publicado, e **vincular**.
 
 A planilha entra como a equipe a tem — `.xlsx`, `.csv` ou colada do Excel — com
-**Domínio** (obrigatório), **Link do painel** (obrigatório), **Razão social**
-(opcional) e **Link do caso** (opcional, do Salesforce), em qualquer ordem e com
-ou sem cabeçalho. O app reconhece as colunas pelo nome e pelo conteúdo e mostra
-uma prévia com um seletor por coluna, para corrigir antes de rodar (ADR-053).
-Linha sem link válido do painel fica na lista, marcada e fora da rodada.
+**Domínio** (obrigatório), **Razão social** (necessária quando não há link do
+painel), **Link do painel** (opcional: sem ele o Hub acha o contrato no painel
+pela razão social e, não achando, por partes do domínio, e confirma pelo link
+temporário da planilha ou pela URL de produção igual ao domínio; ADR-098 e
+ADR-144), **Link temporário** (opcional) e **Link do caso** (opcional, do
+Salesforce), em qualquer ordem e com ou sem cabeçalho. O app reconhece as
+colunas pelo nome e pelo conteúdo e mostra uma prévia com um seletor por
+coluna, para corrigir antes de rodar (ADR-053). Linha sem link do painel e sem
+razão social fica na lista, marcada e fora da rodada.
 
 Quando a linha tem **Link do caso** e o Salesforce está conectado, o Hub, ao
 terminar aquele site, cria a tarefa de publicação **dentro daquele caso**, já
@@ -497,6 +501,43 @@ caso, conta, ou commit e hash), copia tudo como "domínio - resposta" e salva
 `.xlsx`. Com o Salesforce desconectado, consulta só o Bitbucket e avisa. A
 mesma consulta roda fora do Hub, sob o Electron, com
 `tools/quando-publicou.js`.
+
+### 4.12 Conferir vínculos — `google`
+
+Uma lista de clientes MPI+ e, para cada um, **o que o painel MPI+ mostra
+hoje** nas duas telas do vínculo, sem gravar nada (ADR-144):
+
+- **Entrada.** Um botão lê a planilha de publicações (as abas MPI e Busca
+  Cliente) e fica só com as linhas de Tipo **MPI+**; ou uma planilha / texto
+  colado com razão social, domínio e, se houver, link do painel e link
+  temporário, nas colunas que o Publicar em massa já reconhece.
+- **Achar o contrato.** Linha sem link: busca no painel pela razão social e,
+  não achando, por partes do domínio e pelas palavras fortes da razão social;
+  com mais de um contrato, fica com o **publicado no domínio** da planilha (a
+  URL de produção que o painel informa); com link temporário na lista, ele
+  manda. Termo largo só abre projeto cujo nome cita o domínio, com teto de
+  páginas por site. Não achando, a conta do Salesforce dá outro nome. Nada
+  disso clica ou grava no painel.
+- **Ler.** Configuração → 5. Integrações (Analytics `G-…`, Tag Manager
+  `GTM-…`, Search Console, reCAPTCHA) e Relatório → Conexão (propriedade GA4,
+  site do Search Console, as contas e o selo OK/Pendente), depois de o
+  contrato remoto carregar.
+- **Veredito.** *Vinculado*: as três tags nas Integrações e o Relatório com
+  Analytics e Search Console preenchidos e conexão validada. *Incompleto*: diz
+  o que falta, pelo nome (inclusive Search Console do Relatório apontando para
+  outro site). *Não consegui ler*: para conferir à mão; nunca vira pronto.
+  *Não achei no painel*: com os termos tentados e os contratos vistos. O
+  reCAPTCHA é observação, não falta.
+- **Saída.** A lista na tela com um selo por cliente, "Copiar resultado" e
+  **"Salvar planilha (.xlsx)"** com três abas: **Resumo** (totais e
+  percentuais, por empresa, o que mais falta), **Clientes** (tudo, com o link
+  do painel e como o contrato foi achado) e **Pendências** (só quem não está
+  vinculado). A aba Clientes serve de entrada para a próxima conferência, sem
+  procurar os contratos de novo.
+
+Um cliente por vez; "Parar depois deste" interrompe sem perder o que já foi
+lido. A rodada nunca para por um cliente não achado: ele vai para as
+Pendências e o próximo começa.
 
 ## 5. Fora de escopo
 

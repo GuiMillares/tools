@@ -202,3 +202,25 @@ Há outras (doutoresdaweb, webmastertools) que não interessam aqui.
 uma caixa **"Manter conectado"**. O token é o motivo de a automação precisar de
 um navegador de verdade em vez de um POST montado à mão; a caixa é o motivo de o
 login não precisar acontecer toda vez.
+
+## 4. Ler sem escrever (ADR-087, ADR-144)
+
+A conferência dos vínculos lê os dois componentes e não chama função nenhuma:
+`config.integrations` do `mpiWpSiteConfigFactory`; e, do
+`mpiHubRelatorioConexaoFactory`, `config`, `connectionOptions`,
+`isClienteLegado`, `projectName`, `localReady`, `integrationConnectionOk`,
+`gaLane()` / `gscLane()` / `leadsLane()` e `lastError`. A espera é a da
+ADR-050, na ordem: `connectionOptions.length > 0` e só depois
+`loadingRemoteContract === false`; antes disso o `config` é o `localStorage`
+da partição do Hub, que começa vazio. O e-mail da conta OAuth sai casando
+`config.ga_connection_id` (e `gsc_connection_id`) com
+`connectionOptions[].value`.
+
+Fora do hub, por cliente (tudo `GET`, ver `lib/painel-achar.js`):
+`/clientes?per_page=50&busca=<termo>` acha por nome **ou CNPJ**;
+`/clientes/<c>` lista os projetos; `/clientes/<c>/hub?projeto=<p>` lista os
+contratos (página pesada, 20 a 50 s); e
+`/clientes/<c>/projetos/<p>/contratos/<k>/wordpress-full-install/status`
+devolve `wordpress_temporary_url`, **`wordpress_production_url`** e
+`wordpress_site_status`. A URL de produção é o que diz qual contrato é o
+publicado num domínio (ADR-144).

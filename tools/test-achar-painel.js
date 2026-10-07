@@ -83,7 +83,112 @@ const HP = {
       sites: { 2710: { temporario: 'http://turbogeraiscomerciol-migra.mpitemporario.com.br', producao: 'https://turbogerais.com.br' } },
     });
     const r2 = await P.acharContratoNoPainel(turbo.rodar, { razao: 'TURBO GERAIS COMERCIO LTDA', temporario: '', dominio: 'turbogerais.com.br' });
-    check('um cliente, um contrato: usa, avisando que não conferiu', r2.ok && r2.contrato.contrato === '2710' && r2.conferidoPeloTemporario === false, JSON.stringify(r2));
+    check('um cliente, um contrato publicado no domínio: usa, conferido pela produção', r2.ok && r2.contrato.contrato === '2710' && r2.conferidoPeloTemporario === false && r2.conferidoPelaProducao === true, JSON.stringify(r2));
+    const soUm = painelFalso({
+      clientes: [{ id: '1', empresa: 'SO UM LTDA', contratos: 1 }],
+      projetos: { 1: [{ projeto: '10', nome: 'SO UM LTDA' }] },
+      contratos: { 10: ['100'] },
+      sites: { 100: { temporario: 'soum.mpitemporario.com.br', producao: '' } },
+    });
+    const r3 = await P.acharContratoNoPainel(soUm.rodar, { razao: 'SO UM LTDA', temporario: '', dominio: 'soum.com.br' });
+    check('um cliente, um contrato sem produção: usa, avisando que não conferiu', r3.ok && r3.contrato.contrato === '100' && r3.conferidoPeloTemporario === false && r3.conferidoPelaProducao === false, JSON.stringify(r3));
+  }
+
+  // Painel falso que responde a busca POR TERMO (a escada da ADR-144).
+  function painelPorTermo({ porTermo, projetos = {}, contratos = {}, sites = {} }) {
+    const chamadas = [];
+    const rodar = async (script) => {
+      let m;
+      if ((m = script.match(/busca=' \+ encodeURIComponent\((".*?")\)/))) { const termo = JSON.parse(m[1]); chamadas.push(['busca', termo]); return { ok: true, clientes: porTermo(termo) || [] }; }
+      if ((m = script.match(/'\/projetos\/' \+ "(\d+)" \+ '\/contratos\/' \+ "(\d+)"/))) { chamadas.push(['site', m[2]]); return { ok: true, ...(sites[m[2]] || { temporario: '' }) }; }
+      if ((m = script.match(/const p = "(\d+)"/))) { chamadas.push(['contratos', m[1]]); return { ok: true, contratos: contratos[m[1]] || [] }; }
+      if ((m = script.match(/fetch\('\/clientes\/' \+ "(\d+)", /))) { chamadas.push(['projetos', m[1]]); return { ok: true, projetos: projetos[m[1]] || [] }; }
+      throw new Error('script inesperado');
+    };
+    return { rodar, chamadas, pesadas: () => chamadas.filter((c) => c[0] === 'contratos').length, buscas: () => chamadas.filter((c) => c[0] === 'busca').map((c) => c[1]) };
+  }
+
+  console.log('\n=== ADR-144: a escada de termos ===');
+  {
+    const t = P.termosDeBusca({ razao: 'HP - CONFECCOES HUMBERTO PASCUINI LTDA', dominio: 'camisas.hpwork.com.br' });
+    check('razão inteira, razão sem sufixo, rótulos do domínio, palavras fortes (sem as genéricas)', t.map((x) => x.termo).join('|') === 'HP - CONFECCOES HUMBERTO PASCUINI LTDA|HP CONFECCOES HUMBERTO PASCUINI|hpwork|camisas|humberto|pascuini', JSON.stringify(t));
+    check('só a razão social é certeira', t.filter((x) => x.tipo === 'razao').length === 2 && t.slice(2, 4).every((x) => x.tipo === 'dominio') && t.slice(4).every((x) => x.tipo === 'palavra'));
+    check('razão curta entra inteira', P.termosDeBusca({ razao: 'HP', dominio: '' }).map((x) => x.termo).join() === 'HP');
+    check('sem razão social, só o domínio', P.termosDeBusca({ razao: '', dominio: 'turbo-gerais.com.br' }).map((x) => x.termo).join('|') === 'turbo-gerais|turbogerais|turbo|gerais');
+    check('rótulo longo ganha um prefixo', P.termosDeBusca({ razao: '', dominio: 'turbogeraiscomercio.com.br' }).map((x) => x.termo).join('|') === 'turbogeraiscomercio|turbog');
+    check('nada → nada', P.termosDeBusca({ razao: '  ', dominio: '' }).length === 0);
+    check('rótulos do domínio', P.rotulosDoDominio('camisas.hpwork.com.br').join() === 'hpwork,camisas' && P.rotulosDoDominio('clinica.med.br').join() === 'clinica' && P.rotulosDoDominio('x.online').join() === 'x' && P.rotulosDoDominio('').length === 0);
+    check('o projeto cita o domínio', P.projetoCitaDominio('camisas.hpwork.com.br', 'hpwork.com.br') && P.projetoCitaDominio('HPWork Camisas', 'hpwork.com.br') && !P.projetoCitaDominio('acme2.com.br', 'acme.com.br') && !P.projetoCitaDominio('', 'x.com.br'));
+  }
+
+  console.log('\n=== ADR-144: com mais de um contrato, fica o publicado no domínio da planilha ===');
+  const HP_PROD = {
+    ...HP,
+    sites: {
+      3816: { temporario: 'http://camisasconfeccoeshp.mpitemporario.com.br', producao: 'https://camisas.confeccoeshp.com.br' },
+      3817: { temporario: 'http://camisashpwork.mpitemporario.com.br', producao: 'https://www.camisas.hpwork.com.br/' },
+      3818: { temporario: '', producao: '' },
+    },
+  };
+  {
+    const f = painelFalso(HP_PROD);
+    const r = await P.acharContratoNoPainel(f.rodar, { razao: 'HP - CONFECCOES HUMBERTO PASCUINI LTDA', temporario: '', dominio: 'camisas.hpwork.com.br' });
+    check('sem temporário: o contrato publicado no domínio', r.ok && r.contrato.contrato === '3817' && r.conferidoPelaProducao === true && r.conferidoPeloTemporario === false, JSON.stringify(r));
+    check('link do contrato certo', r.url === 'https://idealplus.idealtrends.io/clientes/3155/hub?projeto=3798&contrato=3817&tab=publicacao');
+    check('abriu só o projeto com o nome do domínio', f.chamadas.filter((c) => c[0] === 'contratos').length === 1, JSON.stringify(f.chamadas));
+    const g = painelFalso(HP_PROD);
+    const r2 = await P.acharContratoNoPainel(g.rodar, { razao: 'HP - CONFECCOES HUMBERTO PASCUINI LTDA', temporario: '', dominio: 'camisas.camisariahp.com.br' });
+    check('domínio sem produção em nenhum contrato: não chuta e lista a produção de cada um', !r2.ok && /3 contratos .*nenhum publicado em camisas\.camisariahp\.com\.br/.test(r2.erro) && r2.lista.some((l) => /3817: .*produção camisas\.hpwork\.com\.br/.test(l)), JSON.stringify(r2));
+    const h = painelFalso(HP_PROD);
+    const r3 = await P.acharContratoNoPainel(h.rodar, { razao: 'HP', temporario: 'errado.mpitemporario.com.br', dominio: 'camisas.hpwork.com.br' });
+    check('temporário da planilha errado, mas produção no domínio: fica com a produção e avisa', r3.ok && r3.contrato.contrato === '3817' && r3.conferidoPelaProducao === true && /errado\.mpitemporario\.com\.br da planilha não bate/.test(r3.aviso), JSON.stringify(r3));
+  }
+
+  console.log('\n=== ADR-144: a razão social não acha, parte do domínio acha ===');
+  {
+    const TURBO = { id: '2635', empresa: 'turbogerais', contratos: 1 };
+    const f = painelPorTermo({
+      porTermo: (t) => (t === 'turbogerais' ? [TURBO] : []),
+      projetos: { 2635: [{ projeto: '2696', nome: 'turbogerais.com.br' }] },
+      contratos: { 2696: ['2710'] },
+      sites: { 2710: { temporario: 'http://turbogeraiscomerciol-migra.mpitemporario.com.br', producao: 'https://turbogerais.com.br' } },
+    });
+    const r = await P.acharContratoNoPainel(f.rodar, { razao: 'TURBO GERAIS COMERCIO LTDA', temporario: '', dominio: 'turbogerais.com.br' });
+    check('achou pelo rótulo do domínio e confirmou pela produção', r.ok && r.contrato.contrato === '2710' && r.conferidoPelaProducao === true, JSON.stringify(r));
+    check('tentou a razão social inteira, sem sufixo, e então o domínio', f.buscas().join('|') === 'TURBO GERAIS COMERCIO LTDA|TURBO GERAIS COMERCIO|turbogerais', JSON.stringify(f.buscas()));
+    check('parou de buscar ao confirmar (não tentou as palavras)', !f.buscas().includes('turbo'), JSON.stringify(f.buscas()));
+  }
+
+  console.log('\n=== ADR-144: termo largo só abre projeto que cita o domínio ===');
+  {
+    const MUITOS = [{ id: '1', empresa: 'ACME COMERCIO' }, { id: '2', empresa: 'ACME INDUSTRIAL LTDA' }, { id: '3', empresa: 'ACMEX' }];
+    const f = painelPorTermo({
+      porTermo: (t) => (/^acme$/i.test(t) ? MUITOS : []),
+      projetos: { 1: [{ projeto: '10', nome: 'outra.com.br' }], 2: [{ projeto: '20', nome: 'acmeindustrial.com.br' }, { projeto: '21', nome: 'loja da acme' }], 3: [{ projeto: '30', nome: 'acmex.com.br' }] },
+      contratos: { 10: ['100'], 20: ['200'], 21: ['210'], 30: ['300'] },
+      sites: { 200: { temporario: '', producao: 'https://acmeindustrial.com.br/' } },
+    });
+    const r = await P.acharContratoNoPainel(f.rodar, { razao: 'ACME INDUSTRIAL E COMERCIO LTDA ME', temporario: '', dominio: 'acmeindustrial.com.br' });
+    check('achou pela palavra "acme" entre 3 clientes', r.ok && r.contrato.contrato === '200' && r.conferidoPelaProducao === true, JSON.stringify(r));
+    check('abriu uma página pesada só (o projeto com o domínio no nome)', f.pesadas() === 1 && f.chamadas.find((c) => c[0] === 'contratos')[1] === '20', JSON.stringify(f.chamadas));
+    const g = painelPorTermo({ porTermo: (t) => (/^acme$/i.test(t) ? MUITOS : []), projetos: { 1: [{ projeto: '10', nome: 'outra.com.br' }], 2: [{ projeto: '20', nome: 'loja' }], 3: [] } });
+    const r2 = await P.acharContratoNoPainel(g.rodar, { razao: 'ACME INDUSTRIAL E COMERCIO LTDA ME', temporario: '', dominio: 'acmeindustrial.com.br' });
+    check('clientes achados mas nenhum projeto cita o domínio: não abre nada e diz isso', !r2.ok && /achei 3 cliente\(s\).*nenhum projeto deles cita acmeindustrial\.com\.br/.test(r2.erro) && g.pesadas() === 0, JSON.stringify(r2));
+    const h = painelPorTermo({ porTermo: () => [] });
+    const r3 = await P.acharContratoNoPainel(h.rodar, { razao: 'NINGUEM LTDA', temporario: '', dominio: 'ninguem.com.br' });
+    // "ninguem" do domínio é o mesmo termo que "NINGUEM" da razão social: não repete.
+    check('nada em termo nenhum: diz o que tentou', !r3.ok && /nenhum cliente no painel com "NINGUEM LTDA" \(tentei também "NINGUEM"\)/.test(r3.erro), JSON.stringify(r3));
+    check('a rodada recebe os termos tentados, sem repetir', Array.isArray(r3.termos) && r3.termos.length === 2);
+  }
+
+  console.log('\n=== ADR-144: teto de páginas pesadas por site ===');
+  {
+    const projetos = Array.from({ length: 10 }, (_, i) => ({ projeto: String(100 + i), nome: `site${i}.com.br` }));
+    const contratos = {}; const sites = {};
+    projetos.forEach((p, i) => { contratos[p.projeto] = [String(500 + i)]; sites[String(500 + i)] = { temporario: '', producao: `https://site${i}.com.br` }; });
+    const f = painelPorTermo({ porTermo: (t) => (t === 'GIGANTE LTDA' ? [{ id: '9', empresa: 'GIGANTE LTDA' }] : []), projetos: { 9: projetos }, contratos, sites });
+    const r = await P.acharContratoNoPainel(f.rodar, { razao: 'GIGANTE LTDA', temporario: '', dominio: 'naoexiste.com.br' });
+    check(`para em ${P.MAX_PAGINAS_PESADAS} páginas pesadas e diz isso`, !r.ok && f.pesadas() === P.MAX_PAGINAS_PESADAS && /parei em 8 projetos abertos/.test(r.erro), JSON.stringify({ erro: r.erro, pesadas: f.pesadas() }));
   }
 
   console.log('\n=== Busca do cliente ===');

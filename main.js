@@ -3465,14 +3465,18 @@ async function painelLogar(win, creds, push) {
 
 // Leitura pura do painel: o que as Integrações já têm preenchido e como está o
 // trilho do Relatório. Serve para não refazer o vínculo de um site que já
-// estava publicado e já vinculado (ADR-087). Não escreve nada.
+// estava publicado e já vinculado (ADR-087) e para a conferência em massa dos
+// vínculos (ADR-144), que precisa dos VALORES (G-, GTM-, propriedade, site,
+// contas, selo) e não só de "tem/não tem". Não escreve nada.
 async function painelConferirVinculo(win, push) {
   push('Painel: conferindo o que já está preenchido', 'cmd');
   const r = await rodarNoPainel(win, `
     ${JS_HELPERS}
     const d = dados('#hub-pub-config-accordion-trigger-integrations');
-    const preenchido = (v) => !!String(v == null ? '' : v).trim();
+    const texto = (v) => String(v == null ? '' : v).trim();
+    const preenchido = (v) => !!texto(v);
     const integracoes = { recaptcha: false, gtm: false, ga: false, gsc: false };
+    const valores = { ga: '', gtm: '', gscPreenchido: false, recaptcha: false };
     let achouConfig = false;
     if (d && d.config && d.config.integrations) {
       achouConfig = true;
@@ -3482,6 +3486,10 @@ async function painelConferirVinculo(win, push) {
       integracoes.gtm = preenchido(bloco('google-tag-manager').key);
       integracoes.ga = preenchido(bloco('google-analytics').key);
       integracoes.gsc = preenchido(bloco('google-search-console').key);
+      valores.ga = texto(bloco('google-analytics').key);
+      valores.gtm = texto(bloco('google-tag-manager').key);
+      valores.gscPreenchido = integracoes.gsc;
+      valores.recaptcha = integracoes.recaptcha;
     }
 
     // O relatório é outro componente. Sem ele na página, devolvo desconhecido
@@ -3490,15 +3498,35 @@ async function painelConferirVinculo(win, push) {
     const botaoGa = await ate(() => Array.from(document.querySelectorAll('button')).find(b => (b.getAttribute('@click')||'') === "openModal('ga')"), 8000);
     if (botaoGa) {
       const dr = window.Alpine.$data(botaoGa.closest('[x-data]'));
-      await ate(() => dr.loadingRemoteContract === false, 8000);
+      // O contrato chega depois e troca o config inteiro (ADR-050). Ler antes
+      // dele é ler o vazio da partição do Hub e acusar "incompleto" à toa:
+      // connectionOptions cheio prova que o init() rodou; só então o
+      // loadingRemoteContract === false quer dizer "o contrato já voltou".
+      const temOpcoes = () => Array.isArray(dr.connectionOptions) && dr.connectionOptions.length > 0;
+      await ate(temOpcoes, 15000);
+      await ate(() => dr.loadingRemoteContract === false, 15000);
+      const cfg = dr.config || {};
+      const opcoes = temOpcoes() ? dr.connectionOptions : [];
+      const nomeConexao = (id) => { const op = opcoes.find((o) => String(o && o.value) === String(id)); return op ? texto(op.name) : ''; };
+      const ultimoErro = typeof dr.lastError === 'string' ? dr.lastError : (dr.lastError ? JSON.stringify(dr.lastError) : '');
       relatorio = {
         pronto: dr.localReady === true,
         conexaoOk: !!dr.integrationConnectionOk,
         ga: typeof dr.gaLane === 'function' ? dr.gaLane() : null,
         gsc: typeof dr.gscLane === 'function' ? dr.gscLane() : null,
+        leads: typeof dr.leadsLane === 'function' ? dr.leadsLane() : null,
+        legado: dr.isClienteLegado === true,
+        projeto: texto(dr.projectName),
+        carregouContrato: temOpcoes() && dr.loadingRemoteContract === false,
+        config: {
+          ga_connection_id: texto(cfg.ga_connection_id), ga_account_key: texto(cfg.ga_account_key), ga_property_id: texto(cfg.ga_property_id),
+          gsc_connection_id: texto(cfg.gsc_connection_id), gsc_site_url: texto(cfg.gsc_site_url), leads_external_id: texto(cfg.leads_external_id),
+        },
+        contas: { ga: nomeConexao(cfg.ga_connection_id), gsc: nomeConexao(cfg.gsc_connection_id) },
+        lastError: texto(ultimoErro),
       };
     }
-    return { ok: true, achouConfig, integracoes, relatorio };
+    return { ok: true, achouConfig, integracoes, valores, relatorio };
   `);
 
   const faltando = [];
@@ -4564,8 +4592,16 @@ handleNoPainel('painel:acharContrato', async (event, payload) => {
       return { ok: false, naoAchou: true, error: r.erro, lista: r.lista || [], log };
     }
     const c = r.contrato;
-    push(`Painel: ${dominio || razao} → ${c.empresa} / ${c.projetoNome || c.projeto} / contrato ${c.contrato}${r.conferidoPeloTemporario ? `, temporário ${painelAchar.normalizarTemporario(c.temporario)} confere` : ', o único do cliente (sem temporário na planilha para conferir)'}.`, r.conferidoPeloTemporario ? 'success' : 'warn');
-    return { ok: true, url: r.url, contrato: c, conferidoPeloTemporario: r.conferidoPeloTemporario, log };
+    // Como o contrato foi confirmado: pelo temporário da planilha, pela URL de
+    // produção igual ao domínio (ADR-144), ou por ser o único do cliente.
+    const como = r.conferidoPeloTemporario
+      ? `temporário ${painelAchar.normalizarTemporario(c.temporario)} confere`
+      : r.conferidoPelaProducao
+        ? `publicado em ${painelAchar.normalizarProducao(c.producao)}, que é o domínio da planilha`
+        : 'o único do cliente (sem temporário na planilha e sem produção no domínio para conferir)';
+    if (r.aviso) push(`Painel: ${r.aviso}.`, 'warn');
+    push(`Painel: ${dominio || razao} → ${c.empresa} / ${c.projetoNome || c.projeto} / contrato ${c.contrato}, ${como}.`, r.conferidoPeloTemporario || r.conferidoPelaProducao ? 'success' : 'warn');
+    return { ok: true, url: r.url, contrato: c, conferidoPeloTemporario: r.conferidoPeloTemporario, conferidoPelaProducao: !!r.conferidoPelaProducao, aviso: r.aviso || '', log };
   } catch (e) {
     erroFatal = true;
     push(`Painel: ${e.message}`, 'error');
@@ -7677,6 +7713,62 @@ ipcMain.handle('planilha:procurar', async (event, { dominio } = {}) => {
     }
     push(`${alvo} não está em nenhuma das duas abas.`, 'info');
     return { ok: true, log, achado: null };
+  } catch (e) {
+    return { ok: false, error: e.message, reauth: !!e.reauth, log };
+  }
+});
+
+// Lê as duas abas da planilha de publicações e devolve os sites com a aba, a
+// linha e o tipo (MPI+, MPI, Busca): é a entrada da conferência dos vínculos no
+// painel (ADR-144). Quem é MPI+ decide o lib/vinculos; aqui é só o Graph.
+// Só leitura: nada é escrito.
+ipcMain.handle('planilha:listar', async () => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  try {
+    const cfg = readPublicacaoConfig();
+    const link = String(cfg.planilhaUrl || '').trim();
+    if (!link) return { ok: false, error: 'Link da planilha de publicações não configurado. Cole o link de compartilhamento nas configurações.', log };
+
+    const token = await msAccessToken();
+    const graph = async (metodo, caminho) => {
+      const res = await msRequest(metodo, `https://graph.microsoft.com/v1.0${caminho}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 403 || res.status === 401) {
+        throw new MsReauthNeeded(`O Microsoft Graph recusou (${res.status}): ${msError(res)}. Desconecte e conecte a Microsoft de novo em "Suspender sites" para a permissão de arquivos (Files.ReadWrite).`);
+      }
+      return res;
+    };
+
+    push('GET item da planilha pelo link de compartilhamento', 'cmd');
+    const item = await graph('GET', `/shares/${shareIdDoLink(link)}/driveItem?$select=id,name,parentReference,webUrl`);
+    if (item.status !== 200) throw new Error(`Não achei a planilha pelo link (${item.status}): ${msError(item)}`);
+    const driveId = item.body?.parentReference?.driveId;
+    const itemId = item.body?.id;
+    if (!driveId || !itemId) throw new Error('O Graph devolveu o item sem driveId/id.');
+
+    const abas = await graph('GET', `/drives/${driveId}/items/${itemId}/workbook/worksheets?$select=name`);
+    if (abas.status !== 200) throw new Error(`Não consegui listar as abas (${abas.status}): ${msError(abas)}`);
+    const nomes = (abas.body?.value || []).map((w) => w.name).filter(Boolean);
+
+    const lidas = [];
+    for (const abaPedida of PLANILHA_ABAS) {
+      const aba = escolherAba(abaPedida, nomes);
+      if (!aba) { push(`A aba de ${abaPedida} não existe na planilha (abas: ${nomes.join(', ') || 'nenhuma'}).`, 'warn'); continue; }
+      const base = `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(aba)}')`;
+      push(`GET linhas da aba ${aba}`, 'cmd');
+      const usado = await graph('GET', `${base}/usedRange(valuesOnly=true)?$select=values,address`);
+      if (usado.status !== 200) throw new Error(`Não consegui ler a aba ${aba} (${usado.status}): ${msError(usado)}`);
+      const faixa = linhasDoEndereco(usado.body?.address) || { primeiraLinha: 1 };
+      lidas.push({ aba, abaPedida, primeiraLinha: faixa.primeiraLinha, valores: usado.body?.values || [] });
+    }
+    if (!lidas.length) throw new Error(`Nenhuma das abas ${PLANILHA_ABAS.join(' e ')} existe na planilha. As abas são: ${nomes.join(', ') || '(nenhuma)'}.`);
+
+    const Vinculos = require(path.join(__dirname, 'lib', 'vinculos'));
+    const r = Vinculos.clientesDaPlanilha(lidas, { apenasMpiPlus: false });
+    const tipos = Object.keys(r.tipos).map((t) => `${r.tipos[t]} ${t}`).join(', ');
+    push(`Planilha ${item.body.name}: ${r.clientes.length} site(s) em ${lidas.map((a) => a.aba).join(' e ')} (${tipos || 'sem tipo'}).`, 'info');
+    for (const d of r.duplicados) push(`${d.dominio} aparece duas vezes (${d.primeira} e ${d.repetida}); vale a primeira.`, 'warn');
+    return { ok: true, log, nome: item.body.name, webUrl: item.body.webUrl, abas: lidas.map((a) => ({ aba: a.aba, abaPedida: a.abaPedida, linhas: a.valores.length })), ...r };
   } catch (e) {
     return { ok: false, error: e.message, reauth: !!e.reauth, log };
   }

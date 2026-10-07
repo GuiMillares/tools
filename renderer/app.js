@@ -74,6 +74,7 @@ const TOOLS = [
   { id: 'doutor', category: 'hosting', name: 'Bloquear contatos', desc: 'Entra no /doutor do site com a credencial da marca e bloqueia os contatos da empresa (o telefone vira ##).' },
   { id: 'ouvidoria', category: 'hosting', name: 'Ouvidoria / SSL', desc: 'Planilha de domínios: acha a conta no Salesforce, lê o caso de Ouvidoria (Definição e Data de Conclusão) e devolve a Situação e se deve ativar o SSL.' },
   { id: 'quando', category: 'hosting', name: 'Quando publicou', desc: 'Lista de domínios: a data de publicação pela tarefa concluída no Salesforce ou, sem ela, pelo commit do geral.php / client.inc.php no Bitbucket.' },
+  { id: 'vinculos', category: 'google', name: 'Conferir vínculos', desc: 'Clientes MPI+ da planilha de publicações (ou uma lista sua): lê no painel as Integrações e a Conexão do Relatório e devolve, em .xlsx, quem está vinculado e o que falta. Só leitura.' },
 ];
 
 function toolCategory(id) {
@@ -611,6 +612,7 @@ function render() {
   if (state.view === 'doutor') renderDoutorTool();
   if (state.view === 'ouvidoria') renderOuvidoriaTool();
   if (state.view === 'quando') renderQuandoTool();
+  if (state.view === 'vinculos') renderVinculosTool();
 }
 
 // ---------- Moldura v2.4: sidebar de módulos + topo + rodapé (ADR-114) ----------
@@ -628,6 +630,7 @@ const NAV_ICON = {
   suspender: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H5.2L4 18z"/><path d="M9 9h6"/></svg>',
   terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>',
   quando: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  vinculos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/></svg>',
 };
 
 NAV_ICON.merge = ICONS.merge;
@@ -644,6 +647,7 @@ const MODULES = [
   { id: 'kanban', nome: 'Salesforce Kanban', icon: 'kanban', tag: 'MOD_SF_KANBAN' },
   { id: 'publish', nome: 'Publicar MPI+', icon: 'publish', tag: 'MOD_PUBLISH_MPI' },
   { id: 'bulk', nome: 'Publicação em Massa', icon: 'bulk', tag: 'MOD_BULK' },
+  { id: 'vinculos', nome: 'Conferir Vínculos', icon: 'vinculos', tag: 'MOD_PAINEL_AUDIT' },
   { id: 'newproject', nome: 'Propriedades Google', icon: 'google', tag: 'MOD_GOOGLE_PROPS' },
   { id: 'ouvidoria', nome: 'Ouvidoria & Auditoria', icon: 'ouvidoria', tag: 'MOD_OUVIDORIA' },
   { id: 'quando', nome: 'Quando publicou', icon: 'quando', tag: 'MOD_QUANDO_PUB' },
@@ -900,6 +904,7 @@ function dominioDaTela() {
   else if (v === 'ssl' || v === 'suspender') d = parseDomains(val('mailDomains'))[0] || '';
   else if (v === 'ouvidoria') d = (ouvEstado.dominios || [])[0] || '';
   else if (v === 'quando') d = (qpEstado.dominios || [])[0] || '';
+  else if (v === 'vinculos') d = (vincEstado.itens[0] && vincEstado.itens[0].dominio) || '';
   else if (v === 'newproject') d = val('npDomainInput') || val('npSearchInput');
   else if (v === 'bulk') d = (bulkRows[0] && bulkRows[0].dominio) || '';
   else if (v === 'merge') d = (state.queue[0] && state.queue[0].repo) || '';
@@ -1834,6 +1839,309 @@ async function exportarQuando() {
   if (!res.ok) { log(res.error, 'error'); return; }
   if (res.cancelado) { log('Exportação cancelada.', 'info'); return; }
   log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s)).`, 'success');
+}
+
+// ---------- Ferramenta: Conferir vínculos no painel (ADR-144) ----------
+//
+// Os clientes MPI+ da planilha de publicações (ou uma lista colada / planilha
+// própria) e, para cada um, o que o painel MPI+ tem de verdade: Configuração →
+// 5. Integrações (Analytics, Tag Manager, Search Console, reCAPTCHA) e
+// Relatório → Conexão (propriedade, site, contas e o selo OK). Só leitura:
+// nada é gravado no painel. O veredito é do lib/vinculos (puro, testado); o
+// resultado sai em .xlsx (Resumo + Clientes + Pendências) para apresentar.
+//
+// Sem link do painel na linha, o Hub acha o contrato pela razão social
+// (ADR-098) e, com mais de um contrato, fica com o publicado no domínio da
+// planilha (a URL de produção que o painel informa, ADR-144).
+
+let vincEstado = { itens: [], origem: '', rodando: false, parar: false, resultados: [], ignorados: '', texto: '' };
+
+function vincAgora() {
+  return new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderVinculosTool() {
+  el.leftPanel.innerHTML = `
+    ${backButtonHtml()}
+    <div class="sec anim-in">
+    <div class="sec-head"><span class="sec-title">Conferir vínculos no painel</span><span class="sec-meta">só leitura</span></div>
+    <div class="tool-sub" style="margin:0 0 12px">Por cliente MPI+: as tags em Configuração → 5. Integrações e a Conexão do Relatório, como o painel mostra hoje</div>
+    <button id="vincDaPlanilha" class="btn ghost full-width" ${vincEstado.rodando ? 'disabled' : ''}>${ICONS.search} Ler os clientes MPI+ da planilha de publicações</button>
+    <label class="field" style="margin-top:10px">
+      <span>ou uma planilha sua (.xlsx, .csv): razão social, domínio e, se tiver, link do painel e link temporário</span>
+      <input id="vincFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    </label>
+    <label class="field">
+      <span>ou cole do Excel (uma linha por cliente) <span class="tag" id="vincContagem">${vincEstado.itens.length ? `${vincEstado.itens.length} clientes` : ''}</span></span>
+      <textarea id="vincTexto" rows="4" placeholder="RAZAO SOCIAL LTDA	cliente.com.br	https://idealplus.idealtrends.io/clientes/..." autocomplete="off">${escapeHtml(vincEstado.texto || '')}</textarea>
+    </label>
+    </div>
+    <div id="vincResumo"></div>
+    <div id="vincAcoes"></div>
+    <div id="vincLista"></div>
+    ${infoBoxHtml(
+      '<p><strong>Quem entra:</strong> os sites com Tipo <strong>MPI+</strong> nas abas MPI e Busca Cliente da planilha de publicações (MPI e Busca ficam de fora: não moram no painel). Ou a sua lista, com razão social e domínio; o link do painel é opcional.</p>' +
+      '<p><strong>Achar o contrato:</strong> sem link do painel, o Hub busca a razão social no painel e abre os projetos do cliente. Com mais de um contrato, fica com o que está <strong>publicado no domínio da planilha</strong> (a URL de produção que o painel informa); com link temporário na sua lista, ele manda. Cada projeto aberto custa de 20 a 50 s.</p>' +
+      '<p><strong>Ler o painel:</strong> abre o contrato numa janela oculta, espera o contrato remoto carregar e lê o estado do Alpine: Configuração → 5. Integrações (Analytics G-…, Tag Manager GTM-…, Search Console, reCAPTCHA) e Relatório → Conexão (propriedade GA4, site do Search Console, as contas e o selo OK/Pendente). Nada é clicado nem salvo.</p>' +
+      '<p><strong>Vinculado</strong> = as três tags nas Integrações <em>e</em> o Relatório com Analytics e Search Console preenchidos e a conexão validada pelo painel. O reCAPTCHA entra como observação. O que o Hub não conseguiu ler sai como "Não consegui ler", nunca como pronto.</p>' +
+      '<p><strong>O que sai:</strong> a planilha <code>.xlsx</code> com as abas Resumo (totais, por empresa e o que mais falta), Clientes (tudo, inclusive o link do painel) e Pendências (só quem não está vinculado). A aba Clientes serve de entrada para a próxima conferência, sem procurar os contratos de novo.</p>',
+      'Como a conferência é feita'
+    )}
+  `;
+  document.getElementById('backToHub').addEventListener('click', goHome);
+  document.getElementById('vincDaPlanilha').addEventListener('click', vincCarregarDaPlanilha);
+  document.getElementById('vincFile').addEventListener('change', async (e) => {
+    const arquivo = e.target.files && e.target.files[0];
+    if (!arquivo) return;
+    const bytes = new Uint8Array(await arquivo.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const res = await window.api.lerPlanilha({ nome: arquivo.name, base64: btoa(bin) });
+    if (!res.ok) { log(res.error, 'error'); return; }
+    vincCarregarLista(res.linhas, arquivo.name);
+  });
+  const texto = document.getElementById('vincTexto');
+  const doTexto = async () => {
+    if (texto.value === vincEstado.texto) return;
+    vincEstado.texto = texto.value;
+    if (!texto.value.trim()) return;
+    const res = await window.api.lerPlanilha({ texto: texto.value });
+    if (!res.ok) { log(res.error, 'error'); return; }
+    vincCarregarLista(res.linhas, 'texto colado');
+  };
+  texto.addEventListener('change', doTexto);
+  texto.addEventListener('blur', doTexto);
+  renderVinculos();
+}
+
+// A planilha de publicações, pelo Graph: só os MPI+ entram na lista.
+async function vincCarregarDaPlanilha() {
+  if (vincEstado.rodando) return;
+  const res = await withBusy('lendo a planilha de publicações', () => window.api.listarPlanilha());
+  if (res.log) for (const e of res.log) log(e.message, e.type);
+  if (!res.ok) {
+    log(res.error || 'Não consegui ler a planilha de publicações.', 'error');
+    if (res.reauth) log('Reconecte a Microsoft em "Suspender sites" e tente de novo.', 'warn');
+    return;
+  }
+  const V = window.Vinculos;
+  const todos = res.clientes || [];
+  const mpiPlus = todos.filter((c) => V.ehMpiPlus(c.tipo));
+  const outros = todos.length - mpiPlus.length;
+  vincEstado = {
+    ...vincEstado,
+    itens: mpiPlus.map((c) => ({ empresa: c.empresa, razao: c.razao, dominio: c.dominio, painel: '', temporario: '', origemLinha: c.origemLinha, tipo: c.tipo })),
+    origem: `planilha ${res.nome || 'de publicações'}`,
+    resultados: [], parar: false, texto: '',
+    ignorados: outros ? `${outros} site(s) MPI / Busca ficaram de fora (não moram no painel)` : '',
+  };
+  const tipos = Object.keys(res.tipos || {}).map((t) => `${res.tipos[t]} ${t}`).join(', ');
+  log(`Conferir vínculos: ${mpiPlus.length} cliente(s) MPI+ na ${vincEstado.origem} (${tipos || 'sem tipo'}).`, mpiPlus.length ? 'success' : 'warn');
+  if (!mpiPlus.length) log('Nenhuma linha com Tipo "MPI+". Confira a coluna Tipo da planilha, ou cole a lista aqui.', 'warn');
+  const cont = document.getElementById('vincContagem');
+  if (cont) cont.textContent = mpiPlus.length ? `${mpiPlus.length} clientes` : '';
+  const ta = document.getElementById('vincTexto');
+  if (ta) ta.value = '';
+  renderAtalhosTerminal();
+  renderVinculos();
+}
+
+// Uma lista própria: as colunas são reconhecidas como no Publicar em massa
+// (ADR-053): razão social, domínio, link do painel, link temporário, em
+// qualquer ordem, com ou sem cabeçalho. Linha sem domínio e sem link do painel
+// não tem o que conferir e fica de fora, avisando.
+function vincCarregarLista(linhas, origem) {
+  const limpas = (linhas || []).map((l) => (Array.isArray(l) ? l : [l]).map((c) => String(c == null ? '' : c)));
+  const temCabecalho = bulkDetectarCabecalho(limpas);
+  const mapa = bulkDetectarColunas(limpas, temCabecalho);
+  const corpo = temCabecalho ? limpas.slice(1) : limpas;
+  const cel = (l, i) => (i >= 0 ? String(l[i] || '').trim() : '');
+  const itens = [];
+  const vistos = new Set();
+  let puladas = 0;
+  corpo.forEach((l, n) => {
+    const numero = n + (temCabecalho ? 2 : 1);
+    if (!l.some((c) => String(c || '').trim())) return;
+    const razao = cel(l, mapa.razao);
+    const dominio = normalizeDomain(cel(l, mapa.dominio));
+    const painel = normalizePainelUrl(cel(l, mapa.painel)) || '';
+    const temporario = normalizarTemporario(cel(l, mapa.temporario));
+    if (!dominio && !painel) { puladas++; return; }
+    const chaveItem = dominio || painel;
+    if (vistos.has(chaveItem)) return;
+    vistos.add(chaveItem);
+    itens.push({ empresa: '', razao, dominio, painel, temporario, origemLinha: `linha ${numero}`, tipo: 'MPI+' });
+  });
+  vincEstado = { ...vincEstado, itens, origem, resultados: [], parar: false, ignorados: puladas ? `${puladas} linha(s) sem domínio nem link do painel ficaram de fora` : '' };
+  const cont = document.getElementById('vincContagem');
+  if (cont) cont.textContent = itens.length ? `${itens.length} clientes` : '';
+  log(`Conferir vínculos: ${itens.length} cliente(s) de ${origem}${puladas ? `; ${puladas} linha(s) sem domínio nem link do painel ficaram de fora` : ''}.`, itens.length ? 'info' : 'warn');
+  const semRazao = itens.filter((i) => !i.painel && !i.razao).length;
+  if (semRazao) log(`${semRazao} linha(s) sem razão social e sem link do painel: não tenho como achar o contrato delas; vão sair como "Não achei no painel".`, 'warn');
+  renderAtalhosTerminal();
+  renderVinculos();
+}
+
+function vincBadge(r) {
+  if (r.situacao === 'vinculado') return ['ok', 'Vinculado'];
+  if (r.situacao === 'incompleto') return ['warn', 'Incompleto'];
+  if (r.situacao === 'nao-lido') return ['warn', 'Não li'];
+  if (r.situacao === 'nao-achou') return ['err', 'Não achei'];
+  return ['err', 'Erro'];
+}
+
+function vincDetalhe(r) {
+  const partes = [];
+  const conf = r.conferencia || {};
+  if (conf.achouConfig) {
+    const v = conf.valores || {};
+    partes.push(`Integrações: GA ${v.ga || 'vazio'} · GTM ${v.gtm || 'vazio'} · GSC ${conf.integracoes?.gsc ? 'ok' : 'vazio'}`);
+  }
+  if (conf.relatorio) {
+    const c = conf.relatorio.config || {};
+    partes.push(`Relatório: ${c.ga_property_id || 'GA vazio'} · ${c.gsc_site_url || 'GSC vazio'} · conexão ${conf.relatorio.conexaoOk ? 'OK' : 'pendente'}`);
+  }
+  if (r.faltando && r.faltando.length) partes.push(`falta: ${r.faltando.join(', ')}`);
+  if (r.erro) partes.push(r.erro);
+  if (r.contrato) partes.push(`${r.contrato} (${r.comoAchou})`);
+  return partes.join(' · ');
+}
+
+function renderVinculos() {
+  const resumo = document.getElementById('vincResumo');
+  const acoes = document.getElementById('vincAcoes');
+  const lista = document.getElementById('vincLista');
+  if (!resumo || !acoes || !lista) return;
+  const V = window.Vinculos;
+  const n = vincEstado.resultados.length;
+  const c = V.contagem(vincEstado.resultados);
+  resumo.innerHTML = vincEstado.itens.length
+    ? `<div class="section-label">${vincEstado.itens.length} cliente(s) MPI+ de ${escapeHtml(vincEstado.origem)}${n ? ` · ${n} conferido(s): ${c.vinculado} vinculado(s), ${c.incompleto} incompleto(s), ${c['nao-lido'] + c['nao-achou'] + c.erro} sem resposta` : ''}${vincEstado.ignorados ? ` · ${escapeHtml(vincEstado.ignorados)}` : ''}</div>`
+    : '';
+
+  if (vincEstado.rodando) {
+    acoes.innerHTML = `<button id="vincParar" class="btn caution full-width">Parar depois deste</button>`;
+    document.getElementById('vincParar').addEventListener('click', () => { vincEstado.parar = true; log('Vou parar depois do cliente atual. O que já foi conferido fica na lista.', 'warn'); });
+  } else {
+    let h = '';
+    if (vincEstado.itens.length) h += `<button id="vincRun" class="btn primary full-width">${ICONS.search} Conferir no painel (${vincEstado.itens.length} cliente${vincEstado.itens.length > 1 ? 's' : ''})</button>`;
+    if (n) h += `<div style="display:flex;gap:6px;margin-top:6px"><button id="vincCopiar" class="btn ghost" style="flex:1">Copiar resultado</button><button id="vincExport" class="btn ghost" style="flex:1">Salvar planilha (.xlsx)</button></div>`;
+    acoes.innerHTML = h;
+    const run = document.getElementById('vincRun');
+    if (run) run.addEventListener('click', rodarVinculos);
+    const cp = document.getElementById('vincCopiar');
+    if (cp) cp.addEventListener('click', (e) => copiarVinculos(e.currentTarget));
+    const exp = document.getElementById('vincExport');
+    if (exp) exp.addEventListener('click', exportarVinculos);
+  }
+
+  lista.innerHTML = n
+    ? '<div class="rows">' + vincEstado.resultados.map((r) => {
+        const [cls, txt] = vincBadge(r);
+        return `<div class="row is-${cls}"><div class="row__main"><div class="row__title">${escapeHtml(r.razao || '(sem razão social)')} — ${escapeHtml(r.dominio || r.painelUrl || '')}</div><div class="row__sub">${escapeHtml(vincDetalhe(r))}</div></div><span class="badge ${cls}">${escapeHtml(txt)}</span></div>`;
+      }).join('') + '</div>'
+    : '';
+}
+
+// Um cliente: acha o contrato (se preciso) e lê o painel. Devolve a linha do
+// resultado, sempre, com a situação e o motivo; nunca lança.
+async function vincConferirUm(item) {
+  const base = {
+    empresa: item.empresa, razao: item.razao, dominio: item.dominio, origemLinha: item.origemLinha,
+    painelUrl: item.painel || '', contrato: '', comoAchou: item.painel ? 'link da planilha' : '',
+    conferidoEm: vincAgora(), faltando: [], observacoes: [],
+  };
+  let url = item.painel ? normalizePainelUrl(item.painel) : '';
+  if (!url) {
+    let ach = await withBusy(`procurando ${item.razao || item.dominio} no painel`, () =>
+      window.api.acharContratoNoPainel({ razao: item.razao, temporario: item.temporario, dominio: item.dominio })
+    );
+    if (ach.log) for (const e of ach.log) log(e.message, e.type);
+    // Reserva (ADR-144): a conta do domínio no Salesforce pode ter o nome que
+    // o painel conhece, diferente da razão social da planilha.
+    if (!ach.ok && hubSfConectado && item.dominio) {
+      const sf = await withBusy(`procurando a conta de ${item.dominio} no Salesforce`, () => window.api.salesforceContaPorDominio({ dominio: item.dominio }));
+      if (sf.log) for (const e of sf.log) log(e.message, e.type);
+      const outroNome = sf.ok && sf.achou && sf.razao && sf.razao.trim().toLowerCase() !== String(item.razao || '').trim().toLowerCase() ? sf.razao.trim() : '';
+      if (outroNome) {
+        log(`${item.dominio}: tentando no painel com o nome da conta do Salesforce, "${outroNome}".`, 'info');
+        ach = await withBusy(`procurando ${outroNome} no painel`, () =>
+          window.api.acharContratoNoPainel({ razao: outroNome, temporario: item.temporario, dominio: item.dominio })
+        );
+        if (ach.log) for (const e of ach.log) log(e.message, e.type);
+        if (ach.ok) base.observacoes.push(`contrato achado pelo nome da conta no Salesforce (${outroNome})`);
+      }
+    }
+    if (!ach.ok) return { ...base, situacao: 'nao-achou', erro: ach.error || 'não achei o contrato no painel', lista: ach.lista || [] };
+    url = ach.url;
+    const c = ach.contrato || {};
+    base.painelUrl = url;
+    base.contrato = `${c.empresa || c.cliente} / ${c.projetoNome || c.projeto} / contrato ${c.contrato}`;
+    base.comoAchou = ach.conferidoPelaProducao ? 'publicado no domínio da planilha' : ach.conferidoPeloTemporario ? 'temporário da planilha' : 'único contrato do cliente (não conferido)';
+    if (ach.aviso) base.observacoes.push(ach.aviso);
+  }
+  const conf = await withBusy(`lendo o painel de ${item.dominio || item.razao}`, () => window.api.syncPainel({ url, etapas: ['conferir'] }));
+  if (conf.log) for (const e of conf.log) log(e.message, e.type);
+  if (!conf.ok) return { ...base, situacao: 'erro', erro: conf.error || 'não consegui ler o painel' };
+  const v = window.Vinculos.avaliarConferencia(conf.conferencia, { dominio: item.dominio });
+  return { ...base, situacao: v.situacao, faltando: v.faltando, observacoes: [...base.observacoes, ...v.observacoes], conferencia: conf.conferencia };
+}
+
+async function rodarVinculos() {
+  if (vincEstado.rodando || !vincEstado.itens.length) return;
+  const V = window.Vinculos;
+  vincEstado.rodando = true;
+  vincEstado.parar = false;
+  vincEstado.resultados = [];
+  renderVinculos();
+  const btn = document.getElementById('vincDaPlanilha');
+  if (btn) btn.disabled = true;
+  log(`Conferir vínculos: ${vincEstado.itens.length} cliente(s) MPI+ de ${vincEstado.origem}, um por vez, só lendo o painel. Sem link do painel, acho o contrato pela razão social; com mais de um contrato, fico com o publicado no domínio.`, 'cmd');
+  window.api.manterAcordado(true, 'vinculos').catch(() => {});
+  const inicio = Date.now();
+  try {
+    for (const item of vincEstado.itens) {
+      if (vincEstado.parar) { log('Parado por você. O que já foi conferido fica na lista e pode ser salvo.', 'warn'); break; }
+      const r = await vincConferirUm(item);
+      vincEstado.resultados.push(r);
+      log(V.textoLinha(r), r.situacao === 'vinculado' ? 'success' : r.situacao === 'incompleto' || r.situacao === 'nao-lido' ? 'warn' : 'error');
+      renderVinculos();
+    }
+  } finally {
+    vincEstado.rodando = false;
+    vincEstado.parar = false;
+    window.api.manterAcordado(false, 'vinculos').catch(() => {});
+    if (btn) btn.disabled = false;
+  }
+  const min = Math.max(1, Math.round((Date.now() - inicio) / 60000));
+  log(`Conferir vínculos: ${V.textoResumo(vincEstado.resultados)}, em ${min} min. "Salvar planilha (.xlsx)" gera o Resumo, os Clientes e as Pendências para apresentar.`, 'success');
+  renderVinculos();
+}
+
+async function copiarVinculos(btn) {
+  if (!vincEstado.resultados.length) { log('Nada para copiar ainda.', 'warn'); return; }
+  const V = window.Vinculos;
+  try {
+    await window.api.copyToClipboard([V.textoResumo(vincEstado.resultados), '', ...vincEstado.resultados.map(V.textoLinha)].join('\n'));
+    log(`${vincEstado.resultados.length} linha(s) copiadas (razão social — domínio: situação).`, 'success');
+    flashCopied(btn);
+  } catch (e) {
+    log(`Falha ao copiar: ${e.message}`, 'error');
+  }
+}
+
+async function exportarVinculos() {
+  if (!vincEstado.resultados.length) { log('Nada para exportar ainda.', 'warn'); return; }
+  const V = window.Vinculos;
+  const hoje = new Date();
+  const iso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  const res = await window.api.exportarPlanilha({
+    nomeSugerido: `vinculos-painel-${iso}.xlsx`,
+    abas: V.montarAbasXlsx(vincEstado.resultados, { origem: vincEstado.origem, geradoEm: vincAgora() }),
+  });
+  if (!res.ok) { log(res.error, 'error'); return; }
+  if (res.cancelado) { log('Exportação cancelada.', 'info'); return; }
+  log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s), abas Resumo, Clientes e Pendências).`, 'success');
 }
 
 // ---------- Tela inicial (Hub) ----------
