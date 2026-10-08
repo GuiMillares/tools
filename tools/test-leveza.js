@@ -61,7 +61,8 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     try { await pedir(true, 'automacao'); } catch (e) { erro = e; }
     check('janela já fechada não derruba o pedido', !erro, erro && erro.message);
   }
-  check('as três janelas ocultas continuam sem desacelerar', (main.match(/backgroundThrottling: false/g) || []).length === 3);
+  // /doutor, painel MPI+, Registro.br e AppSheet (ADR-147).
+  check('as quatro janelas ocultas continuam sem desacelerar', (main.match(/backgroundThrottling: false/g) || []).length === 4, String((main.match(/backgroundThrottling: false/g) || []).length));
 
   console.log('\n=== Quem segura a janela ===');
   const rodada = app.slice(app.indexOf('async function rodarBulk('), app.indexOf('Publicar em massa terminou:'));

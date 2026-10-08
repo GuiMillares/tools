@@ -555,6 +555,29 @@ perde nada, "Continuar" retoma de onde parou e "Descartar" limpa. A rodada
 nunca para por um cliente não achado: ele vai para as Pendências e o próximo
 começa.
 
+### 4.13 Ouvidoria & Auditoria — `salesforce`
+
+Uma planilha **só com domínios** (ou colados) vira uma auditoria por domínio
+(ADR-111, ADR-117, ADR-147):
+
+1. **A conta no Salesforce**, por confiança graduada: razão social (se a
+   planilha trouxer) > Website da conta > domínio no assunto de um caso >
+   contato com e-mail do domínio > tarefa de publicação. Só resolve com uma
+   conta clara; senão marca revisar.
+2. **Não achando, o AppSheet** ("Backup Informações Busca Cliente", view
+   Informações Cliente): o Hub procura o domínio lá, lê a **razão social** e
+   volta ao Salesforce por ela. O AppSheet pede login com o Google: na
+   primeira vez a janela aparece para você entrar (ou "Entrar no AppSheet"
+   antes); a sessão fica guardada na máquina. Dá para desligar essa reserva.
+3. **Na conta**: a aba **Contratos** diz **Ativo** (qualquer contrato ativo)
+   ou **Desativado**; o Hub anota o status, o detalhe de cada contrato com o
+   período e o **link da conta**. E os casos de **Ouvidoria** (Definição,
+   Data de Conclusão): Situação e "Ativar SSL?" (não se Cancelado/Jurídico).
+4. **Saída**: .xlsx com Domínio, Razão Social, Contrato, Link da conta,
+   Detalhe dos contratos, Como achou, Situação Ouvidoria, Ativar SSL? e
+   Cliente; com a coluna cliente na entrada, só Busca Cliente e MPI Solutions
+   são conferidos e o resto vai para a aba "Outros clientes".
+
 ## 5. Fora de escopo
 
 Explicitamente **não** é objetivo do Hub, e um pedido nessa direção deve virar

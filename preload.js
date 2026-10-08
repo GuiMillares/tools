@@ -101,6 +101,9 @@ contextBridge.exposeInMainWorld('api', {
   salesforceContaPorDominio: (payload) => ipcRenderer.invoke('salesforce:contaPorDominio', payload),
   salesforceContexto: (payload) => ipcRenderer.invoke('salesforce:contexto', payload),
   checarOuvidoria: (payload) => ipcRenderer.invoke('salesforce:ouvidoria', payload),
+  // AppSheet "Backup Informações" (ADR-147): a razão social de um domínio que o Salesforce não acha.
+  appsheetBuscar: (payload) => ipcRenderer.invoke('appsheet:buscar', payload),
+  appsheetAbrir: () => ipcRenderer.invoke('appsheet:abrir'),
   // Quando foi publicado (ADR-135): tarefa concluída no Salesforce, senão commit no Bitbucket.
   quandoPublicou: (payload) => ipcRenderer.invoke('publicacao:quando', payload),
   whois: (payload) => ipcRenderer.invoke('dns:whois', payload),

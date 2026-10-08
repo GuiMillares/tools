@@ -1476,14 +1476,14 @@ async function bloquearContatosDoutor() {
 
 // ---------- Ferramenta: Ouvidoria / SSL (ADR-111) ----------
 
-let ouvEstado = { dominios: [], outros: [], meta: {}, temCliente: false, origem: '', rodando: false, parar: false, linhas: [], feito: false };
+let ouvEstado = { dominios: [], outros: [], meta: {}, temCliente: false, origem: '', rodando: false, parar: false, linhas: [], feito: false, usarAppSheet: true, appsheetFora: false };
 
 function renderOuvidoriaTool() {
   el.leftPanel.innerHTML = `
     ${backButtonHtml()}
     <div class="sec anim-in">
-    <div class="sec-head"><span class="sec-title">Auditoria de Ouvidoria &amp; status SSL</span><span class="sec-meta">${hubSfConectado ? 'automatizado · SFDC' : 'salesforce desconectado'}</span></div>
-    <div class="tool-sub" style="margin:0 0 12px">Validação cruzada de casos de Ouvidoria vs regra de publicação SSL</div>
+    <div class="sec-head"><span class="sec-title">Auditoria de contratos &amp; Ouvidoria</span><span class="sec-meta">${hubSfConectado ? 'automatizado · SFDC + AppSheet' : 'salesforce desconectado'}</span></div>
+    <div class="tool-sub" style="margin:0 0 12px">Domínio → conta no Salesforce (ou no AppSheet) → status do contrato, link da conta e casos de Ouvidoria</div>
     <label class="field">
       <span>Planilha de domínios (.xlsx, .csv ou colado)</span>
       <input id="ouvFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
@@ -1494,18 +1494,26 @@ function renderOuvidoriaTool() {
     </label>
     </div>
     <div class="sec anim-in">
-      <div class="sec-head"><span class="sec-title">Parâmetros &amp; filtros de auditoria SFDC</span></div>
-      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Consultar casos de Ouvidoria vinculados ao domínio</span></label>
-      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Validar campos <strong>Definição</strong> e <strong>Data de Conclusão</strong></span></label>
-      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Regra SSL: Ativar SSL = <strong>não</strong> se Cancelado/Jurídico; <strong>sim</strong> no restante</span></label>
-      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Marcar domínios não localizados para revisão manual</span></label>
+      <div class="sec-head"><span class="sec-title">O que o Hub faz com cada domínio</span></div>
+      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Procura a conta no <strong>Salesforce</strong> pelo domínio (Website, caso, contato, tarefa de publicação)</span></label>
+      <label class="checkbox-field"><input type="checkbox" id="ouvAppSheet" ${ouvEstado.usarAppSheet ? 'checked' : ''} /><span>Não achando, procura o domínio no <strong>AppSheet</strong> (Backup Informações), pega a <strong>razão social</strong> e procura a conta por ela</span></label>
+      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Na conta, lê a aba <strong>Contratos</strong>: <strong>Ativo</strong> (com o link da conta) ou <strong>Desativado</strong></span></label>
+      <label class="checkbox-field"><input type="checkbox" checked disabled /><span>E os casos de <strong>Ouvidoria</strong> (Definição, Data de Conclusão): Ativar SSL = <strong>não</strong> se Cancelado/Jurídico</span></label>
+      <div class="row-actions" style="margin-top:8px"><button id="ouvAppSheetEntrar" class="btn compact ghost" title="Abre a janela do AppSheet para você entrar com o Google uma vez; a sessão fica guardada nesta máquina">Entrar no AppSheet</button></div>
     </div>
     <div id="ouvResumo"></div>
     <div id="ouvAcoes"></div>
     <div id="ouvLista"></div>
-    ${infoBoxHtml('<p>Com a coluna <strong>cliente</strong> na planilha, o Hub confere só <strong>Busca Cliente</strong> e <strong>MPI Solutions</strong>. Soluções Industriais, Doutores da Web e o resto ficam de fora, na aba <strong>"Outros clientes"</strong> do arquivo final. Sem coluna cliente (domínios colados), confere todos.</p><p>Para achar a conta, usa confiança graduada: <strong>razão social</strong> (se vier na planilha) &gt; <strong>Website da conta</strong> &gt; domínio no <strong>assunto do caso</strong> &gt; <strong>contato</strong> com e-mail do domínio &gt; <strong>tarefa de publicação</strong>. Só resolve com uma conta clara; senão marca revisar (não chuta conta errada). Aí lê os casos de <strong>Ouvidoria</strong> (Definição e Data de Conclusão): Situação = a Definição; Ativar SSL = <strong>não</strong> se Cancelado/Jurídico, <strong>sim</strong> no resto.</p>', 'Protocolo de auditoria e regras da Ouvidoria')}
+    ${infoBoxHtml('<p>A planilha só precisa dos <strong>domínios</strong>. Com a coluna <strong>cliente</strong>, o Hub confere só <strong>Busca Cliente</strong> e <strong>MPI Solutions</strong>; o resto vai para a aba <strong>"Outros clientes"</strong> do arquivo final.</p><p>Para achar a conta, usa confiança graduada: <strong>razão social</strong> (se vier na planilha) &gt; <strong>Website da conta</strong> &gt; domínio no <strong>assunto do caso</strong> &gt; <strong>contato</strong> com e-mail do domínio &gt; <strong>tarefa de publicação</strong>. Não achando, abre o <strong>AppSheet</strong> (Backup Informações, view "Informações Cliente"), procura o domínio lá, lê a <strong>razão social</strong> e volta ao Salesforce por ela. O AppSheet exige login com o Google: na primeira vez a janela aparece para você entrar (ou use "Entrar no AppSheet" antes); a sessão fica guardada.</p><p>Na conta: a aba <strong>Contratos</strong> diz <strong>Ativo</strong> (qualquer contrato ativo) ou <strong>Desativado</strong>; a planilha sai com o status, o detalhe de cada contrato e o <strong>link da conta</strong>. Os casos de <strong>Ouvidoria</strong> continuam: Situação = a Definição; Ativar SSL = <strong>não</strong> se Cancelado/Jurídico.</p>', 'Como a auditoria acha a conta e o que anota')}
   `;
   document.getElementById('backToHub').addEventListener('click', goHome);
+  document.getElementById('ouvAppSheet').addEventListener('change', (e) => { ouvEstado.usarAppSheet = e.target.checked; log(`AppSheet ${e.target.checked ? 'ligado' : 'desligado'} como reserva para domínio sem conta no Salesforce.`, 'info'); });
+  document.getElementById('ouvAppSheetEntrar').addEventListener('click', async () => {
+    log('Abrindo a janela do AppSheet…', 'cmd');
+    const r = await window.api.appsheetAbrir();
+    if (r.log) for (const x of r.log) log(x.message, x.type);
+    if (r.ok) ouvEstado.appsheetFora = false;
+  });
   document.getElementById('ouvFile').addEventListener('change', async (e) => {
     const arquivo = e.target.files && e.target.files[0];
     if (!arquivo) return;
@@ -1604,47 +1612,80 @@ function renderOuvidoria() {
     if (exp) exp.addEventListener('click', exportarOuvidoria);
   }
 
-  const badge = (l) => l.erro ? ['err', 'erro'] : !l.achou ? ['warn', 'revisar'] : l.ativarSsl === 'não' ? ['warn', 'SSL: não'] : ['ok', 'SSL: sim'];
+  // O crachá da linha: o contrato manda (Ativo / Desativado); sem conta, revisar.
+  const badge = (l) => l.erro ? ['err', 'erro'] : !l.achou ? ['warn', 'revisar'] : l.contrato === 'ativo' ? ['ok', 'contrato ativo'] : l.contrato === 'desativado' ? ['warn', 'desativado'] : ['warn', l.contratoRotulo || 'sem contrato'];
   lista.innerHTML = ouvEstado.linhas.length
     ? '<div class="rows">' + ouvEstado.linhas.map((l) => {
         const [cls, txt] = badge(l);
-        return `<div class="row is-${cls === 'err' ? 'err' : cls === 'warn' ? 'warn' : 'ok'}"><div class="row__main"><div class="row__title">${escapeHtml(l.razao || l.dominio)}</div><div class="row__sub">${escapeHtml(l.razao ? l.dominio + ' · ' : '')}${escapeHtml(l.situacao || l.motivo || '')}</div></div><span class="badge ${cls}">${escapeHtml(txt)}</span></div>`;
+        const sub = [l.razao ? l.dominio : '', l.origem, l.contratoDetalhe, l.situacao && l.situacao !== 'sem caso de ouvidoria' ? 'Ouvidoria: ' + l.situacao : '', !l.achou ? (l.motivo || '') : ''].filter(Boolean).join(' · ');
+        const titulo = l.linkConta ? `<a href="#" data-conta="${escapeHtml(l.linkConta)}" title="Abrir a conta no Salesforce">${escapeHtml(l.razao || l.dominio)}</a>` : escapeHtml(l.razao || l.dominio);
+        return `<div class="row is-${cls === 'err' ? 'err' : cls === 'warn' ? 'warn' : 'ok'}"><div class="row__main"><div class="row__title">${titulo}</div><div class="row__sub">${escapeHtml(sub)}</div></div><span class="badge ${cls}">${escapeHtml(txt)}</span></div>`;
       }).join('') + '</div>'
     : '';
+  lista.querySelectorAll('[data-conta]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); window.api.abrirLink({ url: a.dataset.conta }); }));
+}
+
+// Um domínio: a conta no Salesforce pelo domínio; não achando, a razão social
+// no AppSheet e a conta por ela (ADR-147). Devolve a linha da planilha.
+async function ouvConferirDominio(dominio, info) {
+  const cliente = info.cliente || '';
+  let res = await withBusy(`conferindo ${dominio} no Salesforce`, () => window.api.checarOuvidoria({ dominio, razao: info.razao || '' }));
+  if (res.log) for (const e of res.log) log(e.message, e.type);
+  if (!res.ok) return { dominio, cliente, erro: true, motivo: res.error || 'erro', situacao: res.error || 'erro', ativarSsl: '', precisaReconectar: !!res.precisaReconectar };
+  let origem = res.achou ? `Salesforce, por ${res.via || 'domínio'}` : '';
+  let motivo = res.achou ? '' : `não encontrado no Salesforce (${res.motivo})`;
+  if (!res.achou && ouvEstado.usarAppSheet && !ouvEstado.appsheetFora) {
+    const ap = await withBusy(`procurando ${dominio} no AppSheet`, () => window.api.appsheetBuscar({ dominio }));
+    if (ap.log) for (const e of ap.log) log(e.message, e.type);
+    if (!ap.ok) {
+      motivo += `; AppSheet: ${ap.error || 'falhou'}`;
+      if (ap.precisaLogin) { ouvEstado.appsheetFora = true; log('Sem login no AppSheet: os próximos domínios não vão passar por ele nesta rodada. Use "Entrar no AppSheet" e rode de novo.', 'warn'); }
+    } else if (!ap.achou) {
+      motivo += `; AppSheet: ${ap.motivo || 'não achou'}`;
+    } else {
+      const res2 = await withBusy(`conferindo "${ap.razao}" no Salesforce`, () => window.api.checarOuvidoria({ dominio, razao: ap.razao }));
+      if (res2.log) for (const e of res2.log) log(e.message, e.type);
+      if (res2.ok && res2.achou) { res = res2; origem = `AppSheet → razão social "${ap.razao}"`; motivo = ''; }
+      else if (res2.ok) motivo += `; no AppSheet é "${ap.razao}", mas essa razão social não achou conta no Salesforce (${res2.motivo || '?'})`;
+      else return { dominio, cliente, erro: true, motivo: res2.error || 'erro', situacao: res2.error || 'erro', ativarSsl: '', razaoAppSheet: ap.razao, precisaReconectar: !!res2.precisaReconectar };
+    }
+  }
+  if (!res.achou) return { dominio, cliente, achou: false, motivo, situacao: motivo, ativarSsl: 'revisar', contrato: '', contratoRotulo: '', contratoDetalhe: '', linkConta: '' };
+  const c = res.contrato || {};
+  return {
+    dominio, cliente, achou: true, razao: res.razao, origem, linkConta: res.linkConta || '',
+    contrato: c.status || '', contratoRotulo: c.rotulo || '', contratoDetalhe: c.detalhe || '',
+    situacao: res.situacao, ativarSsl: res.ativarSsl,
+  };
 }
 
 async function rodarOuvidoria() {
   if (ouvEstado.rodando || !ouvEstado.dominios.length) return;
   const sf = await window.api.salesforceGetConfig();
-  if (!(sf && sf.ok && sf.conectado)) { log('Conecte o Salesforce nas configurações antes de conferir a Ouvidoria.', 'error'); return; }
+  if (!(sf && sf.ok && sf.conectado)) { log('Conecte o Salesforce nas configurações antes de conferir.', 'error'); return; }
   ouvEstado.rodando = true;
   ouvEstado.parar = false;
   ouvEstado.linhas = [];
   ouvEstado.feito = false;
+  ouvEstado.appsheetFora = false;
   renderOuvidoria();
-  log(`Conferindo a Ouvidoria de ${ouvEstado.dominios.length} domínio(s) no Salesforce.`, 'cmd');
+  log(`Conferindo ${ouvEstado.dominios.length} domínio(s): conta no Salesforce${ouvEstado.usarAppSheet ? ' (AppSheet como reserva)' : ''}, contratos e Ouvidoria.`, 'cmd');
   for (const dominio of ouvEstado.dominios) {
     if (ouvEstado.parar) { log('Parado por você.', 'warn'); break; }
-    const info = ouvEstado.meta[dominio] || {};
-    const cliente = info.cliente || '';
-    const res = await withBusy(`conferindo ${dominio}`, () => window.api.checarOuvidoria({ dominio, razao: info.razao || '' }));
-    if (res.log) for (const e of res.log) log(e.message, e.type);
-    if (!res.ok) {
-      ouvEstado.linhas.push({ dominio, cliente, erro: true, motivo: res.error || 'erro', situacao: res.error || 'erro', ativarSsl: '' });
-      if (res.precisaReconectar) { log('Salesforce recusou o acesso. Reconecte e rode de novo.', 'error'); break; }
-    } else if (!res.achou) {
-      ouvEstado.linhas.push({ dominio, cliente, achou: false, motivo: res.motivo, situacao: `não encontrado no Salesforce (${res.motivo})`, ativarSsl: 'revisar' });
-    } else {
-      ouvEstado.linhas.push({ dominio, cliente, achou: true, razao: res.razao, situacao: res.situacao, ativarSsl: res.ativarSsl });
-    }
+    const linha = await ouvConferirDominio(dominio, ouvEstado.meta[dominio] || {});
+    ouvEstado.linhas.push(linha);
     renderOuvidoria();
+    if (linha.precisaReconectar) { log('Salesforce recusou o acesso. Reconecte e rode de novo.', 'error'); break; }
   }
   ouvEstado.rodando = false;
   ouvEstado.parar = false;
   ouvEstado.feito = true;
-  const achados = ouvEstado.linhas.filter((l) => l.achou).length;
+  const achados = ouvEstado.linhas.filter((l) => l.achou);
+  const ativos = achados.filter((l) => l.contrato === 'ativo').length;
+  const desativados = achados.filter((l) => l.contrato === 'desativado').length;
+  const viaAppSheet = achados.filter((l) => /AppSheet/.test(l.origem || '')).length;
   const revisar = ouvEstado.linhas.filter((l) => !l.achou && !l.erro).length;
-  log(`Ouvidoria: ${achados} achado(s), ${revisar} para revisão manual, de ${ouvEstado.linhas.length} conferido(s). Clique em "Salvar planilha" para exportar.`, 'success');
+  log(`Auditoria: ${achados.length} conta(s) achada(s) (${viaAppSheet} pelo AppSheet) — ${ativos} com contrato ativo, ${desativados} desativado(s); ${revisar} para revisão manual, de ${ouvEstado.linhas.length} conferido(s). Clique em "Salvar planilha" para exportar.`, 'success');
   renderOuvidoria();
 }
 
@@ -1655,8 +1696,8 @@ async function exportarOuvidoria() {
   const abas = [
     {
       aba: 'Resultado',
-      colunas: ['Razão Social', 'Domínio', 'Cliente', 'Situação', 'Ativar SSL?'],
-      linhas: ouvEstado.linhas.map((l) => [l.razao || '', l.dominio, l.cliente || '', l.situacao || '', l.ativarSsl || '']),
+      colunas: ['Domínio', 'Razão Social', 'Contrato', 'Link da conta', 'Detalhe dos contratos', 'Como achou', 'Situação Ouvidoria', 'Ativar SSL?', 'Cliente'],
+      linhas: ouvEstado.linhas.map((l) => [l.dominio, l.razao || '', l.achou ? (l.contratoRotulo || '') : 'não encontrado', l.linkConta || '', l.contratoDetalhe || '', l.achou ? (l.origem || '') : (l.motivo || ''), l.situacao || '', l.ativarSsl || '', l.cliente || '']),
     },
     {
       aba: 'Outros clientes',
@@ -1664,7 +1705,7 @@ async function exportarOuvidoria() {
       linhas: outros.map((o) => [o.dominio, o.cliente || '']),
     },
   ];
-  const res = await window.api.exportarPlanilha({ nomeSugerido: 'ouvidoria-ssl.xlsx', abas });
+  const res = await window.api.exportarPlanilha({ nomeSugerido: 'auditoria-contratos-ouvidoria.xlsx', abas });
   if (!res.ok) { log(res.error, 'error'); return; }
   if (res.cancelado) { log('Exportação cancelada.', 'info'); return; }
   log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s), ${outros.length ? 'com aba "Outros clientes"' : 'aba única'}).`, 'success');

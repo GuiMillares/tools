@@ -194,7 +194,12 @@ const STUB = () => {
         { id: '00TB', assunto: 'Publicação V1 -> V2 - carste.com.br', status: 'Completed', coluna: 'concluido', fechada: true, prazo: null, fila: null, donoId: '005A', dono: 'Guilherme Millares', relativo: 'Carste Engenharia', relativoTipo: 'Case', minha: true },
       ] }),
     whois: async ({ dominio }) => ({ ok: true, dominio, dns: { ns: ['ns1.cloudflare.com', 'ns2.cloudflare.com'], a: ['149.18.102.39'], mx: ['10 mx.'+dominio], resolveu: true }, whois: { host: 'whois.registro.br', texto: 'owner: CLIENTE LTDA\nstatus: published', campos: { titular: 'CLIENTE LTDA', registrador: '', criado: '20180312', expira: '20260312', status: 'published', nameservers: ['ns1.cloudflare.com'] } } }),
-    checarOuvidoria: async ({ dominio }) => ({ ok: true, achou: true, razao: 'CLIENTE LTDA', situacao: 'Cancelado — 05/08/2026 [00085674]', ativarSsl: 'não', temOuvidoria: true, log: [] }),
+    checarOuvidoria: async ({ dominio, razao }) => (razao || /ativo/.test(dominio)
+      ? { ok: true, achou: true, razao: razao || 'CLIENTE ATIVO LTDA', via: razao ? 'razão social' : 'Website da conta', contaId: '001x', linkConta: 'https://exemplo.my.salesforce.com/lightning/r/Account/001x/view', situacao: 'sem caso de ouvidoria', ativarSsl: 'sim', temOuvidoria: false, contrato: { status: 'ativo', rotulo: 'Ativo', ativo: true, detalhe: 'Desativado 18/03/2019 → 17/03/2021 | Ativo 18/03/2021 → ?', n: 2 }, log: [] }
+      : /sumido/.test(dominio) ? { ok: true, achou: false, motivo: 'o domínio não está ligado a uma conta no Salesforce', log: [] }
+      : { ok: true, achou: true, razao: 'CLIENTE LTDA', via: 'caso com o domínio no assunto', contaId: '001y', linkConta: 'https://exemplo.my.salesforce.com/lightning/r/Account/001y/view', situacao: 'Cancelado — 05/08/2026 [00085674]', ativarSsl: 'não', temOuvidoria: true, contrato: { status: 'desativado', rotulo: 'Desativado', ativo: false, detalhe: 'Desativado 18/03/2019 → 17/03/2021', n: 1 }, log: [] }),
+    appsheetBuscar: async ({ dominio }) => ({ ok: true, achou: true, razao: 'CLIENTE DO APPSHEET ME', via: 'campo "Razão Social"', log: [] }),
+    appsheetAbrir: async () => ({ ok: true, log: [] }),
     quandoPublicou: async ({ dominio }) => ({ ok: true, dominio, situacao: 'publicado', quando: '14/11/2025', fonte: 'salesforce', detalhe: 'tarefa "Publicação (Troca de DNS) - ' + dominio + '" concluída em 14/11/2025', texto: 'publicado em 14/11/2025 (Salesforce: tarefa de publicação concluída)', log: [] }),
   };
 };
@@ -513,12 +518,12 @@ const SCENES = {
       ouvEstado = {
         dominios: ['layoutcenografia.com.br', 'clinicasaovicente.com.br', 'transportesnorte.com.br', 'adifertampoes.com.br'],
         origem: 'clientes-ssl.xlsx',
-        rodando: false, parar: false, feito: true,
+        rodando: false, parar: false, feito: true, usarAppSheet: true, appsheetFora: false,
         linhas: [
-          { dominio: 'layoutcenografia.com.br', achou: true, razao: 'Layout Cenografia Ltda', situacao: 'Conclu\u00eddo', ativarSsl: 'sim' },
-          { dominio: 'clinicasaovicente.com.br', achou: true, razao: 'Cl\u00ednica S\u00e3o Vicente', situacao: 'Cancelado', ativarSsl: 'n\u00e3o' },
-          { dominio: 'transportesnorte.com.br', achou: true, razao: 'Transportes Norte S.A.', situacao: 'Jur\u00eddico', ativarSsl: 'n\u00e3o' },
-          { dominio: 'adifertampoes.com.br', achou: false, motivo: 'nenhuma tarefa cita o dom\u00ednio', situacao: 'n\u00e3o encontrado no Salesforce (nenhuma tarefa cita o dom\u00ednio)', ativarSsl: 'revisar' },
+          { dominio: 'layoutcenografia.com.br', achou: true, razao: 'Layout Cenografia Ltda', origem: 'Salesforce, por Website da conta', contrato: 'ativo', contratoRotulo: 'Ativo', contratoDetalhe: 'Ativo 18/03/2021 \u2192 ?', linkConta: 'https://exemplo.my.salesforce.com/lightning/r/Account/001a/view', situacao: 'sem caso de ouvidoria', ativarSsl: 'sim' },
+          { dominio: 'clinicasaovicente.com.br', achou: true, razao: 'Cl\u00ednica S\u00e3o Vicente', origem: 'AppSheet \u2192 raz\u00e3o social "CLINICA SAO VICENTE LTDA"', contrato: 'desativado', contratoRotulo: 'Desativado', contratoDetalhe: 'Desativado 18/03/2019 \u2192 17/03/2021', linkConta: 'https://exemplo.my.salesforce.com/lightning/r/Account/001b/view', situacao: 'Cancelado \u2014 05/08/2026 [00085674]', ativarSsl: 'n\u00e3o' },
+          { dominio: 'transportesnorte.com.br', achou: true, razao: 'Transportes Norte S.A.', origem: 'Salesforce, por caso com o dom\u00ednio no assunto', contrato: 'ativo', contratoRotulo: 'Ativo', contratoDetalhe: 'Desativado 01/02/2018 \u2192 31/01/2020 | Ativo 01/02/2020 \u2192 ?', linkConta: 'https://exemplo.my.salesforce.com/lightning/r/Account/001c/view', situacao: 'Jur\u00eddico \u2014 10/09/2026 [00087001]', ativarSsl: 'n\u00e3o' },
+          { dominio: 'adifertampoes.com.br', achou: false, motivo: 'n\u00e3o encontrado no Salesforce (o dom\u00ednio n\u00e3o est\u00e1 ligado a uma conta); AppSheet: o dom\u00ednio n\u00e3o aparece no AppSheet', situacao: '', ativarSsl: 'revisar', contrato: '', contratoRotulo: '', contratoDetalhe: '', linkConta: '' },
         ],
       };
       render();

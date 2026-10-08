@@ -118,6 +118,26 @@ const OUV = (num, def, data, extra = {}) => ({ Id: '500' + num, CaseNumber: num,
     check('maiúsculas/acentos não enganam a regra', acento.ativarSsl === 'não');
   }
 
+  console.log('\n=== Contratos da conta: Ativo / Desativado (ADR-147) ===');
+  {
+    const { avaliarContratos, linkDaConta, rotuloStatusContrato } = require(path.join(__dirname, '..', 'lib', 'salesforce'));
+    const C = (Status, StartDate, EndDate) => ({ Id: '800x', Status, StartDate, EndDate });
+    const des = avaliarContratos([C('Desativado', '2019-03-18', '2021-03-17')]);
+    check('um contrato Desativado → Desativado, com o período no detalhe', des.status === 'desativado' && des.rotulo === 'Desativado' && des.ativo === false && des.detalhe === 'Desativado 18/03/2019 → 17/03/2021' && des.n === 1, JSON.stringify(des));
+    const ativ = avaliarContratos([C('Activated', '2024-01-01', null)]);
+    check('"Activated" (a tela mostra Ativo) → Ativo', ativ.status === 'ativo' && ativ.rotulo === 'Ativo' && ativ.ativo === true && /^Ativo 01\/01\/2024 → \?$/.test(ativ.detalhe), JSON.stringify(ativ));
+    const dois = avaliarContratos([C('Desativado', '2019-03-18', '2021-03-17'), C('Activated', '2021-03-18', '2023-03-17')]);
+    check('dois contratos, um ativo → Ativo, e o detalhe lista os dois', dois.ativo && dois.detalhe === 'Desativado 18/03/2019 → 17/03/2021 | Ativo 18/03/2021 → 17/03/2023' && dois.n === 2, dois.detalhe);
+    check('dois desativados → Desativado', avaliarContratos([C('Desativado'), C('Desativado')]).status === 'desativado');
+    const draft = avaliarContratos([C('Draft')]);
+    check('só Draft → nem ativo nem desativado: "Rascunho"', draft.status === 'outro' && draft.rotulo === 'Rascunho' && !draft.ativo, JSON.stringify(draft));
+    check('"Não Iniciado" e "In Approval Process" ganham rótulo em português', rotuloStatusContrato('Não Iniciado') === 'Não iniciado' && rotuloStatusContrato('In Approval Process') === 'Em aprovação' && rotuloStatusContrato('Xyz') === 'Xyz');
+    const nada = avaliarContratos([]);
+    check('sem contrato → "Sem contrato"', nada.status === 'sem-contrato' && nada.rotulo === 'Sem contrato' && !nada.ativo && nada.n === 0);
+    check('nulo não quebra', avaliarContratos(null).status === 'sem-contrato');
+    check('linkDaConta monta o link do Lightning', linkDaConta('https://grupo-ideal-trends.my.salesforce.com/', '001bL00000DFqD7QAL') === 'https://grupo-ideal-trends.my.salesforce.com/lightning/r/Account/001bL00000DFqD7QAL/view' && linkDaConta('', 'x') === '');
+  }
+
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
   process.exit(falhas ? 1 : 0);
 })();

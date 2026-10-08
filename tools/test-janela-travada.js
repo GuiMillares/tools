@@ -70,7 +70,8 @@ function janela(comportamento) {
   console.log('\n=== Janelas sem throttling e PC acordado na rodada ===');
   // As três ocultas (painel, /doutor, Registro.br) nunca desaceleram. A
   // principal desacelera, e só deixa de desacelerar enquanto algo roda (ADR-126).
-  check('as três janelas ocultas desligam o background throttling', (main.match(/backgroundThrottling: false/g) || []).length === 3);
+  // /doutor, painel MPI+, Registro.br e AppSheet (ADR-147).
+  check('as quatro janelas ocultas desligam o background throttling', (main.match(/backgroundThrottling: false/g) || []).length === 4, String((main.match(/backgroundThrottling: false/g) || []).length));
   const criarJanela = main.slice(main.indexOf('function createWindow('), main.indexOf("win.loadFile(path.join(__dirname, 'renderer'"));
   check('a janela principal desacelera em segundo plano (ADR-126)', criarJanela.length > 0 && !/backgroundThrottling/.test(criarJanela));
   check('o manterAcordado liga e desliga a desaceleração dela', /setBackgroundThrottling\(semDesacelerar\.size === 0\)/.test(main));

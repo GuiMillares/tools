@@ -6561,6 +6561,80 @@ passageiro não repete), `test-vinculos` (tags do HTML, suspeita, não liberou,
 colunas novas). O miolo Alpine e o `site:tags` contra a rede continuam sem
 teste automatizado.
 
+## ADR-147 — Auditoria de contratos: conta pelo domínio (Salesforce, senão AppSheet), status do contrato e link da conta
+
+**Contexto.** Pedido de 08/10/2026 para a ferramenta "Ouvidoria & Auditoria":
+"vou dar os dados em uma planilha só com domínios, e preciso que ele procure
+no Salesforce; se não achar, procurar nessa URL [o app do AppSheet "Backup
+Informações Busca Cliente", view Informações Cliente]. Pegar a razão social
+se achar e procurar no Salesforce, e na conta que achar olhar o campo status
+na aba Contratos: se estiver desativado anotar na planilha; se estiver como
+ativo anotar na planilha com o link para a conta." Conferido na org e no
+app:
+
+- a aba "Contratos" da conta é o objeto **`Contract` padrão** (`AccountId`);
+  o `Status` tem os valores `Activated` (a tela mostra "Ativo"),
+  `Desativado`, `Draft`, `In Approval Process` e `Não Iniciado`; na org são
+  17.817 desativados, 4.183 ativos, 348 rascunhos; há contas com **dois**
+  contratos (um desativado, um ativo);
+- o AppSheet **não tem API aberta** e exige **login com o Google** ("Sign in
+  with: Google"; o app se chama "Backup Informações Sense Data"). Pelos
+  prints do usuário: a busca é a caixa **"Search Informações Cliente"** do
+  topo, e o detalhe mostra os campos com o rótulo em cima do valor — **"ID
+  Original" / "Cliente" / "CNPJ"** —, a razão social no campo **"Cliente"**.
+
+**Decisão.**
+
+1. **A conta pelo domínio, como antes** (confiança graduada da ADR-117). Não
+   achando, e com a opção ligada (padrão), o Hub **procura o domínio no
+   AppSheet** e, achando a razão social, volta ao Salesforce por ela (o tier
+   0 da ADR-117). A coluna "Como achou" da planilha diz o caminho
+   ("Salesforce, por Website da conta" / "AppSheet → razão social …").
+2. **AppSheet numa janela própria** (`appsheet:buscar`, partição
+   `persist:appsheet`, cache de 3 min como a do painel). Sem sessão, a janela
+   **aparece** para a pessoa entrar com o Google (até 5 min; o Hub nunca vê
+   a senha) e a sessão fica guardada nesta máquina; "Entrar no AppSheet" na
+   ferramenta faz isso antes da rodada. A janela se apresenta como Chrome
+   (sem `Electron/x.y` no user agent), porque o Google recusa login em
+   navegador embutido; o popup do login nasce na mesma sessão. Dentro da
+   view: a caixa de busca recebe o domínio; o Hub traz as **linhas** que o
+   citam e abre a primeira (ou, se a lista filtrada não mostra o domínio em
+   texto, a primeira linha da lista) e lê as **folhas de texto** do
+   detalhe. Quem decide a razão social é **`lib/appsheet.js`** (puro): pelo
+   rótulo nas folhas — "Razão Social", **"Cliente"**, "Empresa"… —, desde
+   que o detalhe seja do domínio (ele cita o domínio, ou foi aberto da linha
+   que o citava); senão pelo pedaço da linha que parece nome de empresa (de
+   preferência terminando em LTDA/ME/EIRELI/S.A.), nunca URL, e-mail,
+   telefone, data, CNPJ ou "ID Original". A linha lida sai no terminal
+   quando não reconhece, para ajustar com um caso real. Sem login dentro do
+   prazo, os demais domínios da rodada pulam o AppSheet, avisando.
+3. **O status do contrato** (`avaliarContratos` em `lib/salesforce.js`):
+   **Ativo** se qualquer contrato da conta está `Activated`; senão
+   **Desativado** se algum está desativado; senão o status que houver
+   (Rascunho, Em aprovação, Não iniciado); sem contrato, "Sem contrato". O
+   detalhe lista cada contrato com o período (18/03/2019 → 17/03/2021).
+   `salesforce:ouvidoria` passou a devolver isso e o **link da conta**
+   (`linkDaConta`: `{instância}/lightning/r/Account/{id}/view`).
+4. **A planilha**: Domínio, Razão Social, Contrato (Ativo / Desativado / … /
+   "não encontrado"), Link da conta, Detalhe dos contratos, Como achou,
+   Situação Ouvidoria, Ativar SSL?, Cliente — e a aba "Outros clientes" da
+   ADR-117 como antes. O link vai em toda conta achada (o pedido era "no
+   ativo"; no desativado ele não atrapalha e poupa a procura). A lista na
+   tela mostra o crachá pelo contrato (ativo / desativado / revisar) e o nome
+   da conta vira link.
+5. Os casos de Ouvidoria e o "Ativar SSL" **continuam** (mesma conta, uma
+   SOQL a mais): a ferramenta passa a se chamar "Auditoria de contratos &
+   Ouvidoria".
+
+**Consequências.** Com a sessão do AppSheet guardada, uma planilha só de
+domínios sai com conta, contrato e link sem mão. O que não dá para provar
+sem a sessão: a leitura da view foi escrita a partir dos prints e da página
+de login (a estrutura da lista não foi vista); `test-appsheet` cobre a
+decisão a partir do texto, inclusive o detalhe real "ID Original / Cliente /
+CNPJ", e o primeiro uso diz se a busca e a leitura pegam o que o app mostra.
+`test-ouvidoria` cobre o status do contrato (um, dois, só rascunho, nenhum)
+e o link.
+
 ---
 
 ## Pendências conhecidas (não são decisões — são dívidas)

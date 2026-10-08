@@ -6094,7 +6094,7 @@ ipcMain.handle('ms:login', async (event) => {
 // O token vai criptografado pelo safeStorage. Ele age EM SEU NOME no CRM da
 // empresa: mesmo cuidado do token de e-mail (ADR-004).
 
-const { criarSalesforce, idDoLink, ehIdDeCaso, escaparSoql, normalizarTexto, acharCasoDaPublicacao, acharContaPorDominio, acharCampoPorRotulo, avaliarOuvidoria, mascararSegredos, SalesforceErro } =
+const { criarSalesforce, idDoLink, ehIdDeCaso, escaparSoql, normalizarTexto, acharCasoDaPublicacao, acharContaPorDominio, acharCampoPorRotulo, avaliarOuvidoria, avaliarContratos, linkDaConta, mascararSegredos, SalesforceErro } =
   require(path.join(__dirname, 'lib', 'salesforce'));
 
 const SF_CLIENT_ID = 'PlatformCLI';
@@ -7030,7 +7030,21 @@ ipcMain.handle('salesforce:ouvidoria', async (event, { dominio, razao } = {}) =>
       const casos = await sf.consultar(`SELECT Id, CaseNumber, RecordType.Name, RecordType.DeveloperName${selDef}${selData} FROM Case WHERE AccountId = '${escaparSoql(r.conta.Id)}' ORDER BY CreatedDate DESC LIMIT 200`);
       const av = avaliarOuvidoria(casos, campos);
       push(`${dom}: ${av.situacao} → Ativar SSL: ${av.ativarSsl}.`, av.temOuvidoria ? 'info' : 'info');
-      return { ok: true, achou: true, razao: r.conta.Name, via: r.via || '', situacao: av.situacao, ativarSsl: av.ativarSsl, temOuvidoria: av.temOuvidoria, log };
+      // Os contratos da conta (a aba "Contratos", ADR-147): Ativo ou Desativado,
+      // e o link da conta para a planilha.
+      let contrato = { status: 'erro', rotulo: '?', ativo: false, detalhe: '', n: 0 };
+      try {
+        push(`SOQL contratos da conta ${r.conta.Name}`, 'cmd');
+        const contratos = await sf.consultar(`SELECT Id, Status, StartDate, EndDate FROM Contract WHERE AccountId = '${escaparSoql(r.conta.Id)}' ORDER BY StartDate DESC NULLS LAST LIMIT 50`);
+        contrato = avaliarContratos(contratos);
+        push(`${dom}: contrato ${contrato.rotulo}${contrato.n > 1 ? ` (${contrato.n} contratos: ${contrato.detalhe})` : contrato.detalhe && contrato.n ? ` (${contrato.detalhe})` : ''}.`, contrato.ativo ? 'success' : 'warn');
+      } catch (e) {
+        if (e && (e.sessaoInvalida || e.status === 403)) throw e;
+        contrato = { status: 'erro', rotulo: 'erro ao ler', ativo: false, detalhe: e.message, n: 0 };
+        push(`${dom}: não consegui ler os contratos (${e.message}).`, 'warn');
+      }
+      const linkConta = linkDaConta(sf.instanceUrl, r.conta.Id);
+      return { ok: true, achou: true, razao: r.conta.Name, contaId: r.conta.Id, linkConta, via: r.via || '', situacao: av.situacao, ativarSsl: av.ativarSsl, temOuvidoria: av.temOuvidoria, contrato, log };
     });
   } catch (e) {
     if (sfPrecisaReconectar(e)) {
@@ -7040,6 +7054,208 @@ ipcMain.handle('salesforce:ouvidoria', async (event, { dominio, razao } = {}) =>
       return { ok: false, error: msg, precisaReconectar: true, log };
     }
     push(`Salesforce: ${e.message}`, 'error');
+    return { ok: false, error: e.message, log };
+  }
+});
+
+// ---------- AppSheet "Backup Informações Busca Cliente" (ADR-147) ----------
+//
+// Quando o Salesforce não acha a conta pelo domínio, a razão social pode
+// estar no app do AppSheet (view "Informações Cliente"). Não há API: o Hub
+// abre a view numa janela própria (sessão persistente; o login é com o
+// Google, feito pela pessoa uma vez, na janela), digita o domínio na busca e
+// lê o que a página mostra; quem decide a razão social é lib/appsheet.js
+// (puro). A janela fica em cache entre domínios, como a do painel.
+const APPSHEET_PARTITION = 'persist:appsheet';
+const APPSHEET_URL = 'https://www.appsheet.com/start/0d908d41-bb1a-4289-941d-a84a985bcd67?newUser=true&onboarding=true&platform=desktop#appName=BackupInforma%C3%A7%C3%B5esBuscaCliente-29-10-2025-290535480-25-10-31&vss=H4sIAAAAAAAAA63PPQ7CMAwF4KsgzzlB1oqhQrCAWEiH0DhSRJpUTQpUUc7DCThBL4bLj1jYymY_S5-eE5wNXrZR1ifgh_TdVjgAhyRgN7QogAsovIudtwKYgI1sXmHptO8aOd7GO4ZFYQ26SJcMuWIfLGIAnmZY_I-9GBhFs9EGuwmeGALfCJ0ngoKfAGQGTR_l0eLzLwJypkz7ug-o9lRybrlQuuW1lU6tvSJfSxswPwCDuHlIpgEAAA==&view=Informa%C3%A7%C3%B5es%20Cliente';
+const APPSHEET_LOGIN_PRAZO_MS = 5 * 60 * 1000;
+const APPSHEET_JANELA_TTL_MS = 3 * 60 * 1000;
+let appsheetJanela = null; // { win, timer }
+
+// O Google recusa login num navegador que se apresenta como Electron: a
+// janela se apresenta como o Chrome que ela é.
+const uaSemElectron = (ua) => String(ua || '').replace(/\s*(Electron|pr-merge-tool|PR Merge Tool|Hub)\/[\d.]+/gi, '').replace(/\s{2,}/g, ' ').trim();
+const appsheetEhLogin = (url) => /appsheet\.com\/Account\/Login|accounts\.google\.com/i.test(String(url || ''));
+
+function appsheetDescartarJanela() {
+  const j = appsheetJanela;
+  appsheetJanela = null;
+  if (j) { clearTimeout(j.timer); if (j.win && !j.win.isDestroyed()) j.win.destroy(); }
+}
+function appsheetSoltarJanela(win) {
+  if (!win || win.isDestroyed()) { if (appsheetJanela && appsheetJanela.win === win) appsheetJanela = null; return; }
+  if (!appsheetJanela || appsheetJanela.win !== win) { if (appsheetJanela) appsheetDescartarJanela(); appsheetJanela = { win, timer: null }; }
+  clearTimeout(appsheetJanela.timer);
+  appsheetJanela.timer = setTimeout(appsheetDescartarJanela, APPSHEET_JANELA_TTL_MS);
+  if (typeof appsheetJanela.timer.unref === 'function') appsheetJanela.timer.unref();
+}
+
+async function appsheetPedeLogin(win) {
+  if (appsheetEhLogin(win.webContents.getURL())) return true;
+  const r = await rodarNoPainel(win, `return { login: /sign in with|entrar com o google|fa[çc]a login/i.test((document.body && document.body.innerText || '').slice(0, 3000)) && !!document.querySelector('a[href*="Login"], a[href*="google"], button') };`, { prazoMs: 20000 }).catch(() => ({ login: false }));
+  return !!(r && r.login);
+}
+
+// Abre (ou reaproveita) a janela do AppSheet já na view. Pedindo login, mostra
+// a janela e espera a pessoa entrar com o Google (até 5 min); `mostrar: true`
+// é o botão "Entrar no AppSheet": deixa a janela visível e volta.
+async function abrirAppSheet(push, { mostrar = false } = {}) {
+  if (appsheetJanela && appsheetJanela.win && !appsheetJanela.win.isDestroyed()) {
+    clearTimeout(appsheetJanela.timer);
+    const win = appsheetJanela.win;
+    if (mostrar) { win.show(); win.focus(); }
+    else push('AppSheet: reaproveitando a janela já aberta.', 'info');
+    return win;
+  }
+  const win = new BrowserWindow({
+    show: false, width: 1180, height: 820, title: 'AppSheet — Backup Informações (entre com o Google, se pedir)',
+    webPreferences: { partition: APPSHEET_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+  });
+  win.setMenuBarVisibility(false);
+  win.webContents.setUserAgent(uaSemElectron(win.webContents.getUserAgent()));
+  // O login do Google pode abrir um popup: nasce na mesma sessão, para o
+  // retorno chegar ao app.
+  win.webContents.setWindowOpenHandler(({ url }) => (/google\.com|appsheet\.com/i.test(url)
+    ? { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { partition: APPSHEET_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true } } }
+    : { action: 'deny' }));
+  win.on('closed', () => { if (appsheetJanela && appsheetJanela.win === win) appsheetJanela = null; });
+  push('Abrindo o AppSheet (Backup Informações, view "Informações Cliente").', 'cmd');
+  try {
+    const carregou = aguardarCarregar(win);
+    win.loadURL(APPSHEET_URL);
+    await carregou;
+    await new Promise((r) => setTimeout(r, 1500));
+    if (await appsheetPedeLogin(win)) {
+      push(mostrar
+        ? 'O AppSheet pede login. Entre com o Google na janela; a sessão fica guardada nesta máquina.'
+        : 'O AppSheet pede login com o Google. Abri a janela: entre lá que eu continuo. Tenho 5 minutos.', 'warn');
+      win.show(); win.focus();
+      const fim = Date.now() + APPSHEET_LOGIN_PRAZO_MS;
+      let logado = false;
+      while (Date.now() < fim) {
+        await new Promise((r) => setTimeout(r, 2000));
+        if (win.isDestroyed()) throw new Error('a janela do AppSheet foi fechada antes do login');
+        const url = win.webContents.getURL();
+        if (!appsheetEhLogin(url) && /appsheet\.com\/start\//i.test(url) && !(await appsheetPedeLogin(win))) { logado = true; break; }
+      }
+      if (!logado) { const e = new Error('o login no AppSheet não foi concluído em 5 minutos'); e.precisaLogin = true; throw e; }
+      push('Login no AppSheet aceito; a sessão fica guardada nesta máquina.', 'success');
+      if (!mostrar) win.hide();
+      // A view pode não ser a de "Informações Cliente" depois do login: volta a ela.
+      if (!/view=Informa/i.test(win.webContents.getURL())) { const volta = aguardarCarregar(win); win.loadURL(APPSHEET_URL); await volta; }
+    } else if (mostrar) {
+      win.show(); win.focus();
+      push('AppSheet já logado nesta máquina: a janela está aberta só para você ver.', 'success');
+    }
+  } catch (e) {
+    if (!win.isDestroyed()) win.destroy();
+    throw e;
+  }
+  appsheetJanela = { win, timer: null };
+  return win;
+}
+
+// Dentro da página: a caixa de busca da view, o domínio digitado, as linhas
+// que o citam e, clicando na primeira, as folhas de texto do detalhe.
+const JS_APPSHEET_BUSCAR = (dominio) => `
+  ${JS_HELPERS}
+  const dom = ${JSON.stringify(String(dominio || '').toLowerCase())};
+  const baixo = (s) => String(s || '').toLowerCase();
+  const visivel = (el) => { try { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; } catch (e) { return false; } };
+  const SEL = 'input[type="search"], input[placeholder*="earch" i], input[placeholder*="esquis" i], input[placeholder*="rocur" i], input[aria-label*="earch" i], input[aria-label*="esquis" i], input[aria-label*="rocur" i]';
+  const caixaVisivel = () => [...document.querySelectorAll(SEL)].find(visivel) || null;
+  let caixa = await ate(caixaVisivel, 25000);
+  if (!caixa) {
+    const lupa = [...document.querySelectorAll('button, [role="button"], a')].find((b) => visivel(b) && /search|pesquis|procur/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.className || '')));
+    if (lupa) { lupa.click(); caixa = await ate(caixaVisivel, 6000); }
+  }
+  if (!caixa) return { semCaixa: true, texto: (document.body.innerText || '').slice(0, 1200), url: location.href };
+  const setar = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+  caixa.focus();
+  setar.call(caixa, '');
+  caixa.dispatchEvent(new Event('input', { bubbles: true }));
+  await espera(300);
+  setar.call(caixa, dom);
+  caixa.dispatchEvent(new Event('input', { bubbles: true }));
+  caixa.dispatchEvent(new Event('change', { bubbles: true }));
+  caixa.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter', keyCode: 13 }));
+  const folhasCom = () => [...document.querySelectorAll('body *')].filter((el) => el !== caixa && el.children.length === 0 && visivel(el) && baixo(el.textContent).includes(dom));
+  await ate(() => folhasCom().length, 7000);
+  await espera(900);
+  const achadas = folhasCom().slice(0, 12);
+  const linhas = [];
+  for (const el of achadas) {
+    let bloco = el, passos = 0;
+    while (bloco.parentElement && passos < 10 && (bloco.parentElement.innerText || '').trim().length < 700) { bloco = bloco.parentElement; passos++; }
+    const texto = (bloco.innerText || '').trim();
+    if (texto && !linhas.some((l) => l.texto === texto)) linhas.push({ texto });
+  }
+  // O que abrir: o elemento que cita o domínio; se a lista filtrada não mostra
+  // o domínio em texto (a busca casa com coluna escondida), a primeira linha
+  // da lista — e aí o detalhe só vale se citar o domínio.
+  let alvo = achadas[0] || null;
+  let detalheDe = alvo ? (alvo.closest('[role="row"], [role="listitem"], tr') || alvo).innerText || alvo.textContent || '' : '';
+  if (!alvo) {
+    const linhasLista = [...document.querySelectorAll('[role="row"], [role="listitem"], tr, [class*="TableRow"], [class*="DeckRow"], [class*="CardRow"]')].filter((el) => visivel(el) && !el.contains(caixa) && (el.innerText || '').trim().length > 3);
+    if (linhasLista.length && linhasLista.length <= 3) { alvo = linhasLista[0]; detalheDe = ''; linhas.push({ texto: (alvo.innerText || '').trim(), semDominio: true }); }
+  }
+  let folhas = [];
+  if (alvo) {
+    try {
+      alvo.click();
+      await espera(2000);
+      folhas = [...document.querySelectorAll('body *')].filter((el) => el.children.length === 0 && visivel(el)).map((el) => (el.textContent || '').trim()).filter((t) => t && t.length < 300).slice(0, 500);
+    } catch (e) {}
+    try { history.back(); } catch (e) {}
+    await espera(900);
+  }
+  return { linhas, folhas, detalheDe: String(detalheDe || '').slice(0, 600), url: location.href, resumo: (document.body.innerText || '').slice(0, 300) };
+`;
+
+ipcMain.handle('appsheet:buscar', async (event, { dominio } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  const dom = String(dominio || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+  if (!dom) return { ok: false, error: 'Sem domínio.', log };
+  let win = null;
+  try {
+    const Apps = require(path.join(__dirname, 'lib', 'appsheet'));
+    win = await abrirAppSheet(push);
+    push(`AppSheet: procurando "${dom}" na view.`, 'cmd');
+    let r = await rodarNoPainel(win, JS_APPSHEET_BUSCAR(dom), { prazoMs: 60000 });
+    if (r && r.semCaixa) {
+      // A navegação anterior (detalhe → voltar) pode ter saído da lista: recarrega a view uma vez.
+      push('AppSheet: a view não mostrou a caixa de busca; recarregando a view.', 'info');
+      const volta = aguardarCarregar(win);
+      win.loadURL(APPSHEET_URL);
+      await volta;
+      await new Promise((x) => setTimeout(x, 2500));
+      if (await appsheetPedeLogin(win)) { appsheetDescartarJanela(); const e = new Error('o AppSheet voltou a pedir login'); e.precisaLogin = true; throw e; }
+      r = await rodarNoPainel(win, JS_APPSHEET_BUSCAR(dom), { prazoMs: 60000 });
+      if (r && r.semCaixa) throw new Error(`não achei a caixa de busca na view do AppSheet (a página mostra: ${String(r.texto || '').replace(/\s+/g, ' ').slice(0, 160)})`);
+    }
+    const res = Apps.acharRazaoNoAppSheet({ linhas: r.linhas || [], folhas: r.folhas || [], detalheDe: r.detalheDe || '' }, dom);
+    if (res.achou) push(`AppSheet: ${dom} → "${res.razao}" (${res.via}).`, 'success');
+    else push(`AppSheet: ${dom}: ${res.motivo}.${(r.linhas || []).length ? ' Linha lida: ' + String(r.linhas[0].texto || '').replace(/\s+/g, ' / ').slice(0, 200) : ''}`, 'warn');
+    appsheetSoltarJanela(win);
+    return { ok: true, achou: !!res.achou, razao: res.razao || '', via: res.via || '', motivo: res.motivo || '', linha: res.linha || ((r.linhas || [])[0] || {}).texto || '', log };
+  } catch (e) {
+    if (win && !win.isDestroyed() && !(appsheetJanela && appsheetJanela.win === win)) win.destroy();
+    if (e && e.detalhe && e.detalhe.travou) appsheetDescartarJanela();
+    push(`AppSheet: ${e.message}`, 'error');
+    return { ok: false, error: e.message, precisaLogin: !!(e && e.precisaLogin), log };
+  }
+});
+
+ipcMain.handle('appsheet:abrir', async () => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  try {
+    const win = await abrirAppSheet(push, { mostrar: true });
+    appsheetSoltarJanela(win);
+    return { ok: true, log };
+  } catch (e) {
+    push(`AppSheet: ${e.message}`, 'error');
     return { ok: false, error: e.message, log };
   }
 });
