@@ -4975,6 +4975,8 @@ me avise para mapear.
 
 ## ADR-117 — Ouvidoria: coluna cliente e busca da conta por confiança graduada
 
+**Status:** aceita — a busca graduada segue; a separação pela coluna cliente (só BC/MPI, o resto na aba "Outros clientes") acabou na ADR-147: todos os domínios são conferidos
+
 **Contexto.** A Ouvidoria achava a conta só pela **tarefa de "Publicação"** que
 citasse o domínio — poucos dos 133 sites antigos têm essa tarefa, então sobrava
 muita revisão. Validei ao vivo no Salesforce com 3 domínios que falharam:
@@ -6634,6 +6636,38 @@ decisão a partir do texto, inclusive o detalhe real "ID Original / Cliente /
 CNPJ", e o primeiro uso diz se a busca e a leitura pegam o que o app mostra.
 `test-ouvidoria` cobre o status do contrato (um, dois, só rascunho, nenhum)
 e o link.
+
+**Atualização (08/10/2026, à tarde): a view vista logado, e todas as
+empresas do grupo.** A primeira rodada real (71 domínios) não achou nada
+pelo AppSheet: "o domínio não aparece" em todos, embora 3 estivessem lá.
+Com o usuário logado no navegador da sessão, a view mostrou o que a
+suposição não tinha: é um **painel React com quatro tabelas** (Busca
+Cliente, Doutores da Web / Ideal Marketing, Soluções Industriais, Clínica
+Ideal), cada linha `.TableViewRow` com **116 colunas** (`Cliente` é a 4ª;
+as colunas fora da tela viram `__column-placeholder`, sem texto), e a caixa
+"Search Informações Cliente" **filtra** as tabelas pelo texto de todas as
+colunas — inclusive as que a tela não mostra: o domínio costuma estar só na
+ação "Open Url (Domínio Principal)", que não é texto. Por isso o Hub digitava
+certo, a lista filtrava, e ele não via o domínio em célula nenhuma. Visto ao
+vivo: `casapersianas.com.br` → 1 linha, "RAFAEL DE CARLO ROVERE DA SILVA
+33602962814"; `gramasp.com.br` → "ALLAN TIMOTEO OLIVEIRA LERRI";
+`aprendermusica.com.br` → "JULIANO DOS SANTOS 31164777874";
+`dicarlovidro.com.br` → RAFAEL…; `macportas.com.br` → 0 linhas; e
+`mpr.com.br` → **3 linhas** (MPR e duas da ROMA, que casam por substring
+numa coluna escondida), com a coluna FTP "ftp.mpr.com.br" desempatando.
+
+Decisão: o script da view (`JS_BUSCAR`, agora em `lib/appsheet.js`, para
+ser testável) **digita, espera o filtro e lê a coluna "Cliente" das linhas
+que sobraram, sem clicar**; `escolherLinhaAppSheet` decide: uma linha, ou
+várias do mesmo cliente, é ele; clientes diferentes, fica com a linha que
+**cita o domínio em alguma coluna visível** (Domínio, FTP, descrição);
+sobrando mais de um, **ambíguo → revisar**, com os nomes na planilha. E,
+pelo pedido do mesmo dia ("tire a parte de retirar Doutores e Soluções,
+deixe ele pesquisar tudo da planilha mesmo que seja de outra empresa do
+grupo"), a separação da ADR-117 acabou: **todos os domínios da planilha são
+conferidos**, a coluna "cliente" só vai junto para a saída e a aba "Outros
+clientes" deixou de existir. `test-appsheet` cobre os casos reais acima
+(inclusive o desempate da MPR e o ambíguo).
 
 ---
 

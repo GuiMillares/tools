@@ -7155,62 +7155,9 @@ async function abrirAppSheet(push, { mostrar = false } = {}) {
   return win;
 }
 
-// Dentro da página: a caixa de busca da view, o domínio digitado, as linhas
-// que o citam e, clicando na primeira, as folhas de texto do detalhe.
-const JS_APPSHEET_BUSCAR = (dominio) => `
-  ${JS_HELPERS}
-  const dom = ${JSON.stringify(String(dominio || '').toLowerCase())};
-  const baixo = (s) => String(s || '').toLowerCase();
-  const visivel = (el) => { try { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; } catch (e) { return false; } };
-  const SEL = 'input[type="search"], input[placeholder*="earch" i], input[placeholder*="esquis" i], input[placeholder*="rocur" i], input[aria-label*="earch" i], input[aria-label*="esquis" i], input[aria-label*="rocur" i]';
-  const caixaVisivel = () => [...document.querySelectorAll(SEL)].find(visivel) || null;
-  let caixa = await ate(caixaVisivel, 25000);
-  if (!caixa) {
-    const lupa = [...document.querySelectorAll('button, [role="button"], a')].find((b) => visivel(b) && /search|pesquis|procur/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.className || '')));
-    if (lupa) { lupa.click(); caixa = await ate(caixaVisivel, 6000); }
-  }
-  if (!caixa) return { semCaixa: true, texto: (document.body.innerText || '').slice(0, 1200), url: location.href };
-  const setar = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-  caixa.focus();
-  setar.call(caixa, '');
-  caixa.dispatchEvent(new Event('input', { bubbles: true }));
-  await espera(300);
-  setar.call(caixa, dom);
-  caixa.dispatchEvent(new Event('input', { bubbles: true }));
-  caixa.dispatchEvent(new Event('change', { bubbles: true }));
-  caixa.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter', keyCode: 13 }));
-  const folhasCom = () => [...document.querySelectorAll('body *')].filter((el) => el !== caixa && el.children.length === 0 && visivel(el) && baixo(el.textContent).includes(dom));
-  await ate(() => folhasCom().length, 7000);
-  await espera(900);
-  const achadas = folhasCom().slice(0, 12);
-  const linhas = [];
-  for (const el of achadas) {
-    let bloco = el, passos = 0;
-    while (bloco.parentElement && passos < 10 && (bloco.parentElement.innerText || '').trim().length < 700) { bloco = bloco.parentElement; passos++; }
-    const texto = (bloco.innerText || '').trim();
-    if (texto && !linhas.some((l) => l.texto === texto)) linhas.push({ texto });
-  }
-  // O que abrir: o elemento que cita o domínio; se a lista filtrada não mostra
-  // o domínio em texto (a busca casa com coluna escondida), a primeira linha
-  // da lista — e aí o detalhe só vale se citar o domínio.
-  let alvo = achadas[0] || null;
-  let detalheDe = alvo ? (alvo.closest('[role="row"], [role="listitem"], tr') || alvo).innerText || alvo.textContent || '' : '';
-  if (!alvo) {
-    const linhasLista = [...document.querySelectorAll('[role="row"], [role="listitem"], tr, [class*="TableRow"], [class*="DeckRow"], [class*="CardRow"]')].filter((el) => visivel(el) && !el.contains(caixa) && (el.innerText || '').trim().length > 3);
-    if (linhasLista.length && linhasLista.length <= 3) { alvo = linhasLista[0]; detalheDe = ''; linhas.push({ texto: (alvo.innerText || '').trim(), semDominio: true }); }
-  }
-  let folhas = [];
-  if (alvo) {
-    try {
-      alvo.click();
-      await espera(2000);
-      folhas = [...document.querySelectorAll('body *')].filter((el) => el.children.length === 0 && visivel(el)).map((el) => (el.textContent || '').trim()).filter((t) => t && t.length < 300).slice(0, 500);
-    } catch (e) {}
-    try { history.back(); } catch (e) {}
-    await espera(900);
-  }
-  return { linhas, folhas, detalheDe: String(detalheDe || '').slice(0, 600), url: location.href, resumo: (document.body.innerText || '').slice(0, 300) };
-`;
+// O script que roda dentro da view está em lib/appsheet.js (JS_BUSCAR):
+// digita o domínio na busca, espera o filtro e lê a coluna "Cliente" das
+// linhas que sobraram. Aqui é só a cola com a janela.
 
 ipcMain.handle('appsheet:buscar', async (event, { dominio } = {}) => {
   const log = [];
@@ -7222,23 +7169,24 @@ ipcMain.handle('appsheet:buscar', async (event, { dominio } = {}) => {
     const Apps = require(path.join(__dirname, 'lib', 'appsheet'));
     win = await abrirAppSheet(push);
     push(`AppSheet: procurando "${dom}" na view.`, 'cmd');
-    let r = await rodarNoPainel(win, JS_APPSHEET_BUSCAR(dom), { prazoMs: 60000 });
+    let r = await rodarNoPainel(win, Apps.JS_BUSCAR(dom), { prazoMs: 90000 });
     if (r && r.semCaixa) {
-      // A navegação anterior (detalhe → voltar) pode ter saído da lista: recarrega a view uma vez.
+      // A view pode não ter carregado (ou ter saído da lista): recarrega uma vez.
       push('AppSheet: a view não mostrou a caixa de busca; recarregando a view.', 'info');
       const volta = aguardarCarregar(win);
       win.loadURL(APPSHEET_URL);
       await volta;
-      await new Promise((x) => setTimeout(x, 2500));
+      await new Promise((x) => setTimeout(x, 3000));
       if (await appsheetPedeLogin(win)) { appsheetDescartarJanela(); const e = new Error('o AppSheet voltou a pedir login'); e.precisaLogin = true; throw e; }
-      r = await rodarNoPainel(win, JS_APPSHEET_BUSCAR(dom), { prazoMs: 60000 });
+      r = await rodarNoPainel(win, Apps.JS_BUSCAR(dom), { prazoMs: 90000 });
       if (r && r.semCaixa) throw new Error(`não achei a caixa de busca na view do AppSheet (a página mostra: ${String(r.texto || '').replace(/\s+/g, ' ').slice(0, 160)})`);
     }
-    const res = Apps.acharRazaoNoAppSheet({ linhas: r.linhas || [], folhas: r.folhas || [], detalheDe: r.detalheDe || '' }, dom);
+    const res = Apps.escolherLinhaAppSheet(r.linhas || [], dom);
+    const resumoLinhas = (r.linhas || []).slice(0, 4).map((l) => `${l.cliente || '(sem Cliente)'}${l.tabela ? ' [' + l.tabela + ']' : ''}`).join('; ');
     if (res.achou) push(`AppSheet: ${dom} → "${res.razao}" (${res.via}).`, 'success');
-    else push(`AppSheet: ${dom}: ${res.motivo}.${(r.linhas || []).length ? ' Linha lida: ' + String(r.linhas[0].texto || '').replace(/\s+/g, ' / ').slice(0, 200) : ''}`, 'warn');
+    else push(`AppSheet: ${dom}: ${res.motivo}.${resumoLinhas && !res.ambiguo ? ' Linhas: ' + resumoLinhas : ''}`, 'warn');
     appsheetSoltarJanela(win);
-    return { ok: true, achou: !!res.achou, razao: res.razao || '', via: res.via || '', motivo: res.motivo || '', linha: res.linha || ((r.linhas || [])[0] || {}).texto || '', log };
+    return { ok: true, achou: !!res.achou, razao: res.razao || '', via: res.via || '', motivo: res.motivo || '', ambiguo: !!res.ambiguo, candidatos: res.candidatos || [], linhas: (r.linhas || []).length, log };
   } catch (e) {
     if (win && !win.isDestroyed() && !(appsheetJanela && appsheetJanela.win === win)) win.destroy();
     if (e && e.detalhe && e.detalhe.travou) appsheetDescartarJanela();

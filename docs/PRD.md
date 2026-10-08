@@ -565,18 +565,21 @@ Uma planilha **só com domínios** (ou colados) vira uma auditoria por domínio
    contato com e-mail do domínio > tarefa de publicação. Só resolve com uma
    conta clara; senão marca revisar.
 2. **Não achando, o AppSheet** ("Backup Informações Busca Cliente", view
-   Informações Cliente): o Hub procura o domínio lá, lê a **razão social** e
-   volta ao Salesforce por ela. O AppSheet pede login com o Google: na
-   primeira vez a janela aparece para você entrar (ou "Entrar no AppSheet"
-   antes); a sessão fica guardada na máquina. Dá para desligar essa reserva.
+   Informações Cliente): o Hub digita o domínio na busca, que filtra as
+   quatro tabelas do painel, e lê a coluna **Cliente** da linha que sobra
+   (com clientes diferentes, fica com a linha que cita o domínio em alguma
+   coluna; em dúvida, marca revisar com os nomes). Com a razão social, volta
+   ao Salesforce por ela. O AppSheet pede login com o Google: na primeira
+   vez a janela aparece para você entrar (ou "Entrar no AppSheet" antes); a
+   sessão fica guardada na máquina. Dá para desligar essa reserva.
 3. **Na conta**: a aba **Contratos** diz **Ativo** (qualquer contrato ativo)
    ou **Desativado**; o Hub anota o status, o detalhe de cada contrato com o
    período e o **link da conta**. E os casos de **Ouvidoria** (Definição,
    Data de Conclusão): Situação e "Ativar SSL?" (não se Cancelado/Jurídico).
 4. **Saída**: .xlsx com Domínio, Razão Social, Contrato, Link da conta,
    Detalhe dos contratos, Como achou, Situação Ouvidoria, Ativar SSL? e
-   Cliente; com a coluna cliente na entrada, só Busca Cliente e MPI Solutions
-   são conferidos e o resto vai para a aba "Outros clientes".
+   Cliente. **Todos** os domínios da planilha são conferidos, de qualquer
+   empresa do grupo; a coluna cliente, se vier, só vai junto.
 
 ## 5. Fora de escopo
 

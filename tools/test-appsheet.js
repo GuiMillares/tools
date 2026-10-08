@@ -48,6 +48,28 @@ console.log('\n=== Pela linha da lista ===');
   check('vazio não quebra', !A.acharRazaoNoAppSheet({}, 'cliente.com.br').achou && !A.acharRazaoNoAppSheet(undefined, '').achou);
 }
 
+console.log('\n=== As linhas que o filtro da view deixou (casos vistos ao vivo em 08/10) ===');
+{
+  const L = (cliente, extra = {}) => ({ tabela: 'Busca Cliente', id: 'Table_RowElement_Base_Cliente_Busca_1', cliente, dominio: '', ftp: '', descricao: '', texto: '', ...extra });
+  // casapersianas.com.br: uma linha só, sem o domínio em coluna visível (está na ação "Open Url").
+  let r = A.escolherLinhaAppSheet([L('RAFAEL DE CARLO ROVERE DA SILVA 33602962814', { descricao: 'dicarlovidro - GRUPO DI CARLO' })], 'casapersianas.com.br');
+  check('uma linha filtrada: é o cliente, mesmo sem o domínio visível', r.achou && r.razao === 'RAFAEL DE CARLO ROVERE DA SILVA 33602962814' && /linha do AppSheet \(Busca Cliente\)/.test(r.via), JSON.stringify(r));
+  // mpr.com.br: três linhas (MPR e duas da ROMA); a coluna FTP "ftp.mpr.com.br" desempata.
+  const mpr = [L('MPR INDUSTRIA E COMERCIO DE DISPLAYS PROMOCIONAIS', { ftp: 'ftp.mpr.com.br', descricao: 'mpr - MPR INDUSTRIA E COMERCIO' }), L('ROMA COMERCIO DE MATERIAL PROMOCIONAL LTDA', { ftp: 'ftp.romapdv.com.br' }), L('ROMA COMERCIO DE MATERIAL PROMOCIONAL LTDA', { tabela: 'Soluções Industriais', descricao: 'mpr - ROMA COMERCIO DE MATERIAL' })];
+  r = A.escolherLinhaAppSheet(mpr, 'mpr.com.br');
+  check('várias linhas de clientes diferentes: fica com a que cita o domínio numa coluna (FTP)', r.achou && r.razao === 'MPR INDUSTRIA E COMERCIO DE DISPLAYS PROMOCIONAIS' && /cita o domínio, entre 2 clientes/.test(r.via), JSON.stringify(r));
+  check('"mpr - ROMA" na descrição não é citar o domínio (mpr ≠ mpr.com.br)', !A.textoCitaDominio('mpr - ROMA COMERCIO DE MATERIAL', 'mpr.com.br'));
+  // Duas linhas do MESMO cliente (tabelas diferentes): é ele.
+  r = A.escolherLinhaAppSheet([L('ACME LTDA'), L('ACME LTDA', { tabela: 'Soluções Industriais' })], 'acme.com.br');
+  check('linhas repetidas do mesmo cliente: é ele, e a via diz quantas', r.achou && r.razao === 'ACME LTDA' && /2 linhas do AppSheet/.test(r.via), JSON.stringify(r));
+  // Clientes diferentes e nenhum cita o domínio: ambíguo → revisar, com os nomes.
+  r = A.escolherLinhaAppSheet([L('ACME LTDA'), L('BETA ME')], 'acme.com.br');
+  check('clientes diferentes sem desempate: ambíguo, com os nomes, para revisar', !r.achou && r.ambiguo && /2 clientes \(ACME LTDA; BETA ME\)/.test(r.motivo) && r.candidatos.length === 2, JSON.stringify(r));
+  check('nada filtrado: o domínio não aparece', (() => { const x = A.escolherLinhaAppSheet([], 'acme.com.br'); return !x.achou && /não aparece/.test(x.motivo); })());
+  check('linha sem o campo Cliente: diz isso', (() => { const x = A.escolherLinhaAppSheet([L('')], 'acme.com.br'); return !x.achou && /sem o campo Cliente/.test(x.motivo); })());
+  check('o script da página é uma função assíncrona válida e leva o domínio em minúsculas', (() => { const s = A.JS_BUSCAR('ACME.com.br'); try { new Function('return (async () => {' + s + '})')(); } catch (e) { return false; } return /"acme\.com\.br"/.test(s) && /TableViewRow/.test(s) && /Search|pesquis/.test(s); })());
+}
+
 console.log('\n=== Auxiliares ===');
 {
   check('textoCitaDominio exige o domínio inteiro', A.textoCitaDominio('site: www.cliente.com.br', 'cliente.com.br') && !A.textoCitaDominio('outrocliente.com.br', 'cliente.com.br'));

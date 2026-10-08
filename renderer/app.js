@@ -1504,7 +1504,7 @@ function renderOuvidoriaTool() {
     <div id="ouvResumo"></div>
     <div id="ouvAcoes"></div>
     <div id="ouvLista"></div>
-    ${infoBoxHtml('<p>A planilha só precisa dos <strong>domínios</strong>. Com a coluna <strong>cliente</strong>, o Hub confere só <strong>Busca Cliente</strong> e <strong>MPI Solutions</strong>; o resto vai para a aba <strong>"Outros clientes"</strong> do arquivo final.</p><p>Para achar a conta, usa confiança graduada: <strong>razão social</strong> (se vier na planilha) &gt; <strong>Website da conta</strong> &gt; domínio no <strong>assunto do caso</strong> &gt; <strong>contato</strong> com e-mail do domínio &gt; <strong>tarefa de publicação</strong>. Não achando, abre o <strong>AppSheet</strong> (Backup Informações, view "Informações Cliente"), procura o domínio lá, lê a <strong>razão social</strong> e volta ao Salesforce por ela. O AppSheet exige login com o Google: na primeira vez a janela aparece para você entrar (ou use "Entrar no AppSheet" antes); a sessão fica guardada.</p><p>Na conta: a aba <strong>Contratos</strong> diz <strong>Ativo</strong> (qualquer contrato ativo) ou <strong>Desativado</strong>; a planilha sai com o status, o detalhe de cada contrato e o <strong>link da conta</strong>. Os casos de <strong>Ouvidoria</strong> continuam: Situação = a Definição; Ativar SSL = <strong>não</strong> se Cancelado/Jurídico.</p>', 'Como a auditoria acha a conta e o que anota')}
+    ${infoBoxHtml('<p>A planilha só precisa dos <strong>domínios</strong>. Todos são conferidos, de qualquer empresa do grupo; a coluna <strong>cliente</strong>, se vier, só vai junto para a planilha final.</p><p>Para achar a conta, usa confiança graduada: <strong>razão social</strong> (se vier na planilha) &gt; <strong>Website da conta</strong> &gt; domínio no <strong>assunto do caso</strong> &gt; <strong>contato</strong> com e-mail do domínio &gt; <strong>tarefa de publicação</strong>. Não achando, abre o <strong>AppSheet</strong> (Backup Informações, view "Informações Cliente"), digita o domínio na busca, que filtra as quatro tabelas do painel, e lê a coluna <strong>Cliente</strong> da linha que sobra; com clientes diferentes, fica com a linha que cita o domínio em alguma coluna, e se ainda houver dúvida marca revisar. O AppSheet exige login com o Google: na primeira vez a janela aparece para você entrar (ou use "Entrar no AppSheet" antes); a sessão fica guardada.</p><p>Na conta: a aba <strong>Contratos</strong> diz <strong>Ativo</strong> (qualquer contrato ativo) ou <strong>Desativado</strong>; a planilha sai com o status, o detalhe de cada contrato e o <strong>link da conta</strong>. Os casos de <strong>Ouvidoria</strong> continuam: Situação = a Definição; Ativar SSL = <strong>não</strong> se Cancelado/Jurídico.</p>', 'Como a auditoria acha a conta e o que anota')}
   `;
   document.getElementById('backToHub').addEventListener('click', goHome);
   document.getElementById('ouvAppSheet').addEventListener('change', (e) => { ouvEstado.usarAppSheet = e.target.checked; log(`AppSheet ${e.target.checked ? 'ligado' : 'desligado'} como reserva para domínio sem conta no Salesforce.`, 'info'); });
@@ -1533,20 +1533,11 @@ function renderOuvidoriaTool() {
   renderOuvidoria();
 }
 
-// Classifica o valor da coluna "cliente" (ADR-117). Só Busca Cliente e MPI
-// Solutions entram no SSL; Soluções Industriais, Doutores da Web e o resto
-// (inclusive em branco) ficam de fora, na aba "Outros clientes".
-function ouvClienteCat(txt) {
-  const n = String(txt || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-  if (!n) return 'outro';
-  if (n === 'bc' || n.includes('busca cliente') || n.includes('buscacliente')) return 'bc';
-  if (n === 'mpi' || n.includes('mpi solutions') || n.includes('mpisolutions') || n.includes('mpi solu')) return 'mpi';
-  return 'outro';
-}
-
 // Da planilha crua: acha o cabeçalho e as colunas (domínio, cliente, razão
-// social). Com coluna "cliente", separa BC/MPI (para conferir) dos demais
-// (ignorados). Sem coluna "cliente" (ex.: domínios colados), confere todos.
+// social). TODOS os domínios são conferidos, de qualquer empresa do grupo
+// (pedido de 08/10/2026, ADR-147): a coluna "cliente", quando vem, é só
+// informação na planilha de saída. (Até então Soluções Industriais, Doutores
+// da Web e o resto iam para a aba "Outros clientes", ADR-117.)
 function ouvCarregar(linhas, origem) {
   linhas = linhas || [];
   const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -1576,13 +1567,12 @@ function ouvCarregar(linhas, origem) {
     const cliente = cliIdx >= 0 ? String(linha[cliIdx] || '').trim() : '';
     const razao = razaoIdx >= 0 ? String(linha[razaoIdx] || '').trim() : '';
     meta[dom] = { cliente, razao };
-    if (cliIdx >= 0 && ouvClienteCat(cliente) === 'outro') outros.push({ dominio: dom, cliente });
-    else dominios.push(dom);
+    dominios.push(dom);
   }
   ouvEstado = { ...ouvEstado, dominios, outros, meta, temCliente: cliIdx >= 0, origem, rodando: false, parar: false, linhas: [], feito: false };
   const cont = document.getElementById('ouvContagem');
   if (cont) cont.textContent = dominios.length ? `${dominios.length} domínios para conferir` : '';
-  log(`Ouvidoria: ${dominios.length} para conferir (BC/MPI)${cliIdx >= 0 ? `, ${outros.length} ignorado(s) (não BC/MPI)` : ''}, de ${origem}.`, dominios.length ? 'info' : 'warn');
+  log(`Auditoria: ${dominios.length} domínio(s) para conferir, de ${origem}${cliIdx >= 0 ? ' (a coluna cliente vai para a planilha; todas as empresas do grupo são conferidas)' : ''}.`, dominios.length ? 'info' : 'warn');
   renderAtalhosTerminal();
   renderOuvidoria();
 }
@@ -1593,9 +1583,8 @@ function renderOuvidoria() {
   const lista = document.getElementById('ouvLista');
   if (!resumo || !acoes || !lista) return;
 
-  const outrosN = (ouvEstado.outros || []).length;
-  resumo.innerHTML = ouvEstado.dominios.length || outrosN
-    ? `<div class="section-label">${ouvEstado.dominios.length} para conferir${ouvEstado.linhas.length ? `, ${ouvEstado.linhas.length} conferido(s)` : ''}${outrosN ? ` · ${outrosN} ignorado(s) (não BC/MPI)` : ''}</div>`
+  resumo.innerHTML = ouvEstado.dominios.length
+    ? `<div class="section-label">${ouvEstado.dominios.length} para conferir${ouvEstado.linhas.length ? `, ${ouvEstado.linhas.length} conferido(s)` : ''}</div>`
     : '';
 
   if (ouvEstado.rodando) {
@@ -1604,7 +1593,7 @@ function renderOuvidoria() {
   } else {
     let h = '';
     if (ouvEstado.dominios.length) h += `<button id="ouvRun" class="btn primary full-width">${ICONS.search} Processar e auditar Ouvidoria (${ouvEstado.dominios.length} domínio${ouvEstado.dominios.length > 1 ? 's' : ''})</button>`;
-    if (ouvEstado.linhas.length || (ouvEstado.outros || []).length) h += `<button id="ouvExport" class="btn ghost full-width" style="margin-top:6px">Salvar planilha (.xlsx)</button>`;
+    if (ouvEstado.linhas.length) h += `<button id="ouvExport" class="btn ghost full-width" style="margin-top:6px">Salvar planilha (.xlsx)</button>`;
     acoes.innerHTML = h;
     const run = document.getElementById('ouvRun');
     if (run) run.addEventListener('click', rodarOuvidoria);
@@ -1690,25 +1679,19 @@ async function rodarOuvidoria() {
 }
 
 async function exportarOuvidoria() {
-  const outros = ouvEstado.outros || [];
-  if (!ouvEstado.linhas.length && !outros.length) { log('Nada para exportar ainda.', 'warn'); return; }
-  // Aba 1: o resultado dos BC/MPI conferidos. Aba 2: os ignorados (não BC/MPI).
+  if (!ouvEstado.linhas.length) { log('Nada para exportar ainda.', 'warn'); return; }
+  // Uma aba só: todos os domínios conferidos, de qualquer empresa do grupo.
   const abas = [
     {
       aba: 'Resultado',
       colunas: ['Domínio', 'Razão Social', 'Contrato', 'Link da conta', 'Detalhe dos contratos', 'Como achou', 'Situação Ouvidoria', 'Ativar SSL?', 'Cliente'],
       linhas: ouvEstado.linhas.map((l) => [l.dominio, l.razao || '', l.achou ? (l.contratoRotulo || '') : 'não encontrado', l.linkConta || '', l.contratoDetalhe || '', l.achou ? (l.origem || '') : (l.motivo || ''), l.situacao || '', l.ativarSsl || '', l.cliente || '']),
     },
-    {
-      aba: 'Outros clientes',
-      colunas: ['Domínio', 'Cliente'],
-      linhas: outros.map((o) => [o.dominio, o.cliente || '']),
-    },
   ];
   const res = await window.api.exportarPlanilha({ nomeSugerido: 'auditoria-contratos-ouvidoria.xlsx', abas });
   if (!res.ok) { log(res.error, 'error'); return; }
   if (res.cancelado) { log('Exportação cancelada.', 'info'); return; }
-  log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s), ${outros.length ? 'com aba "Outros clientes"' : 'aba única'}).`, 'success');
+  log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s)).`, 'success');
 }
 
 // ---------- Ferramenta: Quando publicou (ADR-135) ----------
