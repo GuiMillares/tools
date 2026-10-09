@@ -128,6 +128,18 @@ const SITEMAP_1 = `<?xml version="1.0"?><urlset><url><loc>https://www.jrplastico
   const pal = R.montarPalavras('hibrido', achadoHib);
   check('híbrido: categorias e depois as palavras, sem repetir', pal.startsWith('banquetas de plástico|cadeiras de plástico|banqueta de plástico pequena|') && pal.split('|').length === 8);
   check('tipo deduzido pela estrutura quando nada diz', R.decidirTipo({ achado: achadoHib }).tipo === 'hibrido' && R.decidirTipo({ achado: achadoOne }).tipo === 'one' && R.decidirTipo({ tipoFluxo: 'Busca One', achado: achadoHib }).tipo === 'one');
+  // Template antigo (artesaodaslatas, 09/10/2026): sem /categorias, sem menu
+  // data-mpi, e o índice do sitemap com <loc> relativo ("sitemap-1.xml"); as
+  // categorias são as que o sitemap cita, com o título pelo slug até a página dizer.
+  const idxRel = R.lerSitemap('<sitemapindex><sitemap><loc>sitemap-1.xml</loc></sitemap></sitemapindex>');
+  check('índice com <loc> relativo devolve o filho como veio (quem resolve é quem baixa)', idxRel.indice && idxRel.filhos[0] === 'sitemap-1.xml' && new URL(idxRel.filhos[0], 'https://www.x.com.br/sitemap.xml').toString() === 'https://www.x.com.br/sitemap-1.xml');
+  const antigo = R.juntarFontes({ menu: { categorias: [], palavras: [] }, cardsCategorias: [], cardsPorCategoria: {}, dataMpi: [], sitemap: R.paresDoSitemap(R.lerSitemap('<urlset><url><loc>https://www.artesaodaslatas.com.br/cristalizacao-automotiva/cristalizacao-carro/cristalizacao-carro-vila-medeiros</loc></url><url><loc>https://www.artesaodaslatas.com.br/cristalizacao-automotiva/cristalizacao-pintura-carro/cristalizacao-pintura-osasco</loc></url><url><loc>https://www.artesaodaslatas.com.br/farois/polimento-de-farol/polimento-de-farol-osasco</loc></url></urlset>').urls, 'www.artesaodaslatas.com.br') });
+  const relativo = R.paresDoSitemap(['contato', 'cristalizacao-automotiva', 'cristalizacao-automotiva/cristalizacao-carro/cristalizacao-carro-vila-medeiros', '/farois/polimento-de-farol/polimento-de-farol-osasco'], 'artesaodaslatas.com.br');
+  check('<loc> sem o domínio é completado com o host do site', relativo.pares.length === 2 && relativo.pares[0].categoria === 'cristalizacao-automotiva' && relativo.nivel1.includes('cristalizacao-automotiva') && !relativo.nivel1.includes('contato'));
+  check('sem fonte de categorias, as do sitemap valem, marcadas como título pelo slug', antigo.categorias.length === 2 && antigo.categorias[0].slug === 'cristalizacao-automotiva' && antigo.categorias[0].tituloPeloSlug === true && antigo.palavras.length === 3);
+  const antigoCom = R.juntarFontes({ menu: { categorias: [], palavras: [] }, dataMpi: [], sitemap: { pares: [{ categoria: 'farois', slug: 'polimento-de-farol' }], nivel1: [] }, titulos: { farois: 'Faróis', 'polimento-de-farol': 'Polimento de Farol' } });
+  check('o título da página substitui o do slug também na categoria', antigoCom.categorias[0].titulo === 'Faróis' && !antigoCom.categorias[0].tituloPeloSlug && R.montarPalavras('hibrido', antigoCom) === 'Faróis|Polimento de Farol');
+  check('com links data-mpi (site One), categoria só do sitemap continua fora', R.juntarFontes({ menu: { categorias: [], palavras: [] }, dataMpi: [{ slug: 'a', titulo: 'A' }], sitemap: { pares: [{ categoria: 'sumida', slug: 'x' }], nivel1: [] } }).categorias.length === 1);
   check('título da página pelo breadcrumb, senão pelo <title> sem a empresa', R.tituloDaPagina(CAT_CADEIRAS) === 'Cadeiras de Plástico' && R.tituloDaPagina('<title>Comodato de Impressora - 3R informática</title>') === 'Comodato de Impressora');
   check('host com ou sem www e http', R.cardsDoHtml('<a href="http://jrplasticos.com.br/x-y"><h2 class="card__title">X</h2></a>', HOST_HIB).length === 1);
 

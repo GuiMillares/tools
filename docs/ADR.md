@@ -6749,7 +6749,9 @@ login enxerga cada um). Visto nos sites reais e no Salesforce:
    cuja categoria é conhecida, e os links `data-mpi` como categorias quando
    não são palavra. O título é o do cartão ou do menu, como o site escreve;
    quem só está no sitemap recebe o título pelo slug e depois o `<h1
-   class="bread__title">` da própria página (até 40 por site). A regra do
+   class="bread__title">` (ou o `<title>`) da própria página, até 250 por
+   site, 4 de cada vez (nos templates antigos quase todas só estão no
+   sitemap). A regra do
    pedido: **One = as categorias; Híbrido = categorias e depois as palavras**,
    separadas por `|` sem espaço, sem repetir (sem acento e caixa para
    comparar). Categorias que só o sitemap cita ficam fora e vão para o
@@ -6827,6 +6829,26 @@ não tem Graph). Testes: `test-relatorio` (planilha, HTML real dos sites,
 sitemap, união das fontes, regra das palavras, saída, a rodada com fontes
 falsas e a escada de domínios). O `pacote_palavras` nem sempre é contagem de
 palavras (jrplasticos: 18000): a comparação "achei N de M" só sai até 2000.
+
+**Atualização (09/10/2026, à tarde): a primeira rodada na tela.** Seis
+linhas em 2 min, uma completa; o que ela ensinou:
+
+- os e-mails dos logins de relatório, colados nas configurações, vieram com
+  um **caractere invisível** (U+2060) na frente de dois deles; o login nunca
+  "era" o e-mail esperado e nenhum rel-N foi conectado, então o Search
+  Console só foi consultado nas três marcas (andaracarburadores está no
+  bcrelatorios5). O e-mail é limpo de zero-width/NBSP ao salvar e ao ler;
+- a service account **vê as 84 contas do Analytics** (`--acessos` no script
+  de amostra lista cada uma e se ela administra: só a "BC 1"), então achar a
+  propriedade nunca depende de conceder acesso; o login do GA4 nas outras
+  83 vem das sessões de relatório conectadas. No Tag Manager ela vê só 2
+  contas: o container de um site antigo (GTM-WFGC6WM3) é invisível para ela.
+  Os logins de relatório ganham o escopo `tagmanager.readonly`, e o
+  container é procurado neles quando a service account não o tem;
+- um template mais antigo (artesaodaslatas.com.br) não tem `/categorias`
+  nem menu `data-mpi`, e o índice do sitemap traz `<loc>sitemap-1.xml</loc>`
+  **relativo**: o filho é resolvido contra o endereço do índice, e, sem
+  outra fonte, as categorias são as que o sitemap cita (título pela página).
 
 ---
 

@@ -8598,8 +8598,10 @@ el.saveSettingsBtn.addEventListener('click', async () => {
     (c) => brandAccounts[c.brand] !== (state.brandAccounts?.[c.brand] || '')
   );
   // Os logins de relatório (ADR-148): um e-mail por linha, sem repetir.
+  // E-mail colado do Teams/WhatsApp vem com caractere invisível (U+2060) na
+  // frente; sem tirar, o login nunca bate com o e-mail esperado.
   const contasRelatorio = el.contasRelatorioInput
-    ? [...new Set(el.contasRelatorioInput.value.split(/[\n,;]+/).map((s) => s.trim().toLowerCase()).filter((s) => /^[^\s@]+@[^\s@]+$/.test(s)))]
+    ? [...new Set(el.contasRelatorioInput.value.split(/[\n,;]+/).map((s) => s.replace(/[​-‏⁠﻿ ]/g, '').trim().toLowerCase()).filter((s) => /^[^\s@]+@[^\s@]+$/.test(s)))]
     : (state.contasRelatorio || []);
   const relatorioMudou = contasRelatorio.join('\n') !== (state.contasRelatorio || []).join('\n');
   if (saPath !== state.googleSaPath || ownerEmail !== state.googleOwnerEmail || contasMudaram || relatorioMudou) {

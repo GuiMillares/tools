@@ -581,11 +581,14 @@ function brandName(brandId) {
 // além das três marcas. Cada uma vira uma sessão OAuth própria, no slot
 // rel-N, só leitura (Analytics e Search Console).
 const ehSlotRelatorio = (slot) => /^rel-\d+$/.test(String(slot || ''));
+const limparEmail = (e) => String(e || '').replace(/[​-‏⁠﻿ ]/g, '').trim().toLowerCase();
 function contasRelatorio() {
   try {
     if (!fs.existsSync(googleConfigPath())) return [];
     const cfg = JSON.parse(fs.readFileSync(googleConfigPath(), 'utf-8'));
-    return (Array.isArray(cfg.contasRelatorio) ? cfg.contasRelatorio : []).map((e) => String(e || '').trim().toLowerCase()).filter(Boolean);
+    // E-mail colado do Teams/WhatsApp vem com caractere invisível na frente
+    // (U+2060, zero-width): sem limpar, o login nunca "é" o e-mail esperado.
+    return (Array.isArray(cfg.contasRelatorio) ? cfg.contasRelatorio : []).map((e) => limparEmail(e)).filter(Boolean);
   } catch (e) { return []; }
 }
 function contaRelatorioDoSlot(slot) {
@@ -6545,7 +6548,7 @@ function criarFontesDoHub() {
   const relatorio = contasRelatorio();
   const slots = [
     ...Object.keys(BRANDS).map((b) => ({ slot: b, email: String(contas[b] || '').toLowerCase(), analytics: false, searchConsole: true })),
-    ...relatorio.map((email, i) => ({ slot: `rel-${i + 1}`, email, analytics: true, searchConsole: true })),
+    ...relatorio.map((email, i) => ({ slot: `rel-${i + 1}`, email, analytics: true, searchConsole: true, tagManager: true })),
   ].filter((s) => s.email);
   let creds = null;
   try { if (fs.existsSync(credsPath())) creds = JSON.parse(safeStorage.decryptString(fs.readFileSync(credsPath()))); } catch (e) { creds = null; }
@@ -8373,6 +8376,7 @@ const OAUTH_SCOPES_MARCA = [
 // sites do Search Console aquele login enxerga.
 const OAUTH_SCOPES_RELATORIO = [
   'https://www.googleapis.com/auth/analytics.readonly',
+  'https://www.googleapis.com/auth/tagmanager.readonly',
   'https://www.googleapis.com/auth/webmasters.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
 ];

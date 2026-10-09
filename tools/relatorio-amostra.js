@@ -87,6 +87,7 @@ app.whenReady().then(async () => {
     'https://www.googleapis.com/auth/tagmanager.readonly',
     'https://www.googleapis.com/auth/webmasters.readonly',
   ];
+  const limparEmail = (e) => String(e || '').replace(/[​-‏⁠﻿ ]/g, '').trim().toLowerCase();
   let saClient = null;
   const authSa = async () => {
     if (saClient) return saClient;
@@ -95,12 +96,12 @@ app.whenReady().then(async () => {
     return saClient;
   };
   const brandAccounts = gCfg.brandAccounts || {};
-  const contasRelatorio = Array.isArray(gCfg.contasRelatorio) ? gCfg.contasRelatorio : [];
+  const contasRelatorio = (Array.isArray(gCfg.contasRelatorio) ? gCfg.contasRelatorio : []).map(limparEmail).filter(Boolean);
   const slots = [
     { slot: 'bc', email: brandAccounts.bc || '', analytics: false, searchConsole: true },
     { slot: 'mpiplus', email: brandAccounts.mpiplus || '', analytics: false, searchConsole: true },
     { slot: 'mpisolutions', email: brandAccounts.mpisolutions || '', analytics: false, searchConsole: true },
-    ...contasRelatorio.map((email, i) => ({ slot: `rel-${i + 1}`, email, analytics: true, searchConsole: true })),
+    ...contasRelatorio.map((email, i) => ({ slot: `rel-${i + 1}`, email, analytics: true, searchConsole: true, tagManager: true })),
   ].filter((s) => s.email);
   const authDoSlot = async (slot) => {
     const f = path.join(userData(), slot ? `oauth-token-${slot}.json` : 'oauth-token.json');
@@ -130,6 +131,48 @@ app.whenReady().then(async () => {
     padraoMarca: { Busca: { ga: brandAccounts.bc || '', gsc: brandAccounts.mpiplus || brandAccounts.bc || '' }, MPI: { ga: brandAccounts.mpisolutions || '', gsc: brandAccounts.mpisolutions || '' }, 'MPI+': { ga: brandAccounts.mpiplus || '', gsc: brandAccounts.mpiplus || '' } },
   });
   log(`Logins: ${slots.map((s) => `${s.email} (${s.slot}${fs.existsSync(path.join(userData(), `oauth-token-${s.slot}.json`)) ? ', conectado' : ', sem sessão'})`).join('; ') || 'nenhum'}.`, 'info');
+
+  // ---------- --acessos: o que a service account e cada login enxergam ----------
+  //
+  // Para saber em que contas do Analytics e do Tag Manager a service account
+  // ainda precisa de acesso: lista as contas dela (e se é administradora, pelo
+  // accessBindings) e as de cada login de relatório conectado, e aponta as
+  // contas que o login vê e ela não.
+  if (args.includes('--acessos')) {
+    const auth = await authSa();
+    const ga = google.analyticsadmin('v1beta');
+    const gaAlpha = google.analyticsadmin('v1alpha');
+    const gtm = google.tagmanager('v2');
+    const listarGa = async (a) => { const out = new Map(); let pageToken; do { const r = await ga.accountSummaries.list({ pageSize: 200, pageToken, auth: a }); for (const x of r.data.accountSummaries || []) out.set(x.account, { nome: x.displayName, props: (x.propertySummaries || []).length }); pageToken = r.data.nextPageToken; } while (pageToken); return out; };
+    const listarGtm = async (a) => { const out = new Map(); let pageToken; do { const r = await gtm.accounts.list({ pageToken, auth: a }); for (const x of r.data.account || []) out.set(x.path, x.name); pageToken = r.data.nextPageToken; } while (pageToken); return out; };
+    const saGa = await listarGa(auth);
+    log(`Service account: ${saGa.size} conta(s) do Analytics.`, 'cmd');
+    let admin = 0;
+    for (const [id, c] of [...saGa.entries()].sort((x, y) => x[1].nome.localeCompare(y[1].nome))) {
+      let quem = '';
+      try { const r = await gaAlpha.accounts.accessBindings.list({ parent: id, pageSize: 200, auth }); quem = (r.data.accessBindings || []).map((b) => b.user).filter(Boolean).filter((e) => /bcrelatorio|ferramentasmpi/i.test(e)).join(', ') || '(nenhum login de relatório)'; admin++; } catch (e) { quem = 'SEM permissão para ler os acessos (não é administradora)'; }
+      log(`  ${c.nome} (${id}, ${c.props} propriedades): ${quem}`, /SEM/.test(quem) ? 'warn' : 'info');
+    }
+    log(`Administradora em ${admin} de ${saGa.size} conta(s).`, 'info');
+    let saGtm = new Map();
+    try { saGtm = await listarGtm(auth); log(`Service account: ${saGtm.size} conta(s) do Tag Manager: ${[...saGtm.values()].join(', ')}`, 'cmd'); } catch (e) { log(`Tag Manager pela service account: ${e.message}`, 'warn'); }
+    for (const s of slots.filter((x) => x.analytics)) {
+      const a = await authDoSlot(s.slot);
+      if (!a) { log(`${s.email}: sem sessão conectada.`, 'warn'); continue; }
+      try {
+        const lg = await listarGa(a);
+        const falta = [...lg.entries()].filter(([id]) => !saGa.has(id));
+        log(`${s.email}: vê ${lg.size} conta(s) do Analytics; a service account NÃO vê ${falta.length}: ${falta.map(([id, c]) => `${c.nome} (${id.split('/').pop()})`).join(', ') || 'nenhuma'}`, falta.length ? 'warn' : 'success');
+      } catch (e) { log(`${s.email}: Analytics: ${e.message.slice(0, 120)}`, 'warn'); }
+      try {
+        const lt = await listarGtm(a);
+        const falta = [...lt.entries()].filter(([p]) => !saGtm.has(p));
+        log(`${s.email}: vê ${lt.size} conta(s) do Tag Manager; a service account NÃO vê ${falta.length}: ${falta.map(([p, n]) => `${n} (${p.split('/').pop()})`).join(', ') || 'nenhuma'}`, falta.length ? 'warn' : 'success');
+      } catch (e) { log(`${s.email}: Tag Manager: ${e.message.slice(0, 120)} (a sessão precisa do escopo tagmanager.readonly: reconecte o login)`, 'warn'); }
+    }
+    app.exit(0);
+    return;
+  }
 
   // ---------- Os itens ----------
   const itens = [];
