@@ -174,6 +174,68 @@ app.whenReady().then(async () => {
     return;
   }
 
+  // ---------- O Tipo pela planilha de fluxo de publicação (Graph) ----------
+  //
+  // A mesma leitura do planilha:listar do Hub: o item pelo link de
+  // compartilhamento, as abas MPI e Busca Cliente, e o lib/vinculos decide os
+  // sites e o Tipo. Sem sessão da Microsoft, a rodada segue sem isso.
+  let tiposFluxo = null;
+  async function carregarTiposFluxo() {
+    const msCfg = lerJson(path.join(userData(), 'ms-config.json')) || {};
+    const pubCfg = lerJson(path.join(userData(), 'publicacao-config.json')) || {};
+    const msTokenPath = path.join(userData(), 'ms-token.enc');
+    let token = lerCifrado(msTokenPath);
+    const link = String(pubCfg.planilhaUrl || '').trim();
+    if (!msCfg.clientId || !token || !token.access_token || !link) { log('Planilha de fluxo: sem sessão da Microsoft ou sem link; o tipo vem do site ou da estrutura.', 'warn'); return {}; }
+    const pedir = (method, url, { headers = {}, form } = {}) => new Promise((resolve, reject) => {
+      const u = new URL(url);
+      const corpo = form ? new URLSearchParams(form).toString() : null;
+      const h = { Accept: 'application/json', ...headers };
+      if (corpo !== null) { h['Content-Type'] = 'application/x-www-form-urlencoded'; h['Content-Length'] = Buffer.byteLength(corpo); }
+      const req = https.request({ hostname: u.hostname, path: u.pathname + u.search, method, headers: h }, (res) => {
+        let t = ''; res.setEncoding('utf8'); res.on('data', (c) => { t += c; }); res.on('end', () => { let body = null; try { body = t ? JSON.parse(t) : {}; } catch (e) { body = { raw: t.slice(0, 300) }; } resolve({ status: res.statusCode, body }); });
+      });
+      req.on('error', reject); req.setTimeout(60000, () => { req.destroy(); reject(new Error('Graph não respondeu em 60s')); });
+      if (corpo !== null) req.write(corpo); req.end();
+    });
+    if (!(token.expiresAt && token.expiresAt > Date.now())) {
+      if (!token.refresh_token) { log('Planilha de fluxo: sessão da Microsoft vencida.', 'warn'); return {}; }
+      const r = await pedir('POST', `https://login.microsoftonline.com/${msCfg.tenant || 'common'}/oauth2/v2.0/token`, { form: { client_id: msCfg.clientId, grant_type: 'refresh_token', refresh_token: token.refresh_token, scope: 'openid profile offline_access User.Read Mail.Send Files.ReadWrite' } });
+      if (r.status !== 200 || !r.body.access_token) { log(`Planilha de fluxo: não renovei a sessão da Microsoft (${r.status}).`, 'warn'); return {}; }
+      token = { ...token, ...r.body, refresh_token: r.body.refresh_token || token.refresh_token, expiresAt: Date.now() + ((r.body.expires_in || 3600) - 60) * 1000 };
+      try { fs.writeFileSync(msTokenPath, safeStorage.encryptString(JSON.stringify(token))); } catch (e) { /* vale só nesta rodada */ }
+    }
+    const graph = (caminho) => pedir('GET', `https://graph.microsoft.com/v1.0${caminho}`, { headers: { Authorization: `Bearer ${token.access_token}` } });
+    const shareId = 'u!' + Buffer.from(link, 'utf-8').toString('base64').replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
+    const item = await graph(`/shares/${shareId}/driveItem?$select=id,name,parentReference`);
+    if (item.status !== 200) { log(`Planilha de fluxo: não achei a planilha pelo link (${item.status}).`, 'warn'); return {}; }
+    const driveId = item.body.parentReference && item.body.parentReference.driveId;
+    const itemId = item.body.id;
+    const abas = await graph(`/drives/${driveId}/items/${itemId}/workbook/worksheets?$select=name`);
+    const nomes = ((abas.body && abas.body.value) || []).map((w) => w.name);
+    const chave = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9+]/g, '');
+    const escolher = (pedida, apelidos) => nomes.find((n) => chave(n) === chave(pedida)) || nomes.find((n) => apelidos.map(chave).includes(chave(n))) || nomes.find((n) => chave(n).startsWith(chave(pedida))) || null;
+    const lidas = [];
+    for (const [pedida, apelidos] of [['MPI', ['MPI+', 'MPI SOLUTIONS']], ['Busca Cliente', ['BUSCA', 'BC']]]) {
+      const aba = escolher(pedida, apelidos);
+      if (!aba) continue;
+      const usado = await graph(`/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(aba)}')/usedRange(valuesOnly=true)?$select=values,address`);
+      if (usado.status !== 200) continue;
+      const m = String(usado.body.address || '').split('!').pop().match(/[A-Z]+(\d+)/i);
+      lidas.push({ aba, abaPedida: pedida, primeiraLinha: m ? Number(m[1]) : 1, valores: usado.body.values || [] });
+    }
+    const V = require(path.join(ROOT, 'lib', 'vinculos'));
+    const r = V.clientesDaPlanilha(lidas, { apenasMpiPlus: false });
+    const tipos = {};
+    for (const c of r.clientes || []) if (c.dominio) tipos[c.dominio] = c.tipo || '';
+    log(`Planilha de fluxo (${item.body.name}): ${Object.keys(tipos).length} site(s) com tipo (${Object.keys(r.tipos || {}).map((t) => `${r.tipos[t]} ${t}`).join(', ')}).`, 'info');
+    return tipos;
+  }
+  if (!args.includes('--sem-fluxo')) {
+    try { tiposFluxo = await carregarTiposFluxo(); } catch (e) { log(`Planilha de fluxo: ${e.message}`, 'warn'); tiposFluxo = {}; }
+    fontes.tipoFluxo = async ({ dominio }) => ({ tipo: (tiposFluxo || {})[dominio] || '' });
+  }
+
   // ---------- Os itens ----------
   const itens = [];
   for (const dom of opts('--dominio')) {
@@ -193,26 +255,42 @@ app.whenReady().then(async () => {
       const it = ent.itens.find((x) => R.empresaDaAba(x.aba) === R.empresaDaAba(aba) && String(x.linha) === String(n));
       if (it) itens.push(it); else log(`linha ${p} não achada na planilha.`, 'warn');
     }
-    if (!pedidas.length) itens.push(...ent.itens.slice(0, Number(opt('--primeiras') || 3)));
+    if (!pedidas.length) itens.push(...(args.includes('--todas') ? ent.itens : ent.itens.slice(0, Number(opt('--primeiras') || 3))));
+    log(`Planilha: ${ent.itens.length} linha(s) (${ent.itens.filter((x) => x.empresa === 'Busca').length} Busca, ${ent.itens.filter((x) => x.empresa === 'MPI').length} MPI); ${itens.length} nesta rodada.`, 'info');
   }
   if (!itens.length) { log('Nada para rodar: use --dominio ou --planilha.', 'error'); app.exit(1); return; }
 
-  const resultados = [];
-  for (const it of itens) {
-    log(`\n=== ${it.razao || it.dominio || it.cnpj} (${it.empresa}${it.linha ? `, linha ${it.linha}` : ''}) ===`, 'cmd');
+  // A rodada grava o JSON a cada linha e o .xlsx a cada 25; com --continuar,
+  // as linhas já gravadas são puladas (cair no meio não perde nada).
+  const XLSX = require('xlsx');
+  const gravarXlsx = (rs) => {
+    const wb = XLSX.utils.book_new();
+    for (const a of R.montarAbasXlsx(rs)) if (a.linhas.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([a.colunas, ...a.linhas]), a.aba);
+    XLSX.writeFile(wb, `${saida}.xlsx`);
+  };
+  let resultados = [];
+  if (args.includes('--continuar') && fs.existsSync(`${saida}.json`)) {
+    try { resultados = JSON.parse(fs.readFileSync(`${saida}.json`, 'utf-8')); } catch (e) { resultados = []; }
+    log(`Continuando: ${resultados.length} linha(s) já gravadas em ${saida}.json.`, 'info');
+  }
+  const feitas = new Set(resultados.map((r) => r.chave));
+  const fila = itens.filter((it) => !feitas.has(R.chaveItem(it)) || !it.linha);
+  const inicio = Date.now();
+  let n = 0;
+  for (const it of fila) {
+    n++;
+    log(`\n=== [${n}/${fila.length}] ${it.razao || it.dominio || it.cnpj} (${it.empresa}${it.linha ? `, linha ${it.linha}` : ''}) ===`, 'cmd');
     const r = await Rodada.preencherItem(it, fontes, log);
     resultados.push(r);
     log(R.textoLinha(r), r.situacao === 'completo' ? 'success' : r.situacao === 'erro' ? 'error' : 'warn');
     const s = r.saida;
     log(`  nome_fantasia=${s[2]} | responsavel=${s[3]} <${s[4]}> ${s[5]} | contrato=${s[7]} | external_id=${s[9]} | ga=${s[11]} / ${s[12]} / ${s[13]} | gsc=${s[14]} ${s[15]} | pacote=${s[16]} | valor=${s[17]} | tipo=${r.dados.tipo} (${r.dados.tipoOrigem}) | palavras=${s[18] ? s[18].split('|').length : 0}`, 'info');
     if (r.observacoes.length) log(`  obs: ${r.observacoes.join('; ')}`, 'info');
+    try { fs.writeFileSync(`${saida}.json.tmp`, JSON.stringify(resultados)); fs.renameSync(`${saida}.json.tmp`, `${saida}.json`); } catch (e) { log(`não gravei o JSON: ${e.message}`, 'warn'); }
+    if (n % 25 === 0) { try { gravarXlsx(resultados); } catch (e) { log(`não gravei o .xlsx: ${e.message}`, 'warn'); } log(`PROGRESSO ${resultados.length}/${itens.length} linhas, ${Math.round((Date.now() - inicio) / 60000)} min`, 'cmd'); }
   }
 
-  fs.writeFileSync(`${saida}.json`, JSON.stringify(resultados, null, 2));
-  const XLSX = require('xlsx');
-  const wb = XLSX.utils.book_new();
-  for (const a of R.montarAbasXlsx(resultados)) if (a.linhas.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([a.colunas, ...a.linhas]), a.aba);
-  XLSX.writeFile(wb, `${saida}.xlsx`);
-  log(`\n${R.textoResumo(resultados)}. Gravei ${saida}.json e ${saida}.xlsx`, 'success');
+  gravarXlsx(resultados);
+  log(`\nFIM: ${R.textoResumo(resultados)}, em ${Math.round((Date.now() - inicio) / 60000)} min. Gravei ${saida}.json e ${saida}.xlsx`, 'success');
   app.exit(0);
 }).catch((e) => { console.error(e); app.exit(1); });
