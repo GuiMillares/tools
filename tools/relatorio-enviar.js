@@ -85,25 +85,37 @@ app.whenReady().then(async () => {
     app.exit(0); return;
   }
 
-  // Anexo grande: rascunho, sessão de upload em pedaços, envio.
-  const d = await pedir('POST', 'https://graph.microsoft.com/v1.0/me/messages', { headers: auth, body: mensagem });
-  if (d.status !== 201) { console.error(`rascunho: ${d.status} ${JSON.stringify(d.body).slice(0, 300)}`); app.exit(1); return; }
-  const id = d.body.id;
-  const s = await pedir('POST', `https://graph.microsoft.com/v1.0/me/messages/${id}/attachments/createUploadSession`, { headers: auth, body: { AttachmentItem: { attachmentType: 'file', name: nomeArquivo, size: bytes.length } } });
-  if (s.status !== 201 || !s.body.uploadUrl) { console.error(`upload session: ${s.status} ${JSON.stringify(s.body).slice(0, 300)}`); app.exit(1); return; }
-  const PEDACO = 3 * 1024 * 1024;
+  // Anexo grande: a sessão do Hub tem Mail.Send e Files.ReadWrite, não
+  // Mail.ReadWrite (rascunho com anexo por sessão de upload dá 403). Então o
+  // arquivo sobe para o OneDrive do usuário (sessão de upload em pedaços de
+  // 320 KiB × 10), ganha um link de compartilhamento e o e-mail leva o link.
+  const caminhoDrive = `/Hub/${nomeArquivo}`;
+  const s = await pedir('POST', `https://graph.microsoft.com/v1.0/me/drive/root:${encodeURI(caminhoDrive)}:/createUploadSession`, { headers: auth, body: { item: { '@microsoft.graph.conflictBehavior': 'replace', name: nomeArquivo } } });
+  if (s.status !== 200 || !s.body.uploadUrl) { console.error(`upload session (OneDrive): ${s.status} ${JSON.stringify(s.body).slice(0, 300)}`); app.exit(1); return; }
+  const PEDACO = 327680 * 10;
+  let item = null;
   for (let ini = 0; ini < bytes.length; ini += PEDACO) {
     const fim = Math.min(ini + PEDACO, bytes.length);
     const parte = bytes.subarray(ini, fim);
     const u = new URL(s.body.uploadUrl);
     const r = await new Promise((resolve, reject) => {
-      const req = https.request({ hostname: u.hostname, path: u.pathname + u.search, method: 'PUT', headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': parte.length, 'Content-Range': `bytes ${ini}-${fim - 1}/${bytes.length}` } }, (res) => { let t = ''; res.on('data', (c) => { t += c; }); res.on('end', () => resolve({ status: res.statusCode, text: t })); });
+      const req = https.request({ hostname: u.hostname, path: u.pathname + u.search, method: 'PUT', headers: { 'Content-Length': parte.length, 'Content-Range': `bytes ${ini}-${fim - 1}/${bytes.length}` } }, (res) => { let t = ''; res.on('data', (c) => { t += c; }); res.on('end', () => resolve({ status: res.statusCode, text: t })); });
       req.on('error', reject); req.write(parte); req.end();
     });
     if (![200, 201, 202].includes(r.status)) { console.error(`upload ${ini}-${fim}: ${r.status} ${r.text.slice(0, 200)}`); app.exit(1); return; }
+    if (r.status === 200 || r.status === 201) { try { item = JSON.parse(r.text); } catch (e) { item = null; } }
   }
-  const env = await pedir('POST', `https://graph.microsoft.com/v1.0/me/messages/${id}/send`, { headers: auth, raw: '' });
-  if (env.status !== 202) { console.error(`send: ${env.status} ${JSON.stringify(env.body).slice(0, 300)}`); app.exit(1); return; }
-  console.log(`Enviado para ${paraLista.join(", ")} (${nomeArquivo}, ${Math.round(bytes.length / 1024)} KB, por sessão de upload).`);
+  if (!item || !item.id) { console.error('o OneDrive não devolveu o item no fim do upload.'); app.exit(1); return; }
+  let link = '';
+  for (const scope of ['anonymous', 'organization']) {
+    const l = await pedir('POST', `https://graph.microsoft.com/v1.0/me/drive/items/${item.id}/createLink`, { headers: auth, body: { type: 'view', scope } });
+    if ((l.status === 200 || l.status === 201) && l.body.link && l.body.link.webUrl) { link = l.body.link.webUrl; console.log(`Link (${scope}): ${link}`); break; }
+    console.log(`createLink ${scope}: ${l.status} ${JSON.stringify(l.body).slice(0, 160)}`);
+  }
+  if (!link) { console.error('não consegui criar o link de compartilhamento.'); app.exit(1); return; }
+  mensagem.body.content = `${texto}\n\nA planilha (${Math.round(bytes.length / 1024 / 1024 * 10) / 10} MB, acima do limite de anexo) está no OneDrive: ${link}`;
+  const r2 = await pedir('POST', 'https://graph.microsoft.com/v1.0/me/sendMail', { headers: auth, body: { message: mensagem, saveToSentItems: true } });
+  if (r2.status !== 202) { console.error(`sendMail respondeu ${r2.status}: ${JSON.stringify(r2.body).slice(0, 300)}`); app.exit(1); return; }
+  console.log(`Enviado para ${paraLista.join(', ')} com o link do OneDrive (${nomeArquivo}, ${Math.round(bytes.length / 1024)} KB).`);
   app.exit(0);
 }).catch((e) => { console.error(e); app.exit(1); });
