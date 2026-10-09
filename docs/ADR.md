@@ -6671,6 +6671,165 @@ clientes" deixou de existir. `test-appsheet` cobre os casos reais acima
 
 ---
 
+## ADR-148 — Planilha do Relatório: as 19 colunas do painel preenchidas pelo Salesforce, pelo site e pelo Google
+
+**Status:** aceita
+
+**Contexto.** Pedido de 09/10/2026: preencher a planilha "Domínios e
+Analytics" (aba Busca com 985 contratos da Busca Cliente, aba MPI com 216 da
+MPI Solutions) até o fim do mês. As colunas são as do `config` do Relatório
+do painel idealplus (as mesmas que o Conferir vínculos lê num MPI+, ADR-144):
+`ga_account_key` só o número (`389582297`), `ga_property_id` com prefixo
+(`properties/536412612`), `gsc_site_url` sem barra final e as conexões como
+e-mail. Os fixos (bu_nome, usuario_responsavel_id, contract_type) já vêm;
+o resto é Salesforce (nome fantasia, 1º contato, contrato, pacote, valor), o
+site (ID do cliente, tipo, palavras) e o Google (GA4, Search Console, qual
+login enxerga cada um). Visto nos sites reais e no Salesforce:
+
+- o site Busca One expõe na barra do /doutor os campos ocultos `idProjeto`
+  (o ID do cliente, 6452 no 3rsustentavel.com.br, o mesmo que a extensão do
+  Busca mostra e a 1ª coluna de `/clientes?busca=` no painel), `tipoProjeto`
+  ("Busca One (BuscaMax 3.0)" / "Busca One Híbrido (BuscaMax 3.0)") e
+  `urlProjeto`; os sites de template mais antigo (3rinformatica, fibernetmt,
+  crffisioterapia, aluguelnotebook) não têm a barra;
+- na Busca One, **"categorias" são as páginas de palavra**: no One elas
+  ficam na raiz (`/deck-madeira-plastica`, breadcrumb "Home > Categorias >
+  …", imagens em `/imagens/categorias/`) e `/categorias` lista todas (164 no
+  3rsustentavel, pacote 150); no híbrido há poucas categorias (5 a 37) e
+  as **palavras-chave** são páginas da raiz embaixo de cada uma, com páginas
+  de cidade em `/categoria/palavra/palavra-cidade`. Nenhuma fonte pública
+  sozinha é completa: o menu `data-mpi` com `ul.sub-menu` pula uma palavra
+  por categoria (jrplasticos: sitemap 221, menu 187), os cartões da página
+  de categoria param em 11, o sitemap só tem as palavras com cidades (e o do
+  fibernetmt é vazio), e `/categorias` às vezes não lista categorias que o
+  sitemap cita (3rinformatica: outsourcing-de-impressao, conserto-de-notebook);
+- a planilha de fluxo de publicação tem o Tipo: em 07/10 eram 709 "Busca
+  One", 137 "Busca One Hibrido" e 206 "MPI+";
+- no Salesforce os campos, achados pelo rótulo (ADR-111): Account `CNPJ__c`
+  e `FantasyName__c`; Contract `Project__c`, `Site__c`,
+  `ContractedPackage__c` e `InstallmentValue__c` ("Valor da Parcela Mensal
+  (Novo)"). O `ContractNumber` tem 8 dígitos com zero à esquerda; a aba MPI
+  traz 7. O Site do contrato pode ser só o domínio raiz (3rinformatica.com.br)
+  enquanto o Busca One mora num subdomínio citado nas tarefas
+  (informatica.3rinformatica.com.br);
+- a home muitas vezes só tem o `GTM-…`: o `G-…` está dentro do container.
+
+**Decisão.**
+
+1. **Ferramenta "Planilha do Relatório"** (`relatorio`), só leitura. Lê a
+   planilha (todas as abas, `planilha:lerAbas`), fica com Busca e MPI, e
+   roda uma linha por vez com a mesma máquina do Conferir vínculos: salva em
+   arquivo a cada linha (`relatorio-planilha.json`), "Continuar" retoma,
+   nunca para por uma linha (ADR-144). Três módulos: `lib/relatorio.js`
+   (puro: planilha, HTML, regra das palavras, saída), `lib/relatorio-rodada.js`
+   (a rodada de uma linha, com as fontes injetadas; roda no renderer e no
+   script de amostra) e `lib/relatorio-fontes.js` (Salesforce, site,
+   geral.php e Google, com os clientes de baixo nível injetados; o
+   `main.js` monta com as sessões do Hub, `tools/relatorio-amostra.js` monta
+   as mesmas a partir dos arquivos do userData sob o Electron).
+2. **Salesforce**, nesta escada: o contrato pelo número (MPI, com 8 dígitos),
+   a conta pelo CNPJ (formatado ou só dígitos; várias, a da razão social),
+   pela razão social (igual, depois o começo sem sufixo societário; várias, a
+   que tem contrato ativo), pelo domínio (ADR-117). O 1º contato é o mais
+   antigo com e-mail (só o primeiro nome vai para a planilha). O contrato é
+   o da planilha (MPI) ou o ativo da empresa da aba; com vários ativos, o
+   que tem Site, senão o mais recente, avisando; sem ativo, o mais recente,
+   avisando. Os domínios citados nos assuntos dos casos e tarefas da conta
+   saem junto, para a escada do site.
+3. **O site**: candidatos na ordem domínio da linha, Site do contrato,
+   domínios citados que são subdomínio/raiz dele, Website da conta; vale o
+   primeiro **com cara de Busca One** (campos ocultos, links `data-mpi`,
+   cartões em `/categorias`, pares no sitemap ou menu de categorias), senão
+   o primeiro que responde, com observação. A página vem inteira (até 4 MB,
+   `baixar` do lib): os campos ocultos e o menu ficam no fim.
+4. **Palavras = a união das fontes**, sem repetir slug: menu (categoria →
+   `ul.sub-menu`), cartões de `/categorias`, cartões de cada página de
+   categoria (só quando há até 40 categorias: muitas é One), pares
+   `categoria/palavra/cidade` do sitemap (e dos filhos de um índice, até 40)
+   cuja categoria é conhecida, e os links `data-mpi` como categorias quando
+   não são palavra. O título é o do cartão ou do menu, como o site escreve;
+   quem só está no sitemap recebe o título pelo slug e depois o `<h1
+   class="bread__title">` da própria página (até 40 por site). A regra do
+   pedido: **One = as categorias; Híbrido = categorias e depois as palavras**,
+   separadas por `|` sem espaço, sem repetir (sem acento e caixa para
+   comparar). Categorias que só o sitemap cita ficam fora e vão para o
+   diagnóstico.
+5. **O tipo**: o campo oculto `tipoProjeto` manda; senão o Tipo da planilha
+   de fluxo (lida uma vez por rodada, `planilha:listar`); senão a estrutura
+   (palavras embaixo de categorias é híbrido). **O ID**: `idProjeto` do
+   site; senão `$idProjetoBusca` do geral.php (ou client.inc.php) no
+   Bitbucket, pelo slug do domínio e do registrável, descartando o 39 fixo
+   da MPI Solutions (ADR-034); senão a busca no painel (ADR-098, o
+   `cliente` do contrato achado). O arquivo é lido **direto** em
+   `inc/geral.php`, `geral.php`, `inc/client.inc.php` e `client.inc.php`:
+   a listagem do repositório (`acharArquivos`, 1000 entradas) estoura antes
+   de chegar ao `inc/`, porque a raiz de um Busca One tem uma página `.php`
+   por palavra e por cidade (alpharemocoes: `$idProjetoBusca = '6105'` em
+   `inc/geral.php`; jrplasticos: 4675, igual ao campo oculto).
+   **Linhas da aba MPI que são MPI+**: a amostra mostrou que os contratos
+   recentes da aba MPI (2041343, 2040710) são sites do painel idealplus, não
+   Busca One — a propriedade do GA4 mora na conta "BUSCA CLIENTE - MPI+". Um
+   site sem cara de Busca One cuja conta do GA4 é a da MPI+ sai com tipo
+   MPI+ (origem: a conta do GA4), o login padrão da MPI+ (bcrelatoriotags)
+   e a observação de que ID, tipo e palavras não vêm daqui; GA4, contato,
+   contrato e valor saem normalmente.
+6. **Google.** O `G-…` do HTML; senão o que a **versão publicada** do
+   container GTM dispara (`versions.live`: tag `googtag`/`gaawc`, variável
+   constante resolvida; a lista de containers é lida uma vez por rodada).
+   A propriedade pelo `measurementId` no cache de data streams (ADR-131), e
+   não estando, pela varredura das contas mais novas para as mais antigas,
+   parando ao achar; sem G-, pelo domínio no data stream. O cache passa a
+   guardar `accountName` (`accounts/…`), que vira `ga_account_key`. **O login
+   do GA4**: os `accessBindings` da conta (só a v1alpha da Admin API os tem;
+   escopo `analytics.manage.users.readonly` entra na service account; nas
+   contas em que ela não administra, a sessão principal), filtrados pelos
+   logins conhecidos (as três marcas e os logins de relatório), senão as
+   sessões conectadas que veem a conta, senão o padrão da marca **dito como
+   não conferido**. **O Search Console**: `sites.list` de cada login
+   conectado (uma vez por rodada; a URL como está lá, sem a barra final;
+   prefere o padrão da marca e o proprietário), e como reserva a lista da
+   service account com o login padrão, não conferido.
+7. **Logins de relatório** em Configurações → Sessão do Google: um e-mail
+   por linha em `contasRelatorio` (google-config.json), cada um num slot
+   OAuth `rel-N` só leitura (`analytics.readonly`, `webmasters.readonly`,
+   e-mail), conectado e conferido como as marcas (ADR-049).
+8. **Saída**: `.xlsx` com Busca e MPI nas 19 colunas (o nº do contrato da
+   aba MPI fica como veio), Diagnóstico (situação, pendências, domínio,
+   tipo e origem, como achou a conta e o contrato, origem do ID, tags, como
+   achou GA4 e Search Console, contagens, pacote × achado, observações) e
+   Pendências. `valor_mensal` sai `R$2034,24` (pedido do dia).
+
+**Consequências.** Verificado em 09/10/2026 pelo script de amostra, com as
+sessões reais: 3rsustentavel.com.br (One) saiu como nos prints do pedido
+(contrato 02007819, Sergio, pacote 150, R$2034,24, ID 6452, 164 palavras,
+GA4 `properties/471514254` na conta BC 1, login bcrelatorios2@gmail.com pelos
+acessos da conta); jrplasticos (híbrido, 18 categorias + 205 palavras, ID
+4675, G- pelo container), informatica.3rinformatica (híbrido sem barra, 5 +
+59, GA4 pelo container) e internet.fibernetmt (híbrido, 7 + 77, GA4 pelo
+domínio); e pela planilha: L.C DA SILVA REMOCOES (Busca, por CNPJ →
+alpharemocoes.com.br, ID 6105 pelo inc/geral.php, GA4 na BC 1 com login
+bcrelatorios2 pelos acessos da conta, nome fantasia ALPHA REMOCOES), TOSETTI
+& TOSETTI (por CNPJ, ID 2622 pelo geral.php), uma conta só com contrato
+desativado (avisada) e as duas primeiras linhas MPI, que são MPI+. Custos:
+2 a 60 requisições por site (categorias, sitemaps e títulos), 3 a 8 SOQL
+por linha, e a varredura dos data streams só na
+primeira vez que uma conta aparece (260 e 52 propriedades lidas nos dois
+primeiros sites; o cache serve as próximas). O que a amostra mostrou que
+depende da pessoa: as três sessões das marcas estavam vencidas
+(`invalid_grant`: o app OAuth está em modo Teste, o refresh token dura 7
+dias, ADR-099), então o Search Console saiu vazio e o login do GA4 caiu no
+padrão da marca nas contas em que a service account não administra
+(fibernetmt, 3rinformatica); reconectar as marcas e os logins de relatório
+antes da rodada inteira resolve, e publicar o app OAuth acabaria com o
+vencimento semanal. Não conferido ao vivo: a busca no painel como reserva do
+ID (só a tela faz) e a leitura do Tipo pela planilha de fluxo (a amostra
+não tem Graph). Testes: `test-relatorio` (planilha, HTML real dos sites,
+sitemap, união das fontes, regra das palavras, saída, a rodada com fontes
+falsas e a escada de domínios). O `pacote_palavras` nem sempre é contagem de
+palavras (jrplasticos: 18000): a comparação "achei N de M" só sai até 2000.
+
+---
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30
@@ -6715,3 +6874,72 @@ clientes" deixou de existir. `test-appsheet` cobre os casos reais acima
   painel, seguiam vivos uma hora depois, embora o código devolva a janela com
   prazo de 3 min (`painelSoltarJanela`). Falta descobrir se são janelas que
   escaparam do cache ou processos que o Chromium mantém para o site.
+
+## ADR-146 — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
+
+**Status:** aceita (usa a ADR-138 e a ADR-143)
+
+**Contexto.** Em 08/10/2026 foi pedido um vídeo que apresenta o Hub a quem
+não é técnico, com um número central: o antes e depois, no Salesforce, das
+tarefas de publicação MPI+ do usuário, desde que o Hub passou a publicar
+MPI+. Condições: só leitura; usar a conexão que o Hub já tem
+(`lib/salesforce.js`, `lib/metricas.js`); "concluída" pelo critério dos
+indicadores da tela inicial (ADR-143); períodos equivalentes antes e depois,
+definidos **antes** de olhar o resultado; tarefas criadas por mês como
+controle de demanda; se não houver melhora, parar e avisar. O token do
+Salesforce fica cifrado pelo `safeStorage` (como as credenciais da ADR-004) e só o Hub em execução
+consegue usá-lo, então a consulta precisa ser um comando do próprio Hub.
+
+**Decisão.**
+
+- Novo comando `salesforce:comparativoMpiPlus({ corte, serieDesde,
+  historicoDesde })` (`main.js`, exposto como
+  `window.api.salesforceComparativoMpiPlus`). Faz **uma consulta SOQL de
+  leitura** (`Task` com `Subject LIKE '%ublica%'` desde `historicoDesde`,
+  padrão 01/09/2025, qualquer dono, até 20.000 linhas; cai para
+  `LastModifiedDate` se `CompletedDateTime` não existir na org) e **não
+  altera, comenta nem fecha nada**. Grava o resultado em
+  `docs/metricas/comparativo-mpiplus-<corte>.json`.
+- A conta fica em `lib/comparativo.js`, puro e testado
+  (`tools/test-comparativo.js`):
+  - **concluída** = fechada com status Concluído (cancelada não conta), pela
+    `CompletedDateTime` (ADR-143); **SLA** = dias úteis da criação à
+    conclusão pela fórmula do relatório (`metricas.diasUteisEntre`);
+  - **publicação MPI+** = o critério da triagem da fila
+    (`triagem.triarPublicacao`): assunto de publicação com MPI+ ou
+    temporário `*.mpitemporario.com.br` no comentário. Publicação sem marca
+    de projeto é contada à parte (`publicacoesSemMarca`), para a comparação
+    dizer quando o marcador faltou no histórico, em vez de inflar um lado;
+  - **períodos de mesma duração**: o "depois" vai do corte (00:00) até
+    agora; o "antes" tem exatamente a mesma duração, terminando na véspera do
+    corte. A duração é fracionária e igual dos dois lados; "por mês" é por
+    30,44 dias. A janela é definida pelo corte, não escolhida pelo número que
+    dá;
+  - saída: concluídas (minhas e da fila toda), criadas (fila toda), por mês,
+    SLA média, mediana e n, variação em %, série por mês desde um ano antes
+    do corte, e linhas cruas só com id, flags e datas (sem cliente nem
+    assunto) para conferir a conta fora do Hub.
+- O dia de corte é informado por quem roda, não adivinhado: a evidência
+  (primeiro instalador em 15/09/2026, primeiro commit em 22/09/2026 já com a
+  ADR-058 e a ADR-090) aponta para 22/09/2026, e a pergunta foi feita.
+
+**Ajustes depois do primeiro uso (08/10/2026).**
+
+- O corte `'2026-09-22'` virou 21/09: `new Date('AAAA-MM-DD')` é meia-noite
+  UTC, que em Brasília é a véspera às 21h. Agora "AAAA-MM-DD" é dia local
+  (`data()`), com teste que não depende do fuso da máquina. A primeira
+  medição foi refeita a partir das linhas cruas do mesmo JSON com o corte
+  certo; as linhas reproduzem exatamente os agregados gravados quando se usa
+  o corte deslocado, o que confirma a conta dos dois lados.
+- O Hub instalado roda de dentro do `app.asar`, que é só leitura, então
+  gravar em `docs/metricas` do `__dirname` falhava e o resultado ficava só no
+  retorno. Agora tenta, nesta ordem, a pasta pedida em `salvarEm`, o
+  `docs/metricas` do código e `userData/metricas`, e diz onde gravou.
+
+**Consequências.** O número do vídeo é reproduzível: mesmo JSON, mesma conta,
+e qualquer um refaz a média e o % a partir das linhas cruas. O "depois" é
+curto (o Hub publica MPI+ há poucas semanas) e o vídeo diz isso em vez de
+esconder. Uma rodada em massa (23/09, assunto "Publicação V1 -> V2") não entra
+no critério (`RE_PUBLICACAO` exige "Publicação (Troca de DNS)") e fica
+fora da conta dos dois lados. O comando não serve para alterar nada e
+não tem botão na interface: roda pelo console, como ferramenta de medição.

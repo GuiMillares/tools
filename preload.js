@@ -122,6 +122,16 @@ contextBridge.exposeInMainWorld('api', {
   salvarVinculos: (estado) => ipcRenderer.invoke('vinculos:salvar', estado),
   lerVinculos: () => ipcRenderer.invoke('vinculos:ler'),
   apagarVinculos: () => ipcRenderer.invoke('vinculos:apagar'),
+  // Planilha do Relatório (ADR-148): as fontes de cada dado e a rodada salva em arquivo.
+  lerPlanilhaAbas: (payload) => ipcRenderer.invoke('planilha:lerAbas', payload),
+  relatorioIniciar: () => ipcRenderer.invoke('relatorio:iniciar'),
+  relatorioSalesforce: (payload) => ipcRenderer.invoke('relatorio:salesforce', payload),
+  relatorioSite: (payload) => ipcRenderer.invoke('relatorio:site', payload),
+  relatorioGeralPhp: (payload) => ipcRenderer.invoke('relatorio:geralPhp', payload),
+  relatorioGoogle: (payload) => ipcRenderer.invoke('relatorio:google', payload),
+  salvarRelatorio: (estado) => ipcRenderer.invoke('relatorio:salvar', estado),
+  lerRelatorio: () => ipcRenderer.invoke('relatorio:ler'),
+  apagarRelatorio: () => ipcRenderer.invoke('relatorio:apagar'),
   prepareSearchConsole: (payload) => ipcRenderer.invoke('searchconsole:prepare', payload),
   listGtmBrandAccounts: (payload) => ipcRenderer.invoke('tagmanager:listBrandAccounts', payload),
   grantGtmAccessBulk: (payload) => ipcRenderer.invoke('tagmanager:grantAccessBulk', payload),
@@ -152,6 +162,8 @@ contextBridge.exposeInMainWorld('api', {
   salesforceTarefas: () => ipcRenderer.invoke('salesforce:tarefas'),
   // Indicadores da tela inicial (ADR-138): tarefas do último ano, para SLA, tarefas e publicações.
   salesforceMetricas: (payload) => ipcRenderer.invoke('salesforce:metricas', payload || {}),
+  // Comparação antes/depois do Hub nas publicações MPI+ (ADR-146), só leitura; grava docs/metricas/.
+  salesforceComparativoMpiPlus: (payload) => ipcRenderer.invoke('salesforce:comparativoMpiPlus', payload || {}),
   salesforceMoverTarefa: (payload) => ipcRenderer.invoke('salesforce:moverTarefa', payload),
   statusCredenciais: () => ipcRenderer.invoke('sistema:credenciais'),
   abrirLink: (payload) => ipcRenderer.invoke('sistema:abrirLink', payload),

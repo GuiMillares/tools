@@ -581,6 +581,48 @@ Uma planilha **só com domínios** (ou colados) vira uma auditoria por domínio
    Cliente. **Todos** os domínios da planilha são conferidos, de qualquer
    empresa do grupo; a coluna cliente, se vier, só vai junto.
 
+### 4.14 Planilha do Relatório — `google`
+
+A planilha "Domínios e Analytics" (abas **Busca** = contratos da Busca
+Cliente, **MPI** = contratos da MPI Solutions; as 19 colunas do `config` do
+Relatório do painel idealplus) preenchida pelo Hub, linha a linha, só leitura
+(ADR-148):
+
+1. **Entrada.** A planilha (.ods/.xlsx) com os fixos preenchidos (bu_nome,
+   usuario_responsavel_id, contract_type), CNPJ e razão social (Busca) ou
+   razão social e nº do contrato (MPI). MPI+ não entra.
+2. **Salesforce.** A conta pelo nº do contrato (MPI), pelo CNPJ (Busca),
+   senão pela razão social, senão pelo domínio; o primeiro contato (só o
+   primeiro nome, e-mail e telefone); na aba Contratos, o contrato ativo da
+   empresa da aba: número, Site, Pacote Contratado (`pacote_palavras`) e
+   Valor da Parcela Mensal (`valor_mensal`, como `R$2034,24`). Nome fantasia
+   quando a conta tem.
+3. **O site.** O Busca One do contrato (se o Site é só o domínio raiz, o Hub
+   tenta os domínios citados nos casos e tarefas da conta até achar um com
+   cara de Busca One): o ID do cliente (`external_id`) pelo campo oculto
+   `idProjeto` do site, senão pelo `$idProjetoBusca` do geral.php no
+   Bitbucket, senão pela busca no painel; o tipo (**Busca One** ou
+   **Híbrido**) pelo campo oculto `tipoProjeto`, senão pela planilha de fluxo
+   de publicação, senão pela estrutura.
+4. **Palavras.** One = as categorias (a página `/categorias`); Híbrido = as
+   categorias mais as palavras-chave de cada uma (menu, páginas de categoria
+   e sitemap, juntados sem repetir; quem só está no sitemap ganha o título da
+   própria página). Separadas por `|`, sem espaço.
+5. **Google.** A propriedade do GA4 pela tag do site (o `G-…`, ou o que o
+   container GTM publicado dispara), achada nos data streams (cache da
+   ADR-131); `ga_account_key` e `ga_property_id` nos formatos do painel; o
+   login que enxerga a conta (pelos acessos da conta, senão pelas sessões
+   conectadas, senão o padrão da marca, dito como suposição); o site no
+   Search Console dos logins conectados em Configurações (as três marcas e
+   os **logins de relatório**, um e-mail por linha, conectados um a um).
+6. **Saída.** `.xlsx` com **Busca** e **MPI** nas mesmas 19 colunas, prontas
+   para importar, **Diagnóstico** (como cada dado foi achado) e
+   **Pendências** (o que faltou e por quê). A rodada fica salva em arquivo a
+   cada linha e nunca para por uma linha que não achou.
+
+`tools/relatorio-amostra.js` roda a mesma rodada fora da tela (Electron, com
+as sessões do Hub) para conferir alguns clientes antes da planilha inteira.
+
 ## 5. Fora de escopo
 
 Explicitamente **não** é objetivo do Hub, e um pedido nessa direção deve virar

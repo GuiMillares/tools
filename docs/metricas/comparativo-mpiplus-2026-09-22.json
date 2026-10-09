@@ -1,0 +1,4925 @@
+{
+  "ok": true,
+  "log": [
+    {
+      "message": "SOQL tarefas de publicação (qualquer dono) desde 2025-09-01 — só leitura",
+      "type": "cmd"
+    },
+    {
+      "message": "5156 tarefa(s) de publicação lidas.",
+      "type": "success"
+    },
+    {
+      "message": "Não deu para gravar em C:\\Users\\guilherme.millares\\AppData\\Local\\Programs\\pr-merge-tool\\resources\\app.asar\\docs\\metricas (ENOTDIR, not a directory).",
+      "type": "warn"
+    },
+    {
+      "message": "Resultado gravado em C:\\Users\\guilherme.millares\\AppData\\Roaming\\pr-merge-tool\\metricas\\comparativo-mpiplus-2026-09-22.json",
+      "type": "success"
+    }
+  ],
+  "geradoEm": "2026-10-08T14:05:10.883Z",
+  "eu": {
+    "id": "005bL00000LDdViQAL",
+    "nome": "Guilherme Millares"
+  },
+  "corte": "21/09/2026",
+  "historicoDesde": "2025-09-01",
+  "comConclusao": true,
+  "filtros": {
+    "soql": "SELECT Id, Subject, Description, IsClosed, Status, CreatedDate, LastModifiedDate, CompletedDateTime, OwnerId, Owner.Name, Owner.Type, CreatedById FROM Task WHERE Subject LIKE '%ublica%' AND CreatedDate >= 2025-09-01T00:00:00Z ORDER BY CreatedDate ASC",
+    "concluida": "IsClosed = true AND Status <> Cancelada, pela CompletedDateTime",
+    "mpiplus": "assunto 'Publicação (Troca de DNS)…' e (MPI+ no assunto ou *.mpitemporario.com.br no comentário, exceto producao.)",
+    "sla": "dias úteis criação→conclusão, fórmula do relatório \"Done -- Deploy - BC / MPI\" (ADR-143)",
+    "minhas": "OwnerId = 005bL00000LDdViQAL"
+  },
+  "agora": "08/10/2026",
+  "diasPorPeriodo": 17.461931157407406,
+  "mesesPorPeriodo": 0.5736979435698532,
+  "periodos": {
+    "antes": "03/09/2026 a 20/09/2026",
+    "depois": "21/09/2026 a 08/10/2026"
+  },
+  "antes": {
+    "dias": 17,
+    "mpiplus": {
+      "concluidasMinhas": 21,
+      "concluidasTodas": 21,
+      "criadasTodas": 21,
+      "porMesMinhas": 36.60462833338194,
+      "porMesTodas": 36.60462833338194,
+      "criadasPorMes": 36.60462833338194,
+      "slaMediaMinhas": 1.9523809523809523,
+      "slaMedianaMinhas": 2,
+      "slaNMinhas": 21,
+      "slaMediaTodas": 1.9523809523809523,
+      "slaMedianaTodas": 2,
+      "slaNTodas": 21
+    },
+    "publicacoesQualquerMarca": {
+      "concluidasMinhas": 27,
+      "concluidasTodas": 27
+    },
+    "publicacoesSemMarca": 1
+  },
+  "depois": {
+    "dias": 17,
+    "mpiplus": {
+      "concluidasMinhas": 32,
+      "concluidasTodas": 32,
+      "criadasTodas": 34,
+      "porMesMinhas": 55.77848126991534,
+      "porMesTodas": 55.77848126991534,
+      "criadasPorMes": 59.26463634928505,
+      "slaMediaMinhas": 0.53125,
+      "slaMedianaMinhas": 1,
+      "slaNMinhas": 32,
+      "slaMediaTodas": 0.53125,
+      "slaMedianaTodas": 1,
+      "slaNTodas": 32
+    },
+    "publicacoesQualquerMarca": {
+      "concluidasMinhas": 42,
+      "concluidasTodas": 42
+    },
+    "publicacoesSemMarca": 6
+  },
+  "melhora": {
+    "publicacoesPorMesMinhas": 52.380952380952394,
+    "publicacoesPorMesTodas": 52.380952380952394,
+    "criadasPorMes": 61.90476190476192,
+    "slaMinhas": 72.78963414634147,
+    "slaTodas": 72.78963414634147
+  },
+  "serie": [
+    {
+      "mes": "2025-09",
+      "concluidasMpiMinhas": 0,
+      "concluidasMpiTodas": 0,
+      "criadasMpiTodas": 0,
+      "concluidasPubTodas": 0,
+      "semMarca": 0,
+      "slaMediaMinhas": null,
+      "slaN": 0
+    },
+    {
+      "mes": "2025-10",
+      "concluidasMpiMinhas": 0,
+      "concluidasMpiTodas": 0,
+      "criadasMpiTodas": 0,
+      "concluidasPubTodas": 3,
+      "semMarca": 3,
+      "slaMediaMinhas": null,
+      "slaN": 0
+    },
+    {
+      "mes": "2025-11",
+      "concluidasMpiMinhas": 0,
+      "concluidasMpiTodas": 0,
+      "criadasMpiTodas": 0,
+      "concluidasPubTodas": 42,
+      "semMarca": 34,
+      "slaMediaMinhas": null,
+      "slaN": 0
+    },
+    {
+      "mes": "2025-12",
+      "concluidasMpiMinhas": 0,
+      "concluidasMpiTodas": 0,
+      "criadasMpiTodas": 0,
+      "concluidasPubTodas": 31,
+      "semMarca": 18,
+      "slaMediaMinhas": null,
+      "slaN": 0
+    },
+    {
+      "mes": "2026-01",
+      "concluidasMpiMinhas": 0,
+      "concluidasMpiTodas": 0,
+      "criadasMpiTodas": 0,
+      "concluidasPubTodas": 40,
+      "semMarca": 25,
+      "slaMediaMinhas": null,
+      "slaN": 0
+    },
+    {
+      "mes": "2026-02",
+      "concluidasMpiMinhas": 0,
+      "concluidasMpiTodas": 0,
+      "criadasMpiTodas": 0,
+      "concluidasPubTodas": 25,
+      "semMarca": 17,
+      "slaMediaMinhas": null,
+      "slaN": 0
+    },
+    {
+      "mes": "2026-03",
+      "concluidasMpiMinhas": 0,
+      "concluidasMpiTodas": 0,
+      "criadasMpiTodas": 0,
+      "concluidasPubTodas": 36,
+      "semMarca": 29,
+      "slaMediaMinhas": null,
+      "slaN": 0
+    },
+    {
+      "mes": "2026-04",
+      "concluidasMpiMinhas": 1,
+      "concluidasMpiTodas": 1,
+      "criadasMpiTodas": 3,
+      "concluidasPubTodas": 38,
+      "semMarca": 24,
+      "slaMediaMinhas": 8,
+      "slaN": 1
+    },
+    {
+      "mes": "2026-05",
+      "concluidasMpiMinhas": 15,
+      "concluidasMpiTodas": 16,
+      "criadasMpiTodas": 15,
+      "concluidasPubTodas": 33,
+      "semMarca": 12,
+      "slaMediaMinhas": 1.6,
+      "slaN": 15
+    },
+    {
+      "mes": "2026-06",
+      "concluidasMpiMinhas": 24,
+      "concluidasMpiTodas": 24,
+      "criadasMpiTodas": 29,
+      "concluidasPubTodas": 53,
+      "semMarca": 17,
+      "slaMediaMinhas": 1.3333333333333333,
+      "slaN": 24
+    },
+    {
+      "mes": "2026-07",
+      "concluidasMpiMinhas": 33,
+      "concluidasMpiTodas": 34,
+      "criadasMpiTodas": 35,
+      "concluidasPubTodas": 48,
+      "semMarca": 8,
+      "slaMediaMinhas": 3.4242424242424243,
+      "slaN": 33
+    },
+    {
+      "mes": "2026-08",
+      "concluidasMpiMinhas": 42,
+      "concluidasMpiTodas": 42,
+      "criadasMpiTodas": 40,
+      "concluidasPubTodas": 64,
+      "semMarca": 18,
+      "slaMediaMinhas": 1.5714285714285714,
+      "slaN": 42
+    },
+    {
+      "mes": "2026-09",
+      "concluidasMpiMinhas": 46,
+      "concluidasMpiTodas": 46,
+      "criadasMpiTodas": 46,
+      "concluidasPubTodas": 62,
+      "semMarca": 7,
+      "slaMediaMinhas": 1.173913043478261,
+      "slaN": 46
+    },
+    {
+      "mes": "2026-10",
+      "concluidasMpiMinhas": 12,
+      "concluidasMpiTodas": 12,
+      "criadasMpiTodas": 14,
+      "concluidasPubTodas": 14,
+      "semMarca": 1,
+      "slaMediaMinhas": 0.6666666666666666,
+      "slaN": 12
+    }
+  ],
+  "totais": {
+    "tarefas": 5156,
+    "publicacoes": 520,
+    "mpiplus": 182,
+    "semMarca": 227
+  },
+  "linhas": [
+    {
+      "id": "00TbL00000IHpbqUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-10-03T13:02:02.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000JMp4UUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-10-13T14:18:45.000Z",
+      "concluida": "2025-10-15T14:53:48.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000JkMc7UAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-10-15T19:27:36.000Z",
+      "concluida": "2025-10-15T20:48:44.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000Jkm5AUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-10-15T20:04:57.000Z",
+      "concluida": "2025-11-10T18:56:28.000Z",
+      "sla": 18
+    },
+    {
+      "id": "00TbL00000KNZJMUA5",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-10-22T13:35:30.000Z",
+      "concluida": "2025-11-25T20:34:31.000Z",
+      "sla": 24
+    },
+    {
+      "id": "00TbL00000Kw5VOUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-10-27T20:58:20.000Z",
+      "concluida": "2025-11-21T18:24:30.000Z",
+      "sla": 19
+    },
+    {
+      "id": "00TbL00000L3mgoUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-10-28T19:02:28.000Z",
+      "concluida": "2025-10-29T18:43:20.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000LXO9HUAX",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-10-31T20:26:23.000Z",
+      "concluida": "2025-11-03T15:11:11.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000LxTjSUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-05T17:34:11.000Z",
+      "concluida": "2025-12-02T20:58:19.000Z",
+      "sla": 19
+    },
+    {
+      "id": "00TbL00000Lz6ULUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-05T20:18:48.000Z",
+      "concluida": "2025-12-02T18:06:43.000Z",
+      "sla": 19
+    },
+    {
+      "id": "00TbL00000LzNYOUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-05T20:39:11.000Z",
+      "concluida": "2025-11-21T18:30:41.000Z",
+      "sla": 12
+    },
+    {
+      "id": "00TbL00000M0ebyUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-05T20:52:26.000Z",
+      "concluida": "2025-12-03T17:05:40.000Z",
+      "sla": 20
+    },
+    {
+      "id": "00TbL00000M533sUAB",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-06T14:58:59.000Z",
+      "concluida": "2025-11-14T21:50:44.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000M57h0UAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-06T15:01:16.000Z",
+      "concluida": "2025-11-14T21:50:39.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000M7hYUUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-06T19:30:22.000Z",
+      "concluida": "2025-11-26T14:15:26.000Z",
+      "sla": 14
+    },
+    {
+      "id": "00TbL00000MEKKAUA5",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-07T17:37:29.000Z",
+      "concluida": "2025-11-14T21:48:57.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000MFGZKUA5",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-07T18:17:28.000Z",
+      "concluida": "2025-12-08T20:21:03.000Z",
+      "sla": 21
+    },
+    {
+      "id": "00TbL00000MMw5lUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-10T13:09:23.000Z",
+      "concluida": "2025-12-03T19:43:10.000Z",
+      "sla": 17
+    },
+    {
+      "id": "00TbL00000MNo2lUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-10T13:47:37.000Z",
+      "concluida": "2025-11-25T19:55:44.000Z",
+      "sla": 11
+    },
+    {
+      "id": "00TbL00000MgQ83UAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-12T18:38:08.000Z",
+      "concluida": "2025-12-05T13:28:20.000Z",
+      "sla": 17
+    },
+    {
+      "id": "00TbL00000MgKPCUA3",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-12T18:46:48.000Z",
+      "concluida": "2025-11-14T21:50:32.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000MuMkPUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-14T19:04:54.000Z",
+      "concluida": "2025-11-21T18:35:03.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000MucamUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-14T20:24:38.000Z",
+      "concluida": "2025-11-25T17:46:22.000Z",
+      "sla": 7
+    },
+    {
+      "id": "00TbL00000N05kKUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-17T14:05:20.000Z",
+      "concluida": "2025-11-21T12:50:57.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000N27jdUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-17T20:45:47.000Z",
+      "concluida": "2025-12-05T14:37:02.000Z",
+      "sla": 14
+    },
+    {
+      "id": "00TbL00000N45FNUAZ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-18T12:51:31.000Z",
+      "concluida": "2025-11-27T19:48:20.000Z",
+      "sla": 7
+    },
+    {
+      "id": "00TbL00000N6IYRUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:10:36.000Z",
+      "concluida": "2025-11-19T16:49:10.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N6NsxUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:12:22.000Z",
+      "concluida": "2025-11-19T16:50:05.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N6Fh4UAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:13:44.000Z",
+      "concluida": "2025-11-19T16:51:04.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N6KrwUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:15:08.000Z",
+      "concluida": "2025-11-19T16:56:56.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N5mTuUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:17:34.000Z",
+      "concluida": "2025-11-19T18:23:37.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N6H7jUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:19:52.000Z",
+      "concluida": "2025-11-19T18:24:48.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N68NnUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:24:38.000Z",
+      "concluida": "2025-11-19T18:26:28.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N6VYjUAN",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:25:34.000Z",
+      "concluida": "2025-11-19T19:18:27.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N69ofUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:27:14.000Z",
+      "concluida": "2025-11-19T19:21:41.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N6U6LUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:28:33.000Z",
+      "concluida": "2025-11-19T19:27:28.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N6RmtUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:30:11.000Z",
+      "concluida": "2025-11-19T22:11:30.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000N6WEcUAN",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:35:34.000Z",
+      "concluida": "2025-11-21T14:54:35.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N6ND6UAN",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:37:40.000Z",
+      "concluida": "2025-11-21T14:58:08.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N6gCEUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:39:14.000Z",
+      "concluida": "2025-11-21T15:07:22.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N6QpIUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:43:48.000Z",
+      "concluida": "2025-11-21T15:10:24.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N6YedUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:45:36.000Z",
+      "concluida": "2025-11-21T15:10:10.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N6YRhUAN",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:47:13.000Z",
+      "concluida": "2025-11-21T15:12:13.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N6TtiUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:51:44.000Z",
+      "concluida": "2025-11-21T15:13:51.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N6ctQUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:53:44.000Z",
+      "concluida": "2025-11-21T15:16:28.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N6VSKUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:55:14.000Z",
+      "concluida": "2025-11-21T15:17:09.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N6YukUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-18T20:57:20.000Z",
+      "concluida": "2025-11-21T15:18:07.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000N95OXUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-19T13:45:56.000Z",
+      "concluida": "2026-01-07T15:00:57.000Z",
+      "sla": 35
+    },
+    {
+      "id": "00TbL00000N8zXcUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-19T14:41:48.000Z",
+      "concluida": "2025-11-19T15:29:56.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000NAX3xUAH",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-19T18:50:05.000Z",
+      "concluida": "2025-11-27T19:49:49.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000NAlq3UAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-19T19:37:48.000Z",
+      "concluida": "2025-11-27T20:05:08.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000NFyevUAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-21T14:01:22.000Z",
+      "concluida": "2025-11-27T20:04:33.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000NOIJZUA5",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-24T13:33:43.000Z",
+      "concluida": "2025-11-28T18:56:18.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000NOctfUAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-24T14:52:34.000Z",
+      "concluida": "2025-11-27T19:52:37.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000NPzsjUAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-24T18:06:29.000Z",
+      "concluida": "2025-12-05T19:39:46.000Z",
+      "sla": 9
+    },
+    {
+      "id": "00TbL00000NUMcAUAX",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-25T13:20:27.000Z",
+      "concluida": "2025-12-09T15:05:25.000Z",
+      "sla": 10
+    },
+    {
+      "id": "00TbL00000NU5OeUAL",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2025-11-25T13:21:44.000Z",
+      "concluida": "2026-01-28T14:54:43.000Z",
+      "sla": 46
+    },
+    {
+      "id": "00TbL00000NU2nDUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-25T13:23:51.000Z",
+      "concluida": "2025-12-16T15:57:52.000Z",
+      "sla": 15
+    },
+    {
+      "id": "00TbL00000NXWS6UAP",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2025-11-25T20:26:43.000Z",
+      "concluida": "2026-01-15T15:44:42.000Z",
+      "sla": 37
+    },
+    {
+      "id": "00TbL00000Na6mmUAB",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-26T13:37:29.000Z",
+      "concluida": "2025-12-04T20:59:09.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000NaMb3UAF",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-26T13:43:24.000Z",
+      "concluida": "2025-12-03T14:52:13.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000NaPnZUAV",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-26T14:13:41.000Z",
+      "concluida": "2025-12-09T15:01:28.000Z",
+      "sla": 9
+    },
+    {
+      "id": "00TbL00000Nex95UAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-27T14:26:39.000Z",
+      "concluida": "2025-12-19T17:34:27.000Z",
+      "sla": 16
+    },
+    {
+      "id": "00TbL00000NezJ1UAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-27T14:42:31.000Z",
+      "concluida": "2026-01-13T13:40:36.000Z",
+      "sla": 33
+    },
+    {
+      "id": "00TbL00000NgGMfUAN",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-27T20:45:30.000Z",
+      "concluida": "2025-12-19T20:44:09.000Z",
+      "sla": 16
+    },
+    {
+      "id": "00TbL00000Ng693UAB",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-11-27T20:53:07.000Z",
+      "concluida": "2025-12-03T14:53:21.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000NiMhRUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-28T13:42:56.000Z",
+      "concluida": "2026-01-16T21:13:26.000Z",
+      "sla": 35
+    },
+    {
+      "id": "00TbL00000NiiT8UAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-28T13:58:18.000Z",
+      "concluida": "2026-01-13T13:06:47.000Z",
+      "sla": 32
+    },
+    {
+      "id": "00TbL00000Nic9JUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-28T14:02:08.000Z",
+      "concluida": "2025-12-12T14:49:04.000Z",
+      "sla": 10
+    },
+    {
+      "id": "00TbL00000NjCREUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-28T16:08:24.000Z",
+      "concluida": "2026-01-15T19:05:29.000Z",
+      "sla": 34
+    },
+    {
+      "id": "00TbL00000NjhByUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-11-28T19:21:52.000Z",
+      "concluida": "2025-12-11T19:34:13.000Z",
+      "sla": 9
+    },
+    {
+      "id": "00TbL00000NkCXZUA3",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2025-11-28T20:14:21.000Z",
+      "concluida": "2026-01-27T13:16:43.000Z",
+      "sla": 42
+    },
+    {
+      "id": "00TbL00000NkImVUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2025-11-28T20:16:38.000Z",
+      "concluida": "2026-01-27T15:03:58.000Z",
+      "sla": 42
+    },
+    {
+      "id": "00TbL00000NkIkuUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2025-11-28T20:20:48.000Z",
+      "concluida": "2026-01-16T18:41:14.000Z",
+      "sla": 35
+    },
+    {
+      "id": "00TbL00000NvG7eUAF",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-12-02T20:57:23.000Z",
+      "concluida": "2025-12-12T18:35:33.000Z",
+      "sla": 8
+    },
+    {
+      "id": "00TbL00000NyzeTUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-03T19:21:30.000Z",
+      "concluida": "2025-12-04T21:24:45.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000NzRZRUA3",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-12-03T21:54:41.000Z",
+      "concluida": "2025-12-16T14:04:33.000Z",
+      "sla": 9
+    },
+    {
+      "id": "00TbL00000O2YRBUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-04T18:05:22.000Z",
+      "concluida": "2025-12-19T18:53:00.000Z",
+      "sla": 11
+    },
+    {
+      "id": "00TbL00000O2x1OUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-12-04T19:24:44.000Z",
+      "concluida": "2025-12-04T21:24:17.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000O2s0JUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-04T20:35:19.000Z",
+      "concluida": "2026-01-08T16:27:40.000Z",
+      "sla": 25
+    },
+    {
+      "id": "00TbL00000OD4xyUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-08T18:48:22.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000OFWrmUAH",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-12-09T12:53:44.000Z",
+      "concluida": "2025-12-15T22:45:38.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000OKXlBUAX",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-10T14:06:46.000Z",
+      "concluida": "2026-01-05T16:20:34.000Z",
+      "sla": 18
+    },
+    {
+      "id": "00TbL00000OSEiDUAX",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-12-12T13:43:07.000Z",
+      "concluida": "2025-12-15T22:45:10.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000OSfvKUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2025-12-12T15:00:14.000Z",
+      "concluida": "2026-01-15T19:48:35.000Z",
+      "sla": 24
+    },
+    {
+      "id": "00TbL00000OTq0hUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-12T19:44:46.000Z",
+      "concluida": "2025-12-17T21:05:11.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000OTY7MUAX",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-12T19:46:10.000Z",
+      "concluida": "2025-12-18T17:08:26.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000ObOCDUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-15T21:08:49.000Z",
+      "concluida": "2025-12-19T19:39:18.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000OeIwaUAF",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-12-16T16:59:16.000Z",
+      "concluida": "2025-12-22T14:04:08.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000OetkkUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-16T18:42:15.000Z",
+      "concluida": "2025-12-22T14:05:34.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000OehrxUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-16T18:48:04.000Z",
+      "concluida": "2026-01-15T20:54:33.000Z",
+      "sla": 22
+    },
+    {
+      "id": "00TbL00000OerXrUAJ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2025-12-16T19:13:25.000Z",
+      "concluida": "2026-01-21T17:33:43.000Z",
+      "sla": 26
+    },
+    {
+      "id": "00TbL00000OjASDUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-17T19:13:15.000Z",
+      "concluida": "2026-01-08T19:21:42.000Z",
+      "sla": 16
+    },
+    {
+      "id": "00TbL00000OiyuWUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-12-17T21:34:13.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000OqfkVUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2025-12-19T19:15:23.000Z",
+      "concluida": "2025-12-22T14:07:52.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000OqqD0UAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2025-12-19T19:28:25.000Z",
+      "concluida": "2026-01-21T17:42:14.000Z",
+      "sla": 23
+    },
+    {
+      "id": "00TbL00000OrLQIUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2025-12-19T20:56:21.000Z",
+      "concluida": "2026-01-21T19:35:48.000Z",
+      "sla": 23
+    },
+    {
+      "id": "00TbL00000P0k01UAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2025-12-23T15:09:55.000Z",
+      "concluida": "2026-01-07T20:52:24.000Z",
+      "sla": 11
+    },
+    {
+      "id": "00TbL00000P7DngUAF",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2025-12-26T13:41:04.000Z",
+      "concluida": "2026-01-16T20:41:24.000Z",
+      "sla": 15
+    },
+    {
+      "id": "00TbL00000Pj5ddUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-01-09T14:46:25.000Z",
+      "concluida": "2026-01-19T20:16:53.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000Pq9CDUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-01-12T14:52:20.000Z",
+      "concluida": "2026-01-21T15:49:48.000Z",
+      "sla": 7
+    },
+    {
+      "id": "00TbL00000PpwH5UAJ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-12T15:07:24.000Z",
+      "concluida": "2026-01-21T21:29:08.000Z",
+      "sla": 7
+    },
+    {
+      "id": "00TbL00000Pyrb0UAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-01-14T16:36:59.000Z",
+      "concluida": "2026-01-14T18:03:07.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000PzOBzUAN",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-14T18:47:53.000Z",
+      "concluida": "2026-01-21T20:33:33.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000Q1IAhUAN",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-01-15T12:06:44.000Z",
+      "concluida": "2026-01-15T18:33:34.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000Q80iWUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-01-16T20:22:58.000Z",
+      "concluida": "2026-01-19T18:44:06.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Q7dcTUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-01-16T20:28:50.000Z",
+      "concluida": "2026-01-30T12:31:29.000Z",
+      "sla": 10
+    },
+    {
+      "id": "00TbL00000QIzcSUAT",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-20T17:30:44.000Z",
+      "concluida": "2026-01-22T18:17:10.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000QMe1rUAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-21T14:48:02.000Z",
+      "concluida": "2026-01-23T16:58:16.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000QNrt1UAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-21T19:22:51.000Z",
+      "concluida": "2026-02-11T21:42:22.000Z",
+      "sla": 15
+    },
+    {
+      "id": "00TbL00000QOM6wUAH",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-01-21T19:54:08.000Z",
+      "concluida": "2026-01-22T14:38:35.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000QSd7lUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-01-22T19:59:05.000Z",
+      "concluida": "2026-01-23T16:57:38.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000QSvfiUAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-22T20:14:19.000Z",
+      "concluida": "2026-01-27T19:13:25.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000QXOXhUAP",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-23T20:37:49.000Z",
+      "concluida": "2026-02-26T21:07:42.000Z",
+      "sla": 24
+    },
+    {
+      "id": "00TbL00000QdHdaUAF",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-26T14:50:44.000Z",
+      "concluida": "2026-01-27T18:30:10.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000QeqPeUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-01-26T19:40:07.000Z",
+      "concluida": "2026-03-06T19:34:19.000Z",
+      "sla": 29
+    },
+    {
+      "id": "00TbL00000QjC9fUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-01-27T17:59:29.000Z",
+      "concluida": "2026-01-30T21:44:28.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000QkSjuUAF",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-27T20:50:22.000Z",
+      "concluida": "2026-01-30T21:40:10.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000QlpzoUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-01-28T12:20:43.000Z",
+      "concluida": "2026-01-28T15:22:39.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000Qmh7XUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-28T15:15:24.000Z",
+      "concluida": "2026-01-30T21:39:16.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000QoESUUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-01-28T18:46:48.000Z",
+      "concluida": "2026-01-29T18:19:26.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Qp6pLUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-01-28T20:06:28.000Z",
+      "concluida": "2026-01-30T19:57:29.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000QsFGCUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-01-29T14:52:58.000Z",
+      "concluida": "2026-02-06T13:10:42.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000RCo6TUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-03T20:47:10.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000RKohKUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-05T12:57:11.000Z",
+      "concluida": "2026-02-18T20:04:41.000Z",
+      "sla": 9
+    },
+    {
+      "id": "00TbL00000RNMLaUAP",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-02-05T20:15:07.000Z",
+      "concluida": "2026-02-11T12:24:06.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000RPvJwUAL",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-02-06T13:34:52.000Z",
+      "concluida": "2026-03-03T20:28:11.000Z",
+      "sla": 17
+    },
+    {
+      "id": "00TbL00000RRPpKUAX",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-02-06T18:07:43.000Z",
+      "concluida": "2026-02-11T20:55:45.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000RRgv1UAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-06T18:57:59.000Z",
+      "concluida": "2026-02-11T21:22:12.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000Rae9HUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-02-09T19:41:06.000Z",
+      "concluida": "2026-02-20T22:36:10.000Z",
+      "sla": 9
+    },
+    {
+      "id": "00TbL00000RfggeUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-02-10T20:44:50.000Z",
+      "concluida": "2026-02-11T18:47:12.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000RjcsnUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-02-11T18:03:14.000Z",
+      "concluida": "2026-02-12T20:16:12.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Rja6WUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-11T18:32:04.000Z",
+      "concluida": "2026-02-11T18:39:05.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000Rjr4FUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-02-11T19:32:56.000Z",
+      "concluida": "2026-02-18T14:23:35.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000RrJOXUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-13T12:31:04.000Z",
+      "concluida": "2026-02-18T21:36:38.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000Rsi1cUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-13T18:33:57.000Z",
+      "concluida": "2026-02-16T13:12:59.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000RtdHYUAZ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-02-13T20:42:21.000Z",
+      "concluida": "2026-02-18T12:03:56.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000RzT7SUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-16T18:05:41.000Z",
+      "concluida": "2026-02-18T13:24:12.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000S8cL0UAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-02-19T15:42:15.000Z",
+      "concluida": "2026-02-19T18:10:11.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000S8hXmUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-19T17:29:56.000Z",
+      "concluida": "2026-02-27T14:59:57.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000S9HKrUAN",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-19T17:58:51.000Z",
+      "concluida": "2026-02-20T14:27:19.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000SDcntUAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-02-20T19:31:05.000Z",
+      "concluida": "2026-02-26T18:48:19.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000SDfTnUAL",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-20T19:35:45.000Z",
+      "concluida": "2026-02-26T17:53:39.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000SKgzLUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-02-23T15:22:02.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000SOvJjUAL",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-02-24T13:48:19.000Z",
+      "concluida": "2026-03-03T17:52:14.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000SPLhMUAX",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-24T15:23:10.000Z",
+      "concluida": "2026-02-24T17:36:05.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000SWK3WUAX",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-02-25T22:35:00.000Z",
+      "concluida": "2026-02-26T19:05:48.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000SYnr0UAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-26T15:08:52.000Z",
+      "concluida": "2026-02-27T14:53:18.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000SZr4zUAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-02-26T20:55:01.000Z",
+      "concluida": "2026-03-05T19:45:20.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000SccqmUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-02-27T12:49:01.000Z",
+      "concluida": "2026-02-27T17:56:23.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000SerSNUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-02-27T20:43:56.000Z",
+      "concluida": "2026-03-11T15:08:49.000Z",
+      "sla": 8
+    },
+    {
+      "id": "00TbL00000SpQnBUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-03T13:22:17.000Z",
+      "concluida": "2026-03-04T11:54:12.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000SsExMUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-03T22:01:50.000Z",
+      "concluida": "2026-03-06T16:27:22.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000Sut8CUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-03-04T14:34:47.000Z",
+      "concluida": "2026-03-12T13:38:31.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000SwAoyUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-03-04T19:44:24.000Z",
+      "concluida": "2026-03-05T15:22:06.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000T0AGYUA3",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-03-05T18:06:31.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000T0sHSUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-03-05T19:25:15.000Z",
+      "concluida": "2026-03-06T13:23:48.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000T42UIUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-06T16:03:27.000Z",
+      "concluida": "2026-03-17T12:46:28.000Z",
+      "sla": 7
+    },
+    {
+      "id": "00TbL00000T5niXUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-06T21:06:19.000Z",
+      "concluida": "2026-03-11T15:02:53.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000T6JdZUAV",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-03-07T01:25:49.000Z",
+      "concluida": "2026-03-11T17:27:33.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000T6TLDUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-07T02:27:45.000Z",
+      "concluida": "2026-03-11T15:06:29.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000TDuwcUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-09T19:50:00.000Z",
+      "concluida": "2026-03-19T13:11:50.000Z",
+      "sla": 8
+    },
+    {
+      "id": "00TbL00000TIdAeUAL",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-10T20:11:38.000Z",
+      "concluida": "2026-03-25T14:56:06.000Z",
+      "sla": 11
+    },
+    {
+      "id": "00TbL00000TLIEEUA5",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-11T13:15:30.000Z",
+      "concluida": "2026-03-12T15:27:14.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000TRrKYUA1",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-12T19:23:07.000Z",
+      "concluida": "2026-03-18T20:46:41.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000TV4kzUAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-03-13T14:24:28.000Z",
+      "concluida": "2026-04-01T17:44:06.000Z",
+      "sla": 13
+    },
+    {
+      "id": "00TbL00000TVzePUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-13T17:24:51.000Z",
+      "concluida": "2026-03-16T19:48:34.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000TWhHrUAL",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-13T20:33:09.000Z",
+      "concluida": "2026-03-16T19:48:27.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000TWlbKUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-13T20:46:58.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000TexdTUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-16T19:21:17.000Z",
+      "concluida": "2026-03-17T13:06:02.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Tg09SUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-03-16T21:15:45.000Z",
+      "concluida": "2026-03-17T17:33:55.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Tfi6FUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-03-16T21:19:33.000Z",
+      "concluida": "2026-03-17T19:08:59.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000TjTIOUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-17T17:59:19.000Z",
+      "concluida": "2026-03-18T17:26:19.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Tmy1PUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-03-18T13:36:05.000Z",
+      "concluida": "2026-03-23T18:23:11.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000Tot8xUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-18T18:05:06.000Z",
+      "concluida": "2026-03-20T19:27:26.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000TpOMFUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-18T19:18:52.000Z",
+      "concluida": "2026-03-20T14:13:27.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000TpXkUUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-18T19:31:05.000Z",
+      "concluida": "2026-03-19T17:40:05.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Tx7uXUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-20T14:21:27.000Z",
+      "concluida": "2026-03-30T18:25:59.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000TzJgGUAV",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-03-20T21:28:36.000Z",
+      "concluida": "2026-03-25T20:57:59.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000UBMNTUA5",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-03-24T19:04:53.000Z",
+      "concluida": "2026-03-26T15:24:22.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000UFlqQUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-25T19:47:02.000Z",
+      "concluida": "2026-03-27T12:19:51.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000UIu2gUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-26T16:17:42.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000UNpK2UAL",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-27T18:25:35.000Z",
+      "concluida": "2026-03-30T18:26:19.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000UVZDTUA5",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-30T18:04:38.000Z",
+      "concluida": "2026-03-31T19:40:11.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000UWEI9UAP",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-03-30T18:58:45.000Z",
+      "concluida": "2026-03-31T13:50:40.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000UWolFUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-30T20:02:12.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000UX7mHUAT",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-03-30T21:32:42.000Z",
+      "concluida": "2026-03-31T18:46:10.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000UZdqDUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-31T14:57:46.000Z",
+      "concluida": "2026-04-01T15:14:51.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000UaBGoUAN",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-31T17:20:57.000Z",
+      "concluida": "2026-04-02T19:17:31.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000UaIa2UAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-31T17:32:46.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000UaAxgUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-31T18:46:52.000Z",
+      "concluida": "2026-04-01T14:05:34.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000UagcTUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-31T18:55:31.000Z",
+      "concluida": "2026-04-02T19:23:50.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000Ub4Y8UAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-31T19:36:04.000Z",
+      "concluida": "2026-04-02T12:24:50.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000UbNsQUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-03-31T20:22:04.000Z",
+      "concluida": "2026-04-01T20:12:43.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000UfhQgUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-01T20:01:03.000Z",
+      "concluida": "2026-04-02T19:22:34.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000UiZdYUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-04-02T14:10:52.000Z",
+      "concluida": "2026-04-02T18:16:59.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000UzABbUAN",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-07T19:17:16.000Z",
+      "concluida": "2026-04-08T14:26:10.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000V1fFbUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-08T13:24:41.000Z",
+      "concluida": "2026-04-09T14:26:36.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000V3UpQUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-08T18:59:34.000Z",
+      "concluida": "2026-04-08T19:49:18.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000V62tVUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-09T13:45:02.000Z",
+      "concluida": "2026-04-13T13:05:16.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000V87qmUAB",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-09T20:52:30.000Z",
+      "concluida": "2026-04-13T13:07:32.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000V8eeMUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-09T21:05:50.000Z",
+      "concluida": "2026-04-10T19:56:40.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000VAmwAUAT",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-10T14:14:48.000Z",
+      "concluida": "2026-04-13T13:14:46.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000VKfYGUA1",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-13T18:09:16.000Z",
+      "concluida": "2026-04-13T18:18:48.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000VL6nVUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-13T20:13:26.000Z",
+      "concluida": "2026-04-14T13:38:46.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000VPHbvUAH",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-14T18:17:51.000Z",
+      "concluida": "2026-04-15T15:57:46.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000VQ481UAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-14T18:47:48.000Z",
+      "concluida": "2026-04-15T13:50:33.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000VU8TEUA1",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-15T15:34:54.000Z",
+      "concluida": "2026-04-15T20:48:05.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000VUnRiUAL",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-15T18:04:42.000Z",
+      "concluida": "2026-04-16T14:14:02.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000VZGYPUA5",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-16T18:19:46.000Z",
+      "concluida": "2026-04-24T20:32:35.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000VZo6gUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-16T19:45:40.000Z",
+      "concluida": "2026-04-16T19:52:22.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000VZZe4UAH",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-16T20:27:08.000Z",
+      "concluida": "2026-04-28T17:53:19.000Z",
+      "sla": 8
+    },
+    {
+      "id": "00TbL00000VenL7UAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-17T21:23:42.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000Vk8VPUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-20T14:10:49.000Z",
+      "concluida": "2026-04-22T20:55:06.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000VkX47UAF",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-20T18:04:01.000Z",
+      "concluida": "2026-04-22T18:47:49.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000Vl2wIUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-20T20:38:58.000Z",
+      "concluida": "2026-04-23T15:37:01.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000Vp6D2UAJ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-22T15:01:33.000Z",
+      "concluida": "2026-04-23T14:39:29.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000VqSg1UAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-22T20:56:36.000Z",
+      "concluida": "2026-04-23T15:41:28.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Vt8PsUAJ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-23T18:01:58.000Z",
+      "concluida": "2026-04-23T20:29:03.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000VtdOiUAJ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-23T18:50:43.000Z",
+      "concluida": "2026-04-24T14:22:37.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000VuBYTUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-23T21:14:08.000Z",
+      "concluida": "2026-04-24T18:23:13.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000VvptnUAB",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-24T14:53:23.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000VwS70UAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-04-24T16:59:45.000Z",
+      "concluida": "2026-04-24T17:05:24.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000VxaTqUAJ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-24T21:14:58.000Z",
+      "concluida": "2026-04-27T16:50:19.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000W6iSGUAZ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-28T17:15:03.000Z",
+      "concluida": "2026-05-04T17:43:02.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000W9eohUAB",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-29T14:22:36.000Z",
+      "concluida": "2026-04-30T14:15:19.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000WCRyJUAX",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-30T12:59:05.000Z",
+      "concluida": "2026-04-30T18:23:15.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000WD5FlUAL",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-30T13:45:17.000Z",
+      "concluida": "2026-04-30T20:03:25.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000WDfhMUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-04-30T16:35:20.000Z",
+      "concluida": "2026-05-04T13:55:23.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000WEY7XUAX",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-04-30T19:45:48.000Z",
+      "concluida": "2026-05-06T13:06:33.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000WLt5VUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-04T15:12:06.000Z",
+      "concluida": "2026-05-05T12:20:14.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000WPAPxUAP",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-05T13:54:36.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000WPRc5UAH",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-05T15:07:10.000Z",
+      "concluida": "2026-05-06T13:08:31.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000WSS8lUAH",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-05-06T14:07:55.000Z",
+      "concluida": "2026-05-06T14:29:42.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000WWCelUAH",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-07T13:27:46.000Z",
+      "concluida": "2026-05-08T13:04:18.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000WWzZ2UAL",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-07T17:25:18.000Z",
+      "concluida": "2026-05-11T14:50:34.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000WXkoGUAT",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-07T20:43:20.000Z",
+      "concluida": "2026-05-11T14:48:52.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000WqynPUAR",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-14T12:50:50.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000WsVIyUAN",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-14T18:58:19.000Z",
+      "concluida": "2026-05-15T12:41:33.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000WwC6WUAV",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-15T18:28:44.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000WwgmBUAR",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-15T20:35:25.000Z",
+      "concluida": "2026-05-19T13:00:15.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000X3Co4UAF",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-18T19:48:31.000Z",
+      "concluida": "2026-05-19T18:08:09.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000X3IjvUAF",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-18T21:05:24.000Z",
+      "concluida": "2026-05-20T14:08:58.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000X4z24UAB",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-19T13:03:16.000Z",
+      "concluida": "2026-05-19T20:04:04.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000X6ZWUUA3",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-19T19:59:41.000Z",
+      "concluida": "2026-05-20T12:55:37.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000X6WgkUAF",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-19T20:16:16.000Z",
+      "concluida": "2026-05-20T19:19:18.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000X9gORUAZ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-20T17:59:00.000Z",
+      "concluida": "2026-05-21T14:12:05.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000XBf52UAD",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-21T12:59:29.000Z",
+      "concluida": "2026-05-21T17:56:13.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000XFmEMUA1",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-22T14:05:37.000Z",
+      "concluida": "2026-05-22T18:33:31.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000XGq68UAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-22T18:29:35.000Z",
+      "concluida": "2026-05-25T13:54:18.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000XH72BUAT",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-22T20:03:33.000Z",
+      "concluida": "2026-05-26T12:49:01.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000XHOUNUA5",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-22T20:37:46.000Z",
+      "concluida": "2026-05-26T18:58:04.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000XMtNyUAL",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-25T18:43:14.000Z",
+      "concluida": "2026-05-26T18:57:45.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000XPnnJUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-26T14:17:29.000Z",
+      "concluida": "2026-05-26T20:21:33.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000XP0F4UAL",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-05-26T15:36:05.000Z",
+      "concluida": "2026-05-26T20:51:29.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000XQIY5UAP",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-26T18:11:00.000Z",
+      "concluida": "2026-05-26T18:24:58.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000XQk7XUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-26T19:05:16.000Z",
+      "concluida": "2026-05-28T13:21:39.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000XQoiyUAD",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-26T19:07:59.000Z",
+      "concluida": "2026-05-28T18:53:08.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000XQd7uUAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-26T19:49:31.000Z",
+      "concluida": "2026-05-27T17:55:16.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000XTyKQUA1",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-27T17:42:14.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000XWwPWUA1",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-28T15:15:54.000Z",
+      "concluida": "2026-05-29T15:07:01.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000XXo36UAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-05-28T17:47:13.000Z",
+      "concluida": "2026-05-29T15:06:02.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000XY81lUAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-28T19:01:03.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000XYau7UAD",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-28T21:24:13.000Z",
+      "concluida": "2026-05-29T16:56:23.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Xa8tqUAB",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-29T12:26:49.000Z",
+      "concluida": "2026-05-29T17:16:44.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000XcBKYUA3",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-05-29T19:01:02.000Z",
+      "concluida": "2026-06-02T13:23:37.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000XgbEuUAJ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-06-01T12:38:29.000Z",
+      "concluida": "2026-06-01T18:51:52.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000XkiKpUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-02T13:29:18.000Z",
+      "concluida": "2026-06-19T14:49:04.000Z",
+      "sla": 13
+    },
+    {
+      "id": "00TbL00000XksiRUAR",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-02T14:27:45.000Z",
+      "concluida": "2026-06-08T13:50:55.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000XldFxUAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-02T19:22:21.000Z",
+      "concluida": "2026-06-03T19:20:59.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000XnnHgUAJ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-03T12:18:35.000Z",
+      "concluida": "2026-06-09T19:36:28.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000Xu5wVUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-05T12:40:15.000Z",
+      "concluida": "2026-06-08T13:47:55.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000XtnlJUAR",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-05T14:05:11.000Z",
+      "concluida": "2026-06-05T19:04:41.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000Xug83UAB",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-05T15:35:42.000Z",
+      "concluida": "2026-06-08T13:13:34.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000XvGQ6UAN",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-05T17:57:30.000Z",
+      "concluida": "2026-06-05T19:03:32.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000XvPulUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-06-05T17:59:22.000Z",
+      "concluida": "2026-06-05T18:40:25.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000XvEZaUAN",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-05T18:12:35.000Z",
+      "concluida": "2026-06-08T13:47:49.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Y1HrOUAV",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-08T14:57:44.000Z",
+      "concluida": "2026-06-08T20:52:42.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000Y21B2UAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-08T18:31:24.000Z",
+      "concluida": "2026-06-08T20:54:51.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000Y2mRcUAJ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-08T19:16:22.000Z",
+      "concluida": "2026-06-09T12:30:48.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Y2oQBUAZ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-08T19:48:48.000Z",
+      "concluida": "2026-06-09T18:29:49.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Y6KuxUAF",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-09T17:43:45.000Z",
+      "concluida": "2026-06-09T19:41:45.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000Y6BdMUAV",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-09T18:32:27.000Z",
+      "concluida": "2026-06-10T14:06:02.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Y96ttUAB",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-10T13:05:22.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000YANPhUAP",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-10T19:14:12.000Z",
+      "concluida": "2026-06-11T14:53:50.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YAU30UAH",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-10T19:24:02.000Z",
+      "concluida": "2026-06-11T15:15:50.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YDU4uUAH",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-11T16:19:12.000Z",
+      "concluida": "2026-06-11T20:24:01.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000YFvfEUAT",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-12T11:45:54.000Z",
+      "concluida": "2026-06-12T19:52:43.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000YGGDPUA5",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-12T11:49:38.000Z",
+      "concluida": "2026-06-15T13:08:49.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YGGzqUAH",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-12T12:36:14.000Z",
+      "concluida": "2026-06-15T13:59:37.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YHFOvUAP",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-12T16:16:27.000Z",
+      "concluida": "2026-06-15T19:41:27.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YHS9XUAX",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-12T18:36:08.000Z",
+      "concluida": "2026-06-15T20:35:23.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YI4nyUAD",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-12T19:10:37.000Z",
+      "concluida": "2026-06-15T20:35:30.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YHcAPUA1",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-12T19:27:50.000Z",
+      "concluida": "2026-06-15T15:45:40.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YILNVUA5",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-12T20:54:52.000Z",
+      "concluida": "2026-06-15T18:33:07.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YN1g2UAD",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-15T14:11:00.000Z",
+      "concluida": "2026-06-15T15:55:19.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000YMzcXUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-15T14:22:50.000Z",
+      "concluida": "2026-06-16T17:37:59.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YMvvTUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-15T14:23:12.000Z",
+      "concluida": "2026-06-15T20:43:28.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000YNxlSUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-15T17:19:49.000Z",
+      "concluida": "2026-06-15T17:49:33.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000YOEsqUAH",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-15T19:52:16.000Z",
+      "concluida": "2026-06-17T12:42:57.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000YOX94UAH",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-15T20:01:30.000Z",
+      "concluida": "2026-06-16T15:31:12.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YORZzUAP",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-15T20:06:52.000Z",
+      "concluida": "2026-06-16T15:31:38.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YOr6BUAT",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-15T20:45:22.000Z",
+      "concluida": "2026-06-17T15:18:20.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000YQIlpUAH",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-06-16T12:43:50.000Z",
+      "concluida": "2026-07-01T14:10:15.000Z",
+      "sla": 11
+    },
+    {
+      "id": "00TbL00000YQzyjUAD",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-16T13:01:21.000Z",
+      "concluida": "2026-06-16T19:05:03.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000YQuJAUA1",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-16T13:08:11.000Z",
+      "concluida": "2026-06-16T20:08:06.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000YRXEHUA5",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-16T15:36:23.000Z",
+      "concluida": "2026-06-17T15:20:03.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YSQljUAH",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-16T19:23:14.000Z",
+      "concluida": "2026-06-17T18:45:07.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YSbpMUAT",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-16T20:17:58.000Z",
+      "concluida": "2026-06-17T18:43:36.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000YWNxNUAX",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-17T20:53:01.000Z",
+      "concluida": "2026-06-19T13:30:13.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000YarFMUAZ",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-18T19:55:15.000Z",
+      "concluida": "2026-06-19T14:45:51.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Yb4E2UAJ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-18T20:40:49.000Z",
+      "concluida": "2026-06-22T18:10:25.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000YdgAIUAZ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-19T14:19:22.000Z",
+      "concluida": "2026-06-19T19:28:42.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000Yf1avUAB",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-19T21:13:01.000Z",
+      "concluida": "2026-06-23T14:59:52.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000YqfICUAZ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-23T13:28:51.000Z",
+      "concluida": "2026-06-23T18:44:11.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000YrPzOUAV",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-23T17:10:28.000Z",
+      "concluida": "2026-06-25T12:19:43.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000YwG5dUAF",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-24T14:08:38.000Z",
+      "concluida": "2026-06-29T19:54:48.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000YzszcUAB",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-25T14:06:55.000Z",
+      "concluida": "2026-07-01T12:26:37.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000Z1DjxUAF",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-25T17:02:38.000Z",
+      "concluida": "2026-06-29T19:53:35.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000Z5R9yUAF",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-26T13:31:46.000Z",
+      "concluida": "2026-06-30T12:56:42.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000Z5vrHUAR",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-26T13:38:52.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000Z74p8UAB",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-26T17:19:11.000Z",
+      "concluida": "2026-07-01T17:41:15.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000Z78rBUAR",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-26T18:23:10.000Z",
+      "concluida": "2026-07-01T13:38:44.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000ZH6kqUAD",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-29T19:32:16.000Z",
+      "concluida": "2026-07-03T13:12:44.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000ZHb74UAD",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-29T20:39:15.000Z",
+      "concluida": "2026-07-03T12:40:51.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000ZKp8jUAD",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-30T13:54:46.000Z",
+      "concluida": "2026-07-03T13:24:51.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000ZLCDOUA5",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-30T14:58:01.000Z",
+      "concluida": "2026-06-30T20:08:52.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ZLXrgUAH",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-06-30T15:31:12.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000ZN3CSUA1",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-06-30T18:40:40.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000ZRZSBUA5",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-01T13:41:10.000Z",
+      "concluida": "2026-07-03T12:58:34.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000ZSWDsUAP",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-01T17:51:55.000Z",
+      "concluida": "2026-07-07T14:42:28.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000ZTJmOUAX",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": false,
+      "criada": "2026-07-01T19:24:49.000Z",
+      "concluida": "2026-07-01T20:37:36.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ZTQMPUA5",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-01T20:33:44.000Z",
+      "concluida": "2026-07-06T12:42:31.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000ZSyLSUA1",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-01T20:46:33.000Z",
+      "concluida": "2026-07-07T15:10:19.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000ZYFWjUAP",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-02T18:00:49.000Z",
+      "concluida": "2026-07-03T11:38:45.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000Zka9GUAR",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-06T12:41:25.000Z",
+      "concluida": "2026-07-08T20:15:56.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000Zr2u1UAB",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-07T14:18:16.000Z",
+      "concluida": "2026-07-08T20:18:04.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000ZshKBUAZ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-07T19:47:59.000Z",
+      "concluida": "2026-07-15T15:29:49.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000ZwBK1UAN",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-08T13:10:21.000Z",
+      "concluida": "2026-07-15T21:01:11.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000ZwCj1UAF",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-08T13:16:07.000Z",
+      "concluida": "2026-07-15T20:43:31.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000ZwQVLUA3",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-08T14:20:17.000Z",
+      "concluida": "2026-07-13T13:08:44.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000ZyZExUAN",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-08T20:45:53.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000a5wzXUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-10T16:52:39.000Z",
+      "concluida": "2026-07-17T11:55:49.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000a6t21UAA",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-10T19:36:00.000Z",
+      "concluida": "2026-07-16T14:35:54.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000aKgJVUA0",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-14T21:01:39.000Z",
+      "concluida": "2026-07-15T15:41:36.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000aTRHxUAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-16T18:58:08.000Z",
+      "concluida": "2026-07-21T12:05:50.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000aTerrUAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-16T19:00:19.000Z",
+      "concluida": "2026-07-17T14:25:39.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000aUHOdUAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-16T21:13:14.000Z",
+      "concluida": "2026-08-06T18:26:29.000Z",
+      "sla": 15
+    },
+    {
+      "id": "00TbL00000aWZcDUAW",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-17T12:57:26.000Z",
+      "concluida": "2026-07-21T12:36:42.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000aWOLuUAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-17T13:11:50.000Z",
+      "concluida": "2026-07-23T12:19:17.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000aXHgWUAW",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-17T15:15:05.000Z",
+      "concluida": "2026-07-20T20:03:27.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000aXFjaUAG",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-17T15:41:31.000Z",
+      "concluida": "2026-07-23T19:28:35.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000aXtacUAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-17T18:53:11.000Z",
+      "concluida": "2026-07-22T14:55:32.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000akI6sUAE",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-21T12:18:02.000Z",
+      "concluida": "2026-07-22T17:57:31.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000ajdv9UAA",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-21T12:52:26.000Z",
+      "concluida": "2026-07-23T12:23:02.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000aqDJ2UAM",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-22T14:51:25.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000au5I1UAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-23T12:00:18.000Z",
+      "concluida": "2026-07-30T17:39:18.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000avQHBUA2",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-23T16:33:03.000Z",
+      "concluida": "2026-07-24T18:59:48.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000aur59UAA",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-23T17:20:39.000Z",
+      "concluida": "2026-07-24T12:36:51.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000avlK5UAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-23T17:58:28.000Z",
+      "concluida": "2026-07-30T14:00:40.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000avKv2UAE",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-23T18:08:11.000Z",
+      "concluida": "2026-07-24T12:41:26.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000awsT8UAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-23T21:26:50.000Z",
+      "concluida": "2026-07-31T15:24:57.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000azhzyUAA",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-24T17:32:30.000Z",
+      "concluida": "2026-07-31T14:53:42.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000azsdXUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-07-24T18:02:11.000Z",
+      "concluida": "2026-07-29T21:03:42.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000b08gRUAQ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-24T19:25:33.000Z",
+      "concluida": "2026-07-30T18:11:59.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000b068IUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-24T19:25:50.000Z",
+      "concluida": "2026-07-31T14:44:38.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000b0CTtUAM",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-24T19:30:48.000Z",
+      "concluida": "2026-08-03T13:26:22.000Z",
+      "sla": 6
+    },
+    {
+      "id": "00TbL00000b0jZRUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-24T19:47:07.000Z",
+      "concluida": "2026-07-30T19:31:44.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000azzf4UAA",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-24T20:47:26.000Z",
+      "concluida": "2026-07-31T14:20:31.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000b19VOUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-24T21:25:26.000Z",
+      "concluida": "2026-07-31T13:59:12.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000b79xMUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-27T16:41:09.000Z",
+      "concluida": "2026-07-30T18:04:20.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000bCcugUAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-28T18:55:30.000Z",
+      "concluida": "2026-07-31T12:05:30.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000bFdDtUAK",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-29T12:58:29.000Z",
+      "concluida": "2026-07-31T20:44:51.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000bHkcOUAS",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-29T19:34:10.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000bLJbsUAG",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-30T13:31:07.000Z",
+      "concluida": "2026-08-04T11:54:55.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000bLfEBUA0",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-30T14:19:28.000Z",
+      "concluida": "2026-08-05T13:46:21.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000bMOrGUAW",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-30T17:45:13.000Z",
+      "concluida": "2026-07-31T18:50:45.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000bMQhjUAG",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-30T18:11:09.000Z",
+      "concluida": "2026-08-04T17:47:41.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000bMMJJUA4",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-30T18:29:11.000Z",
+      "concluida": "2026-08-03T14:36:00.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000bMpRgUAK",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-30T19:00:16.000Z",
+      "concluida": "2026-08-04T14:22:11.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000bMZRpUAO",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-30T19:06:27.000Z",
+      "concluida": "2026-08-03T20:29:29.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000bNNhlUAG",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-30T19:44:00.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000bQU0OUAW",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-07-31T15:29:09.000Z",
+      "concluida": "2026-08-03T14:59:15.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000bRegnUAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-07-31T19:18:30.000Z",
+      "concluida": "2026-08-04T13:54:08.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000bXLWvUAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-03T12:44:06.000Z",
+      "concluida": "2026-08-05T12:07:44.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000bZ3KJUA0",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-03T16:15:42.000Z",
+      "concluida": "2026-08-04T20:11:04.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000bYqS4UAK",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-03T17:08:16.000Z",
+      "concluida": "2026-08-03T19:32:00.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000bZKrQUAW",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-03T18:23:09.000Z",
+      "concluida": "2026-08-05T20:21:29.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000bejZ8UAI",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-04T20:38:27.000Z",
+      "concluida": "2026-08-05T15:43:11.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000bjR5GUAU",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-05T18:09:19.000Z",
+      "concluida": "2026-08-07T11:30:33.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000bkPW3UAM",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-05T21:09:56.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000bmfunUAA",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-06T11:56:53.000Z",
+      "concluida": "2026-08-07T13:16:53.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000bnsdFUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-06T16:53:16.000Z",
+      "concluida": "2026-08-07T18:24:02.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000bnsEwUAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-06T16:57:53.000Z",
+      "concluida": "2026-08-07T18:21:33.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000bo7vUUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-06T17:26:22.000Z",
+      "concluida": "2026-08-07T14:23:40.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000boCoiUAE",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-06T17:53:21.000Z",
+      "concluida": "2026-08-06T18:59:53.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000bpAPwUAM",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-06T21:34:20.000Z",
+      "concluida": "2026-08-10T14:37:29.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000bstGmUAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-07T17:44:04.000Z",
+      "concluida": "2026-08-11T12:32:00.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000c0hIXUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-10T18:25:32.000Z",
+      "concluida": "2026-08-11T14:13:17.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000c0tGSUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-10T19:55:06.000Z",
+      "concluida": "2026-08-11T14:22:45.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000c4sdSUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-11T15:06:46.000Z",
+      "concluida": "2026-08-12T18:53:43.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000c6GvTUAU",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-11T19:03:19.000Z",
+      "concluida": "2026-08-13T18:27:56.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000c6eEjUAI",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-11T20:46:30.000Z",
+      "concluida": "2026-08-13T18:36:38.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000cAEDVUA4",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-12T15:01:42.000Z",
+      "concluida": "2026-08-13T18:22:08.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000c9oXgUAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-12T16:36:31.000Z",
+      "concluida": "2026-08-13T18:55:30.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000cBVCfUAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-12T20:19:49.000Z",
+      "concluida": "2026-08-13T20:10:18.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000cFp9MUAS",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-13T16:47:19.000Z",
+      "concluida": "2026-08-14T18:37:33.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000cHAV6UAO",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-13T20:30:25.000Z",
+      "concluida": "2026-08-18T14:30:11.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000cJes7UAC",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-14T13:34:06.000Z",
+      "concluida": "2026-08-14T14:56:30.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000cKZrnUAG",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-14T15:12:41.000Z",
+      "concluida": "2026-08-17T13:39:37.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000cXYoRUAW",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-18T14:01:44.000Z",
+      "concluida": "2026-08-18T20:24:59.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000cYIeGUAW",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-18T14:49:19.000Z",
+      "concluida": "2026-08-19T14:28:35.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000cYuzdUAC",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-18T15:03:21.000Z",
+      "concluida": "2026-08-19T15:27:06.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000cYVzfUAG",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-18T15:13:38.000Z",
+      "concluida": "2026-08-19T15:26:50.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000cZYSQUA4",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-18T17:40:05.000Z",
+      "concluida": "2026-08-18T20:16:58.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ce8HAUAY",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-19T14:50:36.000Z",
+      "concluida": "2026-08-20T12:22:51.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000ceQdrUAE",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-19T15:14:22.000Z",
+      "concluida": "2026-08-19T17:29:11.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000cetOVUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-19T19:02:10.000Z",
+      "concluida": "2026-08-20T14:49:36.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000ci5WIUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-20T12:17:45.000Z",
+      "concluida": "2026-08-20T18:03:09.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ciIUuUAM",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-20T12:32:10.000Z",
+      "concluida": "2026-08-20T19:34:51.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ckILqUAM",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-20T17:38:24.000Z",
+      "concluida": "2026-08-21T12:15:52.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000ckdWjUAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-20T18:09:09.000Z",
+      "concluida": "2026-08-27T18:25:03.000Z",
+      "sla": 5
+    },
+    {
+      "id": "00TbL00000ckdi5UAA",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-20T18:57:51.000Z",
+      "concluida": "2026-08-20T20:38:54.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ckCdBUAU",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-20T19:00:48.000Z",
+      "concluida": "2026-08-20T20:35:57.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ckNyGUAU",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-20T19:25:06.000Z",
+      "concluida": "2026-08-21T11:26:42.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000cvuxQUAQ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-24T12:53:17.000Z",
+      "concluida": "2026-08-24T17:49:42.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000cyBPRUA2",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-24T17:26:01.000Z",
+      "concluida": "2026-08-27T18:23:11.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000d1VPzUAM",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-25T12:39:41.000Z",
+      "concluida": "2026-08-25T19:16:06.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000d1qW5UAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-25T13:44:16.000Z",
+      "concluida": "2026-08-28T15:51:48.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000d8RnqUAE",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-26T17:29:42.000Z",
+      "concluida": "2026-08-27T20:38:46.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dDDNdUAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-27T16:04:59.000Z",
+      "concluida": "2026-08-28T15:26:06.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dDZBLUA4",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-27T17:49:16.000Z",
+      "concluida": "2026-08-28T11:42:33.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dEOnLUAW",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-27T20:08:29.000Z",
+      "concluida": "2026-08-28T18:28:36.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dFUc4UAG",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-28T00:47:36.000Z",
+      "concluida": "2026-09-01T13:01:29.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000dHvGQUA0",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-08-28T14:28:40.000Z",
+      "concluida": "2026-08-31T12:15:07.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dIkSkUAK",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-28T17:57:52.000Z",
+      "concluida": "2026-08-31T14:04:10.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dJZaGUAW",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-28T20:02:20.000Z",
+      "concluida": "2026-08-31T15:14:27.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dJPHNUA4",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-28T20:05:29.000Z",
+      "concluida": "2026-08-31T18:57:03.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dJYVwUAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-28T20:43:20.000Z",
+      "concluida": "2026-08-31T18:42:19.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dJlj8UAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-28T20:46:42.000Z",
+      "concluida": "2026-08-31T18:55:20.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dRGS4UAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-31T17:22:55.000Z",
+      "concluida": "2026-09-01T12:51:17.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dSAj6UAG",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-08-31T20:42:17.000Z",
+      "concluida": "2026-09-01T15:04:13.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dX1ztUAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-01T13:51:22.000Z",
+      "concluida": "2026-09-02T19:26:43.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dXCAQUA4",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-01T14:02:40.000Z",
+      "concluida": "2026-09-02T13:47:10.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dYNOjUAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-01T17:33:33.000Z",
+      "concluida": "2026-09-01T18:36:07.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000dYWEGUA4",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-01T18:23:54.000Z",
+      "concluida": "2026-09-02T14:04:54.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000ddPF4UAM",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-02T17:43:50.000Z",
+      "concluida": "2026-09-08T20:07:44.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000de7IzUAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-02T21:07:27.000Z",
+      "concluida": "2026-09-08T12:26:25.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000doIkuUAE",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-04T16:20:58.000Z",
+      "concluida": "2026-09-09T12:42:29.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000doSdpUAE",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-04T17:22:43.000Z",
+      "concluida": "2026-09-08T13:48:22.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000dodm8UAA",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-04T17:25:49.000Z",
+      "concluida": "2026-09-08T14:39:00.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000doN3OUAU",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-04T19:03:10.000Z",
+      "concluida": "2026-09-08T19:22:06.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000dx8OBUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-08T12:43:37.000Z",
+      "concluida": "2026-09-11T13:29:25.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000dxjsHUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-08T12:56:33.000Z",
+      "concluida": "2026-09-14T13:07:01.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000dxnSxUAI",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-08T13:45:36.000Z",
+      "concluida": "2026-09-09T19:12:50.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000dxQ0AUAU",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-08T14:20:32.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000dxxaPUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-08T14:30:27.000Z",
+      "concluida": "2026-09-08T20:05:03.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000dyZG0UAM",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-08T15:21:09.000Z",
+      "concluida": "2026-09-11T13:12:09.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000e0VftUAE",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-08T20:42:45.000Z",
+      "concluida": "2026-09-11T17:46:48.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000e4E2FUAU",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-09T16:47:23.000Z",
+      "concluida": "2026-09-11T13:22:23.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000e4prJUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-09T17:40:44.000Z",
+      "concluida": "2026-09-10T15:05:11.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000e4qUDUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-09T19:50:03.000Z",
+      "concluida": "2026-09-11T17:56:10.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000e5ogTUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-09T21:05:23.000Z",
+      "concluida": "2026-09-11T18:39:27.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000e5RNGUA2",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-09T21:18:57.000Z",
+      "concluida": "2026-09-11T15:21:24.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000e7qcNUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-10T12:14:56.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000eEHJiUAO",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-09-11T14:28:26.000Z",
+      "concluida": "2026-09-14T12:54:04.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000eEFTMUA4",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-11T15:58:18.000Z",
+      "concluida": "2026-09-14T17:48:23.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000eGPTJUA4",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-11T20:55:10.000Z",
+      "concluida": "2026-09-16T13:36:54.000Z",
+      "sla": 3
+    },
+    {
+      "id": "00TbL00000eVsN7UAK",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-16T15:17:10.000Z",
+      "concluida": "2026-09-16T15:43:09.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000eYCfkUAG",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-16T19:45:58.000Z",
+      "concluida": "2026-09-17T12:40:39.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000eazE6UAI",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-17T14:13:27.000Z",
+      "concluida": "2026-09-17T18:51:10.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000edEnNUAU",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-17T20:12:24.000Z",
+      "concluida": "2026-09-18T15:01:01.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000edJK2UAM",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-17T20:48:19.000Z",
+      "concluida": "2026-09-18T17:19:29.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000efkUjUAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-18T12:52:31.000Z",
+      "concluida": "2026-09-18T19:56:44.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000eghJPUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-18T16:57:22.000Z",
+      "concluida": "2026-09-18T19:57:14.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ehh7YUAQ",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-09-18T17:46:22.000Z",
+      "concluida": "2026-09-24T14:46:35.000Z",
+      "sla": 4
+    },
+    {
+      "id": "00TbL00000eoWqVUAU",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-09-21T15:24:32.000Z",
+      "concluida": "2026-09-21T15:43:07.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ephjwUAA",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-21T18:46:19.000Z",
+      "concluida": "2026-09-23T12:02:27.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000epxWuUAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-21T19:02:47.000Z",
+      "concluida": "2026-09-21T20:28:47.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000eq9PxUAI",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-09-21T19:24:25.000Z",
+      "concluida": "2026-09-21T19:33:01.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000epWjgUAE",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-09-21T19:27:25.000Z",
+      "concluida": "2026-09-22T13:44:10.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000evx7ZUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-22T19:08:52.000Z",
+      "concluida": "2026-09-23T13:29:09.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000eznHlUAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-23T15:00:21.000Z",
+      "concluida": "2026-09-23T18:08:00.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000f0Hz6UAE",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-23T18:25:22.000Z",
+      "concluida": "2026-09-24T17:28:59.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000f4irOUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-24T15:04:51.000Z",
+      "concluida": "2026-09-24T17:52:59.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000f5bc5UAA",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-24T16:24:51.000Z",
+      "concluida": "2026-09-24T18:08:33.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000f6MEcUAM",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-24T18:05:35.000Z",
+      "concluida": "2026-09-28T11:33:08.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000f7UppUAE",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-24T21:07:41.000Z",
+      "concluida": "2026-09-28T13:22:33.000Z",
+      "sla": 2
+    },
+    {
+      "id": "00TbL00000fA00kUAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-25T12:23:26.000Z",
+      "concluida": "2026-09-25T13:12:01.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000f9UXGUA2",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-25T12:59:23.000Z",
+      "concluida": "2026-09-25T15:38:47.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000fB020UAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-25T16:11:53.000Z",
+      "concluida": "2026-09-28T11:34:08.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fCNPUUA4",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-25T20:16:40.000Z",
+      "concluida": "2026-09-28T12:10:05.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fBphEUAS",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-25T20:17:39.000Z",
+      "concluida": "2026-09-28T12:02:09.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fC7hIUAS",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-25T20:35:21.000Z",
+      "concluida": "2026-09-28T12:16:18.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fBwyxUAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-25T21:12:33.000Z",
+      "concluida": "2026-09-28T13:45:13.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fLQ3EUAW",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-28T18:02:20.000Z",
+      "concluida": "2026-09-28T19:07:02.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000fP5l3UAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-29T12:30:53.000Z",
+      "concluida": "2026-09-29T13:04:55.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000fRM3JUAW",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-29T18:23:48.000Z",
+      "concluida": "2026-09-30T12:00:28.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fR2nvUAC",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-09-29T19:52:22.000Z",
+      "concluida": "2026-09-30T20:24:46.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fRYFtUAO",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-29T19:54:11.000Z",
+      "concluida": "2026-09-30T13:56:56.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fUgx0UAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-30T12:29:33.000Z",
+      "concluida": "2026-09-30T13:09:38.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000fWI73UAG",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-30T15:10:10.000Z",
+      "concluida": "2026-09-30T15:18:29.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000fX3igUAC",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-30T17:45:52.000Z",
+      "concluida": "2026-09-30T17:50:39.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000fX8X7UAK",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-09-30T18:39:09.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000fdhQWUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-01T20:46:59.000Z",
+      "concluida": "2026-10-02T15:04:01.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fdtwLUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-01T22:28:02.000Z",
+      "concluida": "2026-10-02T18:41:23.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fhPA4UAM",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-02T15:10:35.000Z",
+      "concluida": "2026-10-05T14:33:50.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fj5IVUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-02T21:32:21.000Z",
+      "concluida": "2026-10-05T18:12:05.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fqbghUAA",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-05T13:00:50.000Z",
+      "concluida": "2026-10-05T22:07:17.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000frh2TUAQ",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-05T14:28:45.000Z",
+      "concluida": "2026-10-05T17:03:09.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ftQn3UAE",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-05T18:23:17.000Z",
+      "concluida": "2026-10-05T18:29:50.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000ftiAUUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-05T19:14:41.000Z",
+      "concluida": "2026-10-06T11:22:55.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000ftYayUAE",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-05T19:40:55.000Z",
+      "concluida": "2026-10-06T11:59:07.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fzTVKUA2",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-06T17:34:11.000Z",
+      "concluida": "2026-10-06T18:03:01.000Z",
+      "sla": 0
+    },
+    {
+      "id": "00TbL00000fz6x3UAA",
+      "mpiplus": false,
+      "semMarca": true,
+      "minha": true,
+      "criada": "2026-10-06T18:08:24.000Z",
+      "concluida": "2026-10-07T17:18:44.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fztL1UAI",
+      "mpiplus": false,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-06T18:46:40.000Z",
+      "concluida": "2026-10-07T17:59:01.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000fzlVZUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-06T19:40:31.000Z",
+      "concluida": "2026-10-07T12:43:33.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000g0oB7UAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": true,
+      "criada": "2026-10-06T20:27:22.000Z",
+      "concluida": "2026-10-07T12:38:07.000Z",
+      "sla": 1
+    },
+    {
+      "id": "00TbL00000g5hXEUAY",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-10-07T18:03:23.000Z",
+      "concluida": null,
+      "sla": null
+    },
+    {
+      "id": "00TbL00000g4yQfUAI",
+      "mpiplus": true,
+      "semMarca": false,
+      "minha": false,
+      "criada": "2026-10-07T18:50:47.000Z",
+      "concluida": null,
+      "sla": null
+    }
+  ],
+  "arquivo": "C:\\Users\\guilherme.millares\\AppData\\Roaming\\pr-merge-tool\\metricas\\comparativo-mpiplus-2026-09-22.json"
+}

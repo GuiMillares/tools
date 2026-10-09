@@ -191,6 +191,11 @@
           <div class="sec-head"><span class="sec-title">Sessão do Google de cada marca</span></div>
           <p class="hint">Registrar a propriedade no Search Console só a coloca na lista de <strong>quem chama</strong>. Feito pela service account, ela nasce fora do Search Console da marca. Com a sessão da marca conectada aqui, o Hub registra pela própria conta e a propriedade nasce lá. Precisa do Client ID e do Secret abaixo.</p>
           <div id="brandOauthList" class="brand-oauth"></div>
+          <label class="field" style="margin-top:10px">
+            <span>Logins de relatório, um e-mail por linha (bcrelatorios2@gmail.com…): a Planilha do Relatório diz qual deles enxerga cada propriedade e cada site do Search Console</span>
+            <textarea id="contasRelatorioInput" rows="3" placeholder="bcrelatorios2@gmail.com" autocomplete="off"></textarea>
+          </label>
+          <div id="relatorioLoginsList" class="brand-oauth"></div>
           <div class="grid-2">
             <label class="field">
               <span>OAuth Client ID (conceder acesso e sessões das marcas)</span>
@@ -374,6 +379,8 @@
   <script src="../lib/automacao.js"></script>
   <script src="../lib/metricas.js"></script>
   <script src="../lib/vinculos.js"></script>
+  <script src="../lib/relatorio.js"></script>
+  <script src="../lib/relatorio-rodada.js"></script>
   <script src="app.js"></script>
   <script src="terminais.js"></script>
   <script src="automacao-ui.js"></script>

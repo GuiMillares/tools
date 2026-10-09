@@ -341,6 +341,9 @@ ipcMain.handle('google:setConfig', (event, config) => {
 
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/analytics.edit',
+  // Ler quem tem acesso a uma conta do GA4 (accessBindings), para a Planilha
+  // do Relatório dizer qual login enxerga a propriedade (ADR-148).
+  'https://www.googleapis.com/auth/analytics.manage.users.readonly',
   'https://www.googleapis.com/auth/tagmanager.edit.containers',
   'https://www.googleapis.com/auth/tagmanager.edit.containerversions',
   'https://www.googleapis.com/auth/tagmanager.publish',
@@ -569,7 +572,25 @@ function brandFilter(brandId, surface = 'analytics') {
 }
 
 function brandName(brandId) {
+  if (ehSlotRelatorio(brandId)) return contaRelatorioDoSlot(brandId) || `login de relatório ${String(brandId).slice(4)}`;
   return BRANDS[brandId]?.name || brandId;
+}
+
+// Os logins de relatório (ADR-148): as contas do Google que enxergam as
+// propriedades dos clientes (bcrelatorios, bcrelatorios2…, bcrelatoriotags),
+// além das três marcas. Cada uma vira uma sessão OAuth própria, no slot
+// rel-N, só leitura (Analytics e Search Console).
+const ehSlotRelatorio = (slot) => /^rel-\d+$/.test(String(slot || ''));
+function contasRelatorio() {
+  try {
+    if (!fs.existsSync(googleConfigPath())) return [];
+    const cfg = JSON.parse(fs.readFileSync(googleConfigPath(), 'utf-8'));
+    return (Array.isArray(cfg.contasRelatorio) ? cfg.contasRelatorio : []).map((e) => String(e || '').trim().toLowerCase()).filter(Boolean);
+  } catch (e) { return []; }
+}
+function contaRelatorioDoSlot(slot) {
+  const n = Number(String(slot).slice(4));
+  return contasRelatorio()[n - 1] || '';
 }
 
 // O endpoint de token devolve o detalhe em response.data, sem isso sobra só
@@ -1791,6 +1812,7 @@ function buildFileVerificationValue(tokenBruto) {
 // diferente do que usa no Analytics e no Search Console (ADR-067). Quando a
 // marca não declara nada, as três superfícies usam a mesma conta, como antes.
 function googleAccountFor(brand, surface = 'analytics') {
+  if (ehSlotRelatorio(brand)) return contaRelatorioDoSlot(brand);
   try {
     if (!fs.existsSync(googleConfigPath())) return '';
     const cfg = JSON.parse(fs.readFileSync(googleConfigPath(), 'utf-8'));
@@ -6440,6 +6462,136 @@ ipcMain.handle('vinculos:apagar', () => {
   }
 });
 
+// ---------- Planilha do Relatório (ADR-148) ----------
+//
+// A planilha "Domínios e Analytics" (abas Busca e MPI, as 19 colunas do
+// Relatório do painel) preenchida pelo Hub: Salesforce, o site do cliente,
+// o geral.php e o Google. A rodada é da tela (lib/relatorio-rodada.js, um
+// item por vez, salva em arquivo); aqui ficam as fontes (lib/relatorio-fontes.js)
+// montadas com as sessões do Hub, e o estado salvo.
+const relatorioPath = () => path.join(app.getPath('userData'), 'relatorio-planilha.json');
+
+ipcMain.handle('relatorio:salvar', (event, estado) => {
+  try {
+    const destino = relatorioPath();
+    const tmp = `${destino}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ ...(estado || {}), salvoEm: new Date().toISOString() }), 'utf-8');
+    fs.renameSync(tmp, destino);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+ipcMain.handle('relatorio:ler', () => {
+  try {
+    if (!fs.existsSync(relatorioPath())) return { ok: true, estado: null };
+    return { ok: true, estado: JSON.parse(fs.readFileSync(relatorioPath(), 'utf-8')) };
+  } catch (e) {
+    return { ok: true, estado: null, aviso: `não consegui ler a rodada salva (${e.message})` };
+  }
+});
+ipcMain.handle('relatorio:apagar', () => {
+  try {
+    if (fs.existsSync(relatorioPath())) fs.unlinkSync(relatorioPath());
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Todas as abas de uma planilha (.ods, .xlsx, .csv): [{ aba, linhas }].
+ipcMain.handle('planilha:lerAbas', async (event, { nome, base64 } = {}) => {
+  try {
+    const XLSX = require('xlsx');
+    const wb = XLSX.read(Buffer.from(String(base64 || ''), 'base64'), { type: 'buffer', cellDates: false });
+    const abas = wb.SheetNames.map((n) => ({
+      aba: n,
+      linhas: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' })
+        .map((l) => (Array.isArray(l) ? l.map((c) => String(c ?? '').trim()) : []))
+        .filter((l) => l.some(Boolean)),
+    }));
+    return { ok: true, abas, nome };
+  } catch (e) {
+    return { ok: false, error: `Não consegui ler a planilha: ${e.message}` };
+  }
+});
+
+// As fontes, montadas uma vez por rodada (os resumos do Google ficam em
+// memória entre as linhas) e refeitas no "Iniciar".
+let relatorioFontes = null;
+function criarFontesDoHub() {
+  const { criarFontes } = require(path.join(__dirname, 'lib', 'relatorio-fontes'));
+  const QuandoPublicou = require(path.join(__dirname, 'lib', 'quando-publicou'));
+  let gcfg = {};
+  try { gcfg = JSON.parse(fs.readFileSync(googleConfigPath(), 'utf-8')) || {}; } catch (e) { gcfg = {}; }
+  const oauthCfg = readOauthConfigFile();
+  // O Salesforce com a sessão renovada quando vence (sfComSessao), chamada a chamada.
+  const sf = {
+    consultar: (...a) => sfComSessao((c) => c.consultar(...a)),
+    buscar: (...a) => sfComSessao((c) => c.buscar(...a)),
+    descrever: (...a) => sfComSessao((c) => c.descrever(...a)),
+  };
+  let saClient = null;
+  const authSa = async () => {
+    if (saClient) return saClient;
+    if (!gcfg.saPath || !fs.existsSync(gcfg.saPath)) throw new Error('Arquivo da service account não encontrado. Configure o caminho nas configurações.');
+    saClient = await buildGoogleAuthClient(gcfg.saPath);
+    return saClient;
+  };
+  const authDoSlot = async (slot) => {
+    try { return loadUserOauthClient(oauthCfg.clientId, oauthCfg.clientSecret, slot, { global: false }); } catch (e) { return null; }
+  };
+  const contas = gcfg.brandAccounts || gcfg.scOwners || {};
+  const relatorio = contasRelatorio();
+  const slots = [
+    ...Object.keys(BRANDS).map((b) => ({ slot: b, email: String(contas[b] || '').toLowerCase(), analytics: false, searchConsole: true })),
+    ...relatorio.map((email, i) => ({ slot: `rel-${i + 1}`, email, analytics: true, searchConsole: true })),
+  ].filter((s) => s.email);
+  let creds = null;
+  try { if (fs.existsSync(credsPath())) creds = JSON.parse(safeStorage.decryptString(fs.readFileSync(credsPath()))); } catch (e) { creds = null; }
+  let workspaces = [];
+  try {
+    const st = fs.existsSync(hubStatePath()) ? JSON.parse(fs.readFileSync(hubStatePath(), 'utf-8')) : {};
+    workspaces = [...new Set([...Object.values(st.bitbucketWorkspaces || {}), st.bitbucketWorkspace].map((w) => String(w || '').trim()).filter(Boolean))];
+  } catch (e) { workspaces = []; }
+  const bitbucket = creds && creds.email && creds.token && workspaces.length ? QuandoPublicou.criarBitbucket({ creds, workspaces }) : null;
+  const bc = String(contas.bc || '').toLowerCase();
+  const mpiplus = String(contas.mpiplus || '').toLowerCase();
+  const mpisolutions = String(contas.mpisolutions || '').toLowerCase();
+  return criarFontes({
+    sf, google, authSa, authDoSlot, slots, bitbucket, painel: null,
+    // A sessão principal (quem usa o Hub) lê os acessos das contas do GA4 em
+    // que a service account não administra.
+    authPrincipal: async () => { try { return loadUserOauthClient(oauthCfg.clientId, oauthCfg.clientSecret, null, { global: false }); } catch (e) { return null; } },
+    cache: { ler: readAnalyticsStreamsCache, gravar: saveAnalyticsStreamsCache },
+    contasConhecidas: [...Object.values(contas), ...relatorio],
+    // O padrão de cada empresa quando nada prova: Analytics da Busca é o
+    // bcrelatorios; o Search Console mora no login das tags (bcrelatoriotags).
+    padraoMarca: { Busca: { ga: bc, gsc: mpiplus || bc }, MPI: { ga: mpisolutions, gsc: mpisolutions }, 'MPI+': { ga: mpiplus, gsc: mpiplus } },
+  });
+}
+ipcMain.handle('relatorio:iniciar', () => {
+  try {
+    relatorioFontes = criarFontesDoHub();
+    const relatorio = contasRelatorio();
+    return { ok: true, logins: relatorio.length };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+const comFontes = (nome) => async (event, payload) => {
+  try {
+    if (!relatorioFontes) relatorioFontes = criarFontesDoHub();
+    return await relatorioFontes[nome](payload || {});
+  } catch (e) {
+    return { ok: false, erro: e.message, log: [{ message: `${nome}: ${e.message}`, type: 'error' }] };
+  }
+};
+ipcMain.handle('relatorio:salesforce', comFontes('salesforce'));
+ipcMain.handle('relatorio:site', comFontes('site'));
+ipcMain.handle('relatorio:geralPhp', comFontes('geralPhp'));
+ipcMain.handle('relatorio:google', comFontes('google'));
+
 // Durante uma rodada em massa, o Windows não pode suspender o app (ADR-094).
 // Não impede a tela de bloquear, só que o sistema durma com a rodada no meio.
 //
@@ -8217,6 +8369,13 @@ const OAUTH_SCOPES_MARCA = [
   'https://www.googleapis.com/auth/webmasters',
   'https://www.googleapis.com/auth/userinfo.email',
 ];
+// Os logins de relatório (ADR-148) só leem: que contas do Analytics e que
+// sites do Search Console aquele login enxerga.
+const OAUTH_SCOPES_RELATORIO = [
+  'https://www.googleapis.com/auth/analytics.readonly',
+  'https://www.googleapis.com/auth/webmasters.readonly',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
 
 ipcMain.handle('oauth:getConfig', () => {
   try {
@@ -8397,7 +8556,14 @@ ipcMain.handle('oauth:brandStatus', () => {
       esperado: googleAccountFor(slot),
     };
   }
-  return { ok: true, marcas };
+  // Os logins de relatório (ADR-148), um slot rel-N por e-mail configurado.
+  const relatorio = contasRelatorio().map((email, i) => {
+    const slot = `rel-${i + 1}`;
+    const token = readOauthToken(slot);
+    const session = oauthSessionState(token);
+    return { slot, email, connected: session.connected, durable: !!session.durable, conectadoComo: token?.email || null };
+  });
+  return { ok: true, marcas, relatorio };
 });
 
 // Login em andamento (servidor local escutando o callback do Google). Fica aqui
@@ -8522,7 +8688,7 @@ ipcMain.handle('oauth:login', async (event, { clientId, clientSecret, slot }) =>
         // refresh token. Sem ele o access token vence em ~1h e a próxima
         // chamada morre com "No refresh token is set".
         access_type: 'offline',
-        scope: slot ? OAUTH_SCOPES_MARCA : OAUTH_SCOPES_PRINCIPAL,
+        scope: ehSlotRelatorio(slot) ? OAUTH_SCOPES_RELATORIO : slot ? OAUTH_SCOPES_MARCA : OAUTH_SCOPES_PRINCIPAL,
         // 'consent' junto de 'select_account': sem forçar o consentimento o
         // Google pula a tela e devolve o login SEM refresh token.
         prompt: 'consent select_account',
@@ -9082,6 +9248,77 @@ ipcMain.handle('salesforce:metricas', async (event, { dias } = {}) => {
       });
       push(`${tarefas.length} tarefa(s) suas lidas${comConclusao ? '' : ' (a org não tem CompletedDateTime: conclusão = última modificação)'}.`, 'success');
       return { eu: { id: eu.id, nome: eu.nome }, tarefas, dias: n, comConclusao, agora: new Date().toISOString() };
+    });
+    return { ok: true, log, ...saida };
+  } catch (e) {
+    push(`Salesforce: ${e.message}`, 'error');
+    return { ok: false, error: e.message, precisaReconectar: !!(e && (e.sessaoInvalida || e.status === 403 || e.reauth)), log };
+  }
+});
+
+// Comparação antes/depois do Hub nas publicações MPI+ (ADR-146). SÓ LEITURA:
+// uma SOQL das tarefas de publicação (qualquer dono, para a fila inteira servir
+// de contexto) desde o começo do histórico, as mesmas regras do
+// salesforce:metricas (Concluído, CompletedDateTime, cancelada fora) e a conta
+// em lib/comparativo.js. Grava o resultado em docs/metricas/ (agregados e, para
+// conferência, só datas e flags por tarefa — sem assunto nem comentário) e o
+// devolve. Nada é alterado, comentado ou fechado no Salesforce.
+ipcMain.handle('salesforce:comparativoMpiPlus', async (event, { corte, serieDesde, historicoDesde, salvarEm } = {}) => {
+  const log = [];
+  const push = (message, type = 'info') => log.push({ message, type });
+  const dataCorte = String(corte || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataCorte)) return { ok: false, error: 'Informe o corte como AAAA-MM-DD (o dia em que o Hub passou a publicar MPI+).', log };
+  const desde = /^\d{4}-\d{2}-\d{2}$/.test(String(historicoDesde || '')) ? historicoDesde : '2025-09-01';
+  if (salvarEm !== undefined && (typeof salvarEm !== 'string' || !path.isAbsolute(salvarEm))) return { ok: false, error: 'salvarEm precisa ser uma pasta com caminho completo (ex.: C:\\Users\\eu\\Documentos).', log };
+  try {
+    const Comparativo = require(path.join(__dirname, 'lib', 'comparativo'));
+    const saida = await sfComSessao(async (sf) => {
+      const eu = await sfQuemSouEu(sf);
+      const campos = (comConclusao) => `Id, Subject, Description, IsClosed, Status, CreatedDate, LastModifiedDate${comConclusao ? ', CompletedDateTime' : ''}, OwnerId, Owner.Name, Owner.Type, CreatedById`;
+      // Qualquer dono: a concluída é de quem concluiu, a aberta é da fila.
+      const where = `Subject LIKE '%ublica%' AND CreatedDate >= ${desde}T00:00:00Z`;
+      push(`SOQL tarefas de publicação (qualquer dono) desde ${desde} — só leitura`, 'cmd');
+      let linhas;
+      let comConclusao = true;
+      try {
+        linhas = await sf.consultar(`SELECT ${campos(true)} FROM Task WHERE ${where} ORDER BY CreatedDate ASC`, { maximo: 20000 });
+      } catch (e) {
+        if (e && e.sessaoInvalida) throw e;
+        if (!/CompletedDateTime/i.test(String(e && e.message))) throw e;
+        comConclusao = false;
+        linhas = await sf.consultar(`SELECT ${campos(false)} FROM Task WHERE ${where} ORDER BY CreatedDate ASC`, { maximo: 20000 });
+      }
+      const tarefas = linhas.map((t) => {
+        const cancelada = /cancel/i.test(t.Status || '');
+        return {
+          id: t.Id, assunto: t.Subject || '', descricao: String(t.Description || ''), fechada: !!t.IsClosed, cancelada, status: t.Status || '',
+          criada: t.CreatedDate, concluida: t.IsClosed && !cancelada ? (t.CompletedDateTime || t.LastModifiedDate) : null,
+          donoId: t.OwnerId || '', donoTipo: (t.Owner && t.Owner.Type) || '', criadoPorId: t.CreatedById || '',
+        };
+      });
+      push(`${tarefas.length} tarefa(s) de publicação lidas${comConclusao ? '' : ' (sem CompletedDateTime: conclusão = última modificação)'}.`, 'success');
+      const r = Comparativo.comparar(tarefas, { corte: dataCorte, agora: new Date(), euId: eu.id, serieDesde: serieDesde || undefined });
+      const resultado = { geradoEm: new Date().toISOString(), eu: { id: eu.id, nome: eu.nome }, corte: dataCorte, historicoDesde: desde, comConclusao, filtros: { soql: `SELECT ${campos(comConclusao)} FROM Task WHERE ${where} ORDER BY CreatedDate ASC`, concluida: "IsClosed = true AND Status <> Cancelada, pela CompletedDateTime", mpiplus: "assunto 'Publicação (Troca de DNS)…' e (MPI+ no assunto ou *.mpitemporario.com.br no comentário, exceto producao.)", sla: 'dias úteis criação→conclusão, fórmula do relatório "Done -- Deploy - BC / MPI" (ADR-143)', minhas: `OwnerId = ${eu.id}` }, ...r };
+      // Onde gravar: a pasta pedida (salvarEm), senão docs/metricas do
+      // repositório (quando o Hub roda do código), senão a pasta de dados do
+      // app: o Hub instalado roda de dentro do app.asar, que é só leitura.
+      const candidatos = [salvarEm, path.join(__dirname, 'docs', 'metricas'), path.join(app.getPath('userData'), 'metricas')].filter(Boolean);
+      const nomeArquivo = `comparativo-mpiplus-${dataCorte}.json`;
+      const texto = JSON.stringify(resultado, null, 2);
+      for (const dir of candidatos) {
+        try {
+          fs.mkdirSync(dir, { recursive: true });
+          const destino = path.join(dir, nomeArquivo);
+          fs.writeFileSync(destino, texto, 'utf-8');
+          push(`Resultado gravado em ${destino}`, 'success');
+          resultado.arquivo = destino;
+          break;
+        } catch (e) {
+          push(`Não deu para gravar em ${dir} (${e.message}).`, 'warn');
+        }
+      }
+      if (!resultado.arquivo) push('O resultado está só no retorno; passe { salvarEm: "C:\\\\pasta" } para gravar noutro lugar.', 'warn');
+      return resultado;
     });
     return { ok: true, log, ...saida };
   } catch (e) {

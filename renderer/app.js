@@ -75,6 +75,7 @@ const TOOLS = [
   { id: 'ouvidoria', category: 'hosting', name: 'Ouvidoria / SSL', desc: 'Planilha de domínios: acha a conta no Salesforce, lê o caso de Ouvidoria (Definição e Data de Conclusão) e devolve a Situação e se deve ativar o SSL.' },
   { id: 'quando', category: 'hosting', name: 'Quando publicou', desc: 'Lista de domínios: a data de publicação pela tarefa concluída no Salesforce ou, sem ela, pelo commit do geral.php / client.inc.php no Bitbucket.' },
   { id: 'vinculos', category: 'google', name: 'Conferir vínculos', desc: 'Clientes MPI+ da planilha de publicações (ou uma lista sua): lê no painel as Integrações e a Conexão do Relatório e devolve, em .xlsx, quem está vinculado e o que falta. Só leitura.' },
+  { id: 'relatorio', category: 'google', name: 'Planilha do Relatório', desc: 'A planilha "Domínios e Analytics" (abas Busca e MPI) preenchida: Salesforce (contato, contrato, pacote, valor), o site (ID do cliente, tipo, categorias e palavras-chave) e o Google (GA4, Search Console e qual login enxerga cada um). Só leitura.' },
 ];
 
 function toolCategory(id) {
@@ -258,6 +259,8 @@ const el = {
   wsBcInput: document.getElementById('wsBcInput'),
   wsMpiSolutionsInput: document.getElementById('wsMpiSolutionsInput'),
   brandOauthList: document.getElementById('brandOauthList'),
+  contasRelatorioInput: document.getElementById('contasRelatorioInput'),
+  relatorioLoginsList: document.getElementById('relatorioLoginsList'),
   oauthClientIdInput: document.getElementById('oauthClientIdInput'),
   oauthClientSecretInput: document.getElementById('oauthClientSecretInput'),
   msClientIdInput: document.getElementById('msClientIdInput'),
@@ -613,6 +616,7 @@ function render() {
   if (state.view === 'ouvidoria') renderOuvidoriaTool();
   if (state.view === 'quando') renderQuandoTool();
   if (state.view === 'vinculos') renderVinculosTool();
+  if (state.view === 'relatorio') renderRelatorioTool();
 }
 
 // ---------- Moldura v2.4: sidebar de módulos + topo + rodapé (ADR-114) ----------
@@ -631,6 +635,7 @@ const NAV_ICON = {
   terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>',
   quando: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   vinculos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/></svg>',
+  relatorio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>',
 };
 
 NAV_ICON.merge = ICONS.merge;
@@ -648,6 +653,7 @@ const MODULES = [
   { id: 'publish', nome: 'Publicar MPI+', icon: 'publish', tag: 'MOD_PUBLISH_MPI' },
   { id: 'bulk', nome: 'Publicação em Massa', icon: 'bulk', tag: 'MOD_BULK' },
   { id: 'vinculos', nome: 'Conferir Vínculos', icon: 'vinculos', tag: 'MOD_PAINEL_AUDIT' },
+  { id: 'relatorio', nome: 'Planilha do Relatório', icon: 'relatorio', tag: 'MOD_RELATORIO_IMPORT' },
   { id: 'newproject', nome: 'Propriedades Google', icon: 'google', tag: 'MOD_GOOGLE_PROPS' },
   { id: 'ouvidoria', nome: 'Ouvidoria & Auditoria', icon: 'ouvidoria', tag: 'MOD_OUVIDORIA' },
   { id: 'quando', nome: 'Quando publicou', icon: 'quando', tag: 'MOD_QUANDO_PUB' },
@@ -905,6 +911,7 @@ function dominioDaTela() {
   else if (v === 'ouvidoria') d = (ouvEstado.dominios || [])[0] || '';
   else if (v === 'quando') d = (qpEstado.dominios || [])[0] || '';
   else if (v === 'vinculos') d = (vincEstado.itens[0] && vincEstado.itens[0].dominio) || '';
+  else if (v === 'relatorio') d = (relEstado.resultados[0] && relEstado.resultados[0].dados && relEstado.resultados[0].dados.site) || '';
   else if (v === 'newproject') d = val('npDomainInput') || val('npSearchInput');
   else if (v === 'bulk') d = (bulkRows[0] && bulkRows[0].dominio) || '';
   else if (v === 'merge') d = (state.queue[0] && state.queue[0].repo) || '';
@@ -2355,6 +2362,284 @@ async function exportarVinculos() {
   if (!res.ok) { log(res.error, 'error'); return; }
   if (res.cancelado) { log('Exportação cancelada.', 'info'); return; }
   log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s), abas Resumo, Clientes e Pendências).`, 'success');
+}
+
+// ---------- Planilha do Relatório (ADR-148) ----------
+//
+// A planilha "Domínios e Analytics" (abas Busca e MPI, as 19 colunas do
+// Relatório do painel) preenchida linha a linha: Salesforce → site → tipo →
+// ID do cliente → Google → palavras. A rodada é do lib/relatorio-rodada.js;
+// as fontes são o processo principal (lib/relatorio-fontes.js) e, para o ID
+// quando o site e o geral.php não dizem, a busca no painel. Tudo só leitura.
+// O resultado fica salvo em arquivo a cada linha, como o Conferir vínculos.
+
+let relEstado = { itens: [], origem: '', rodando: false, parar: false, resultados: [], tipos: null, salvoEm: '', restaurou: false, avisos: [] };
+
+function relAgora() {
+  return new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function relSalvar() {
+  try {
+    await window.api.salvarRelatorio({ itens: relEstado.itens, origem: relEstado.origem, resultados: relEstado.resultados, tipos: relEstado.tipos });
+  } catch (e) { /* salvar é conveniência; a tela segue */ }
+}
+
+async function relRestaurar() {
+  if (relEstado.restaurou || relEstado.itens.length || relEstado.resultados.length) return;
+  relEstado.restaurou = true;
+  const r = await window.api.lerRelatorio();
+  if (r && r.aviso) log(r.aviso, 'warn');
+  const e = r && r.estado;
+  if (!e || !Array.isArray(e.itens) || !e.itens.length) return;
+  relEstado = { ...relEstado, itens: e.itens, origem: e.origem || 'rodada salva', resultados: Array.isArray(e.resultados) ? e.resultados : [], tipos: e.tipos || null, salvoEm: e.salvoEm || '' };
+  const quando = e.salvoEm ? new Date(e.salvoEm).toLocaleString('pt-BR') : '';
+  log(`Planilha do Relatório: restaurei a rodada salva${quando ? ` de ${quando}` : ''}: ${relEstado.resultados.length} de ${relEstado.itens.length} linha(s) já preenchida(s). "Continuar" segue de onde parou; "Descartar" começa do zero.`, 'info');
+  renderRelatorio();
+}
+
+async function relDescartar() {
+  if (relEstado.rodando) return;
+  await window.api.apagarRelatorio();
+  relEstado = { ...relEstado, itens: [], origem: '', resultados: [], tipos: null, salvoEm: '', avisos: [] };
+  log('Rodada descartada.', 'info');
+  renderRelatorioTool();
+}
+
+function relRestantes() {
+  const feitos = new Set(relEstado.resultados.map((r) => r.chave));
+  return relEstado.itens.filter((i) => !feitos.has(window.Relatorio.chaveItem(i)));
+}
+
+function renderRelatorioTool() {
+  const R = window.Relatorio;
+  el.leftPanel.innerHTML = `
+    ${backButtonHtml()}
+    <div class="sec anim-in">
+    <div class="sec-head"><span class="sec-title">Planilha do Relatório</span><span class="sec-meta">só leitura</span></div>
+    <div class="tool-sub" style="margin:0 0 12px">A planilha "Domínios e Analytics" (abas Busca e MPI) com as ${R.COLUNAS.length} colunas preenchidas pelo Salesforce, pelo site e pelo Google</div>
+    <label class="field">
+      <span>A planilha (.ods, .xlsx) com os dados fixos preenchidos <span class="tag" id="relContagem">${relEstado.itens.length ? `${relEstado.itens.length} linhas` : ''}</span></span>
+      <input id="relFile" type="file" accept=".ods,.xlsx,.xls,.csv,application/vnd.oasis.opendocument.spreadsheet,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    </label>
+    </div>
+    <div id="relResumo"></div>
+    <div id="relAcoes"></div>
+    <div id="relLista"></div>
+    ${infoBoxHtml(
+      '<p><strong>Quem entra:</strong> as linhas das abas <strong>Busca</strong> (Busca Cliente) e <strong>MPI</strong> (MPI Solutions). Os fixos (bu_nome, usuario_responsavel_id, contract_type) vão como vieram. MPI+ não entra: não é Busca One.</p>' +
+      '<p><strong>Salesforce:</strong> a conta pelo nº do contrato (MPI), pelo CNPJ (Busca), senão pela razão social; o primeiro contato (só o primeiro nome, e-mail e telefone); na aba Contratos, o contrato ativo da empresa: número, Site, Pacote Contratado (pacote_palavras) e Valor da Parcela Mensal (valor_mensal, como R$2034,24).</p>' +
+      '<p><strong>O site:</strong> o Hub lê o HTML do site do contrato: o ID do cliente (campo oculto idProjeto, o mesmo que a extensão mostra; senão o $idProjetoBusca do geral.php no Bitbucket; senão a busca no painel), as tags, e se o site diz que é <strong>Busca One</strong> ou <strong>Híbrido</strong> (senão vale o Tipo da planilha de fluxo de publicação, senão a estrutura).</p>' +
+      '<p><strong>Palavras:</strong> One = as categorias (a página /categorias); Híbrido = as categorias mais as palavras-chave de cada uma (menu, páginas de categoria e sitemap, juntados sem repetir). Separadas por <code>|</code>, sem espaço.</p>' +
+      '<p><strong>Google:</strong> a propriedade do GA4 pela tag do site (o G-, ou o G- que o container GTM dispara); qual login enxerga a conta (pelos acessos da conta, senão pelas sessões conectadas, senão o padrão da marca, dito como suposição); o site no Search Console dos logins conectados em Configurações → Sessão do Google (conecte os logins de relatório antes de rodar).</p>' +
+      '<p><strong>O que sai:</strong> a planilha .xlsx com as abas Busca e MPI prontas para importar, mais <strong>Diagnóstico</strong> (como cada dado foi achado) e <strong>Pendências</strong> (o que faltou e por quê). A rodada fica salva em arquivo a cada linha e nunca para por uma linha que não achou.</p>',
+      'Como a planilha é preenchida'
+    )}
+  `;
+  document.getElementById('backToHub').addEventListener('click', goHome);
+  relRestaurar();
+  document.getElementById('relFile').addEventListener('change', async (e) => {
+    const arquivo = e.target.files && e.target.files[0];
+    if (!arquivo) return;
+    const bytes = new Uint8Array(await arquivo.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const res = await window.api.lerPlanilhaAbas({ nome: arquivo.name, base64: btoa(bin) });
+    if (!res.ok) { log(res.error, 'error'); return; }
+    const ent = R.lerEntrada(res.abas);
+    for (const a of ent.avisos) log(a, 'warn');
+    if (!ent.itens.length) { log(`${arquivo.name}: nenhuma linha nas abas Busca/MPI (abas: ${res.abas.map((a) => a.aba).join(', ')}).`, 'error'); return; }
+    if (relEstado.resultados.length) await window.api.apagarRelatorio();
+    relEstado = { ...relEstado, itens: ent.itens, origem: arquivo.name, resultados: [], salvoEm: '', avisos: ent.avisos };
+    const porAba = {};
+    for (const it of ent.itens) porAba[it.empresa] = (porAba[it.empresa] || 0) + 1;
+    log(`${arquivo.name}: ${ent.itens.length} linha(s) (${Object.keys(porAba).map((k) => `${porAba[k]} ${k}`).join(', ')})${ent.ignoradas.length ? `; abas ignoradas: ${ent.ignoradas.join(', ')}` : ''}.`, 'info');
+    const cont = document.getElementById('relContagem');
+    if (cont) cont.textContent = `${ent.itens.length} linhas`;
+    await relSalvar();
+    renderRelatorio();
+  });
+  renderRelatorio();
+}
+
+function relBadge(r) {
+  if (r.situacao === 'completo') return ['ok', 'Completo'];
+  if (r.situacao === 'parcial') return ['warn', 'Parcial'];
+  return ['err', 'Sem conta'];
+}
+
+function relDetalhe(r) {
+  const R = window.Relatorio;
+  const d = r.dados || {};
+  const partes = [];
+  if (d.site) partes.push(d.site);
+  if (d.tipo) partes.push(R.TIPO_ROTULO[d.tipo] || d.tipo);
+  if (d.numeroContrato) partes.push(`contrato ${d.numeroContrato}`);
+  if (d.idProjeto) partes.push(`ID ${d.idProjeto}`);
+  if (d.ga && d.ga.propertyId) partes.push(`${d.ga.propertyId}${d.ga.conexao ? ' · ' + d.ga.conexao : ''}`);
+  if (d.gsc && d.gsc.siteUrl) partes.push(`SC ${d.gsc.conexao || '?'}`);
+  if (d.palavras) partes.push(`${d.palavras.split('|').length} palavras`);
+  const pend = (r.pendencias || []).map((p) => R.PENDENCIA_ROTULO[p] || p);
+  if (pend.length) partes.push(`falta: ${pend.join(', ')}`);
+  if (r.erro) partes.push(r.erro);
+  return partes.join(' · ');
+}
+
+function renderRelatorio() {
+  const resumo = document.getElementById('relResumo');
+  const acoes = document.getElementById('relAcoes');
+  const lista = document.getElementById('relLista');
+  if (!resumo || !acoes || !lista) return;
+  const R = window.Relatorio;
+  const n = relEstado.resultados.length;
+  resumo.innerHTML = relEstado.itens.length
+    ? `<div class="section-label">${relEstado.itens.length} linha(s) de ${escapeHtml(relEstado.origem)}${n ? ` · ${R.textoResumo(relEstado.resultados)}` : ''}</div>`
+    : '';
+  if (relEstado.rodando) {
+    acoes.innerHTML = `<button id="relParar" class="btn caution full-width">Parar depois desta</button>`;
+    document.getElementById('relParar').addEventListener('click', () => { relEstado.parar = true; log('Vou parar depois da linha atual. O que já foi preenchido fica na lista e salvo.', 'warn'); });
+  } else {
+    let h = '';
+    const restantes = relRestantes().length;
+    if (relEstado.itens.length) {
+      if (n && restantes) h += `<button id="relRun" class="btn primary full-width">${ICONS.search} Continuar (${restantes} restante${restantes > 1 ? 's' : ''} de ${relEstado.itens.length})</button>`;
+      else h += `<button id="relRun" class="btn primary full-width">${ICONS.search} Preencher (${relEstado.itens.length} linha${relEstado.itens.length > 1 ? 's' : ''})${n ? ' de novo' : ''}</button>`;
+    }
+    if (n) h += `<div style="display:flex;gap:6px;margin-top:6px"><button id="relCopiar" class="btn ghost" style="flex:1">Copiar resultado</button><button id="relExport" class="btn ghost" style="flex:1">Salvar planilha (.xlsx)</button><button id="relDescartar" class="btn ghost" title="Apaga a rodada salva e limpa a lista">Descartar</button></div>`;
+    acoes.innerHTML = h;
+    const run = document.getElementById('relRun');
+    if (run) run.addEventListener('click', () => rodarRelatorio({ continuar: n > 0 && restantes > 0 }));
+    const cp = document.getElementById('relCopiar');
+    if (cp) cp.addEventListener('click', (e) => copiarRelatorio(e.currentTarget));
+    const exp = document.getElementById('relExport');
+    if (exp) exp.addEventListener('click', exportarRelatorio);
+    const desc = document.getElementById('relDescartar');
+    if (desc) desc.addEventListener('click', relDescartar);
+  }
+  lista.innerHTML = n
+    ? '<div class="rows">' + relEstado.resultados.map((r) => {
+        const [cls, txt] = relBadge(r);
+        return `<div class="row is-${cls}"><div class="row__main"><div class="row__title">${escapeHtml(r.razao || '(sem razão social)')} <span class="tag">${escapeHtml(r.aba)}!${r.linha}</span></div><div class="row__sub">${escapeHtml(relDetalhe(r))}</div></div><span class="badge ${cls}">${escapeHtml(txt)}</span></div>`;
+      }).join('') + '</div>'
+    : '';
+}
+
+// Os tipos da planilha de fluxo de publicação (Busca One / Busca One Hibrido /
+// MPI+), uma vez por rodada; sem ela, a rodada segue (o site e a estrutura dizem).
+async function relCarregarTipos() {
+  if (relEstado.tipos) return;
+  const r = await withBusy('lendo os tipos na planilha de fluxo de publicação', () => window.api.listarPlanilha()).catch((e) => ({ ok: false, error: e.message }));
+  if (r && r.log) for (const e of r.log) log(e.message, e.type);
+  const tipos = {};
+  if (r && r.ok) for (const c of r.clientes || []) if (c.dominio) tipos[c.dominio] = c.tipo || '';
+  else log(`Planilha de fluxo de publicação indisponível (${(r && r.error) || 'sem resposta'}): o tipo vem do próprio site ou da estrutura.`, 'warn');
+  relEstado.tipos = tipos;
+  if (Object.keys(tipos).length) log(`Tipos da planilha de fluxo: ${Object.keys(tipos).length} site(s).`, 'info');
+}
+
+function relDeps() {
+  return {
+    salesforce: (p) => window.api.relatorioSalesforce(p),
+    site: (p) => window.api.relatorioSite(p),
+    geralPhp: (p) => window.api.relatorioGeralPhp(p),
+    google: (p) => window.api.relatorioGoogle(p),
+    // O ID pela busca no painel (ADR-098): a primeira coluna da lista de clientes.
+    painelId: async ({ razao, dominio }) => {
+      const r = await window.api.acharContratoNoPainel({ razao, dominio });
+      return { ok: !!(r && r.ok), cliente: r && r.ok && r.contrato ? String(r.contrato.cliente || '') : '', erro: r && r.error, log: (r && r.log) || [] };
+    },
+    tipoFluxo: async ({ dominio }) => ({ tipo: (relEstado.tipos || {})[dominio] || '' }),
+  };
+}
+
+async function rodarRelatorio({ continuar = false } = {}) {
+  if (relEstado.rodando || !relEstado.itens.length) return;
+  const R = window.Relatorio;
+  relEstado.rodando = true;
+  relEstado.parar = false;
+  if (!continuar) relEstado.resultados = [];
+  const fila = continuar ? relRestantes() : relEstado.itens;
+  renderRelatorio();
+  log(`Planilha do Relatório: ${fila.length} linha(s) de ${relEstado.origem}${continuar ? ' (continuando de onde parou)' : ''}, uma por vez: Salesforce, o site, o Google. Só leitura; a rodada fica salva a cada linha.`, 'cmd');
+  window.api.manterAcordado(true, 'relatorio').catch(() => {});
+  const inicio = Date.now();
+  try {
+    const ini = await window.api.relatorioIniciar();
+    if (!ini.ok) log(ini.error, 'warn');
+    await relCarregarTipos();
+    const deps = relDeps();
+    for (const item of fila) {
+      if (relEstado.parar) { log('Parado por você. O que já foi preenchido fica na lista, salvo; "Continuar" retoma daqui.', 'warn'); break; }
+      const r = await withBusy(`preenchendo ${item.razao || item.cnpj || item.numeroContrato}`, () => window.RelatorioRodada.preencherItem(item, deps, log));
+      relEstado.resultados.push(r);
+      log(R.textoLinha(r), r.situacao === 'completo' ? 'success' : r.situacao === 'parcial' ? 'warn' : 'error');
+      await relSalvar();
+      renderRelatorio();
+    }
+  } finally {
+    relEstado.rodando = false;
+    relEstado.parar = false;
+    window.api.manterAcordado(false, 'relatorio').catch(() => {});
+  }
+  const min = Math.max(1, Math.round((Date.now() - inicio) / 60000));
+  log(`Planilha do Relatório: ${R.textoResumo(relEstado.resultados)}, em ${min} min. "Salvar planilha (.xlsx)" grava as abas Busca e MPI prontas para importar, o Diagnóstico e as Pendências.`, 'success');
+  renderRelatorio();
+}
+
+async function copiarRelatorio(btn) {
+  if (!relEstado.resultados.length) { log('Nada para copiar ainda.', 'warn'); return; }
+  const R = window.Relatorio;
+  try {
+    await window.api.copyToClipboard([R.textoResumo(relEstado.resultados), '', ...relEstado.resultados.map(R.textoLinha)].join('\n'));
+    log(`${relEstado.resultados.length} linha(s) copiadas.`, 'success');
+    flashCopied(btn);
+  } catch (e) {
+    log(`Falha ao copiar: ${e.message}`, 'error');
+  }
+}
+
+async function exportarRelatorio() {
+  if (!relEstado.resultados.length) { log('Nada para exportar ainda.', 'warn'); return; }
+  const R = window.Relatorio;
+  const hoje = new Date();
+  const iso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  const res = await window.api.exportarPlanilha({ nomeSugerido: `dominios-e-analytics-${iso}.xlsx`, abas: R.montarAbasXlsx(relEstado.resultados) });
+  if (!res.ok) { log(res.error, 'error'); return; }
+  if (res.cancelado) { log('Exportação cancelada.', 'info'); return; }
+  log(`Planilha salva em ${res.caminho} (${res.linhas} linha(s): Busca, MPI, Diagnóstico e Pendências).`, 'success');
+}
+
+// Os logins de relatório nas configurações (ADR-148): um cartão por e-mail,
+// com Conectar/Desconectar, como as sessões das marcas.
+function renderRelatorioLogins(lista) {
+  if (!el.relatorioLoginsList) return;
+  const logins = Array.isArray(lista) ? lista : [];
+  el.relatorioLoginsList.innerHTML = logins.map((l) => {
+    let estado;
+    if (!l.connected) estado = { badge: 'warn', texto: 'não conectado', cls: 'off' };
+    else if (l.conectadoComo && l.conectadoComo.toLowerCase() !== String(l.email).toLowerCase()) estado = { badge: 'err', texto: `conectado como ${l.conectadoComo}`, cls: 'pending' };
+    else if (!l.durable) estado = { badge: 'warn', texto: 'sessão curta (≈1h)', cls: 'pending' };
+    else estado = { badge: 'ok', texto: 'conectado', cls: '' };
+    return `<div class="card card--status ${estado.cls}">
+      <div class="card__meta">Login de relatório</div>
+      <div class="card__title">${escapeHtml(l.email)}</div>
+      <div class="badges" style="margin:6px 0 0 0"><span class="badge ${estado.badge}">${escapeHtml(estado.texto)}</span></div>
+      <div class="card__actions">
+        <button class="btn ghost" data-rel-oauth="${l.slot}">${l.connected ? 'Reconectar' : 'Conectar'}</button>
+        ${l.connected ? `<button class="btn ghost" data-rel-oauth-out="${l.slot}">Desconectar</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  el.relatorioLoginsList.querySelectorAll('[data-rel-oauth]').forEach((btn) => {
+    btn.addEventListener('click', () => conectarMarca(btn.dataset.relOauth));
+  });
+  el.relatorioLoginsList.querySelectorAll('[data-rel-oauth-out]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await window.api.oauthLogout({ slot: btn.dataset.relOauthOut });
+      log(`Sessão de ${btn.dataset.relOauthOut} desconectada.`, 'info');
+      renderBrandOauth();
+    });
+  });
 }
 
 // ---------- Tela inicial (Hub) ----------
@@ -7369,6 +7654,7 @@ async function renderBrandOauth() {
   if (!el.brandOauthList) return;
   const res = await window.api.brandOauthStatus();
   const marcas = (res && res.marcas) || {};
+  renderRelatorioLogins((res && res.relatorio) || []);
 
   el.brandOauthList.innerHTML = BRANDS.map((b) => {
     const m = marcas[b.id] || {};
@@ -7411,10 +7697,15 @@ async function renderBrandOauth() {
 }
 
 async function conectarMarca(brand) {
-  const conta = (state.brandAccounts?.[brand] || '').trim();
+  // Os logins de relatório (ADR-148) vêm da lista, não das marcas.
+  const deRelatorio = /^rel-\d+$/.test(String(brand)) ? ((state.contasRelatorio || [])[Number(String(brand).slice(4)) - 1] || '') : '';
+  const conta = (state.brandAccounts?.[brand] || deRelatorio || '').trim();
   if (!conta) {
     log(`Preencha a conta do Google de ${brandName(brand)} antes de conectar.`, 'error');
     return;
+  }
+  if (deRelatorio && (!state.contasRelatorio || el.contasRelatorioInput && el.contasRelatorioInput.value.split(/[\n,;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean).join('\n') !== (state.contasRelatorio || []).join('\n'))) {
+    log('Salve as configurações antes de conectar um login de relatório novo.', 'warn');
   }
   if (!state.oauthClientId || !state.oauthClientSecret) {
     log('Configure o OAuth Client ID e o Client Secret, a sessão da marca usa os mesmos.', 'error');
@@ -8228,6 +8519,7 @@ function openSettings(tab) {
   el.googleSaPathInput.value = state.googleSaPath || '';
   el.googleOwnerEmailInput.value = state.googleOwnerEmail || '';
   for (const campo of BRAND_ACCOUNT_FIELDS) el[campo.el].value = state.brandAccounts?.[campo.brand] || '';
+  if (el.contasRelatorioInput) el.contasRelatorioInput.value = (state.contasRelatorio || []).join('\n');
   el.bitbucketWorkspaceInput.value = state.bitbucketWorkspace || '';
   for (const campo of WORKSPACE_FIELDS) el[campo.el].value = state.bitbucketWorkspaces?.[campo.brand] || '';
   el.oauthClientIdInput.value = state.oauthClientId || '';
@@ -8305,13 +8597,20 @@ el.saveSettingsBtn.addEventListener('click', async () => {
   const contasMudaram = BRAND_ACCOUNT_FIELDS.some(
     (c) => brandAccounts[c.brand] !== (state.brandAccounts?.[c.brand] || '')
   );
-  if (saPath !== state.googleSaPath || ownerEmail !== state.googleOwnerEmail || contasMudaram) {
+  // Os logins de relatório (ADR-148): um e-mail por linha, sem repetir.
+  const contasRelatorio = el.contasRelatorioInput
+    ? [...new Set(el.contasRelatorioInput.value.split(/[\n,;]+/).map((s) => s.trim().toLowerCase()).filter((s) => /^[^\s@]+@[^\s@]+$/.test(s)))]
+    : (state.contasRelatorio || []);
+  const relatorioMudou = contasRelatorio.join('\n') !== (state.contasRelatorio || []).join('\n');
+  if (saPath !== state.googleSaPath || ownerEmail !== state.googleOwnerEmail || contasMudaram || relatorioMudou) {
     state.googleSaPath = saPath;
     state.googleOwnerEmail = ownerEmail;
     state.brandAccounts = brandAccounts;
+    state.contasRelatorio = contasRelatorio;
     // A config do Google é um objeto só, gravar um campo sozinho apagaria os
     // outros, porque setGoogleConfig sobrescreve o arquivo inteiro.
-    await window.api.setGoogleConfig({ saPath, ownerEmail, brandAccounts });
+    await window.api.setGoogleConfig({ saPath, ownerEmail, brandAccounts, contasRelatorio });
+    if (relatorioMudou) renderBrandOauth();
   }
 
   const workspace = el.bitbucketWorkspaceInput.value.trim();
@@ -8500,6 +8799,7 @@ async function init() {
     // não perder o que já estava configurado. Só as marcas que existem.
     const contas = googleRes.config.brandAccounts || googleRes.config.scOwners || {};
     for (const b of BRANDS) if (b.id in contas) state.brandAccounts[b.id] = String(contas[b.id] || '');
+    state.contasRelatorio = Array.isArray(googleRes.config.contasRelatorio) ? googleRes.config.contasRelatorio.map((e) => String(e || '').trim().toLowerCase()).filter(Boolean) : [];
   }
 
   const oauthRes = await window.api.getOauthConfig();
