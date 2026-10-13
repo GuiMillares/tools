@@ -108,8 +108,32 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     check('bloqueador: IP desconhecido barra (não chuta a marca)', !r.ok && /não descobri a marca/.test(r.resultados.find((x) => x.id === 'marca-pelo-ip').motivo));
     r = await Regras.validarExecucao('publicador-mpiplus', { dominio: 'a.com.br', temporario: 'a.mpitemporario.com.br' }, {});
     check('sem contexto, verificação indisponível barra em vez de aprovar', !r.ok && r.resultados.filter((x) => /indisponível/.test(x.motivo)).length >= 3);
+    // Huginn (ADR-152): ação conhecida, Microsoft, domínios na M3, e-mail não repetido.
+    const ctxH = { ...ctx, configurado: (id) => id === 'microsoft', apontamento: async (ds) => ds.map((d) => ({ dominio: d, status: d === 'vesta.com.br' ? 'vesta' : d === 'fora.com.br' ? 'outro' : 'm3', label: d === 'vesta.com.br' ? 'Vesta' : d === 'fora.com.br' ? 'Não aponta para nós' : 'M3 Solutions', ips: [] })), tarefa: (id) => (id === 'T-ja' ? { historico: [{ tipo: 'execucao', detalhe: { enviados: ['a.com.br'] } }] } : { historico: [] }) };
+    r = await Regras.validarExecucao('hospedagem', { dominios: ['a.com.br', 'b.com.br'], acao: 'ssl', tarefaId: 'T1' }, ctxH);
+    check('Huginn: tudo na M3, nada enviado ainda → passa', r.ok && r.resultados.length === 4, JSON.stringify(r.resultados.filter((x) => !x.ok)));
+    r = await Regras.validarExecucao('hospedagem', { dominios: ['a.com.br', 'vesta.com.br', 'fora.com.br'], acao: 'suspensao', tarefaId: 'T1' }, ctxH);
+    check('Huginn: domínio no Vesta ou fora barra, dizendo qual', !r.ok && /vesta\.com\.br: Vesta; fora\.com\.br: Não aponta para nós/.test(r.resultados.find((x) => x.id === 'dominios-na-m3').motivo), JSON.stringify(r.resultados));
+    r = await Regras.validarExecucao('hospedagem', { dominios: ['a.com.br'], acao: 'ssl', tarefaId: 'T-ja' }, ctxH);
+    check('Huginn: já enviado para todos os domínios por esta tarefa barra', !r.ok && /já foi enviado para a\.com\.br/.test(r.resultados.find((x) => x.id === 'email-nao-repetido').motivo));
+    r = await Regras.validarExecucao('hospedagem', { dominios: ['a.com.br', 'c.com.br'], acao: 'ssl', tarefaId: 'T-ja' }, ctxH);
+    check('Huginn: um domínio já enviado e outro não → passa (o executor pula o já enviado)', r.resultados.find((x) => x.id === 'email-nao-repetido').ok && /já enviados: a\.com\.br/.test(r.resultados.find((x) => x.id === 'email-nao-repetido').detalhe));
+    r = await Regras.validarExecucao('hospedagem', { dominios: ['a.com.br'], acao: 'reiniciar', tarefaId: 'T1' }, ctxH);
+    check('Huginn: ação desconhecida barra', !r.ok && /desconhecida/.test(r.resultados.find((x) => x.id === 'acao-conhecida').motivo));
     r = await Regras.validarExecucao('hospedagem', { dominios: ['a.com.br'], acao: 'ssl' }, ctx);
-    check('hospedagem: as verificações da fase 3 barram com aviso claro', !r.ok && r.resultados.some((x) => /fase 3/.test(x.motivo)));
+    check('Huginn: sem consulta de DNS no contexto, barra em vez de aprovar', !r.ok && r.resultados.some((x) => /indisponível/.test(x.motivo)));
+    // Ratatoskr (ADR-152): PR aberto, aprovado, build verde.
+    const ctxR = (pr) => ({ ...ctx, configurado: (id) => id === 'bitbucket', pr: async () => ({ ok: true, pr: { state: 'OPEN', approvals: 1, buildState: 'SUCCESSFUL', ...pr } }) });
+    r = await Regras.validarExecucao('integrador', { prUrl: 'https://bitbucket.org/ws/repo/pull-requests/1' }, ctxR({}));
+    check('Ratatoskr: aberto, aprovado e verde → passa', r.ok, JSON.stringify(r.resultados));
+    r = await Regras.validarExecucao('integrador', { prUrl: 'https://bitbucket.org/ws/repo/pull-requests/1' }, ctxR({ approvals: 0, buildState: 'FAILED' }));
+    check('Ratatoskr: sem aprovação e build falhado barram as duas', !r.ok && r.resultados.filter((x) => !x.ok).map((x) => x.id).join() === 'pr-aprovado,build-verde');
+    r = await Regras.validarExecucao('integrador', { prUrl: 'https://bitbucket.org/ws/repo/pull-requests/1' }, ctxR({ buildState: 'NONE' }));
+    check('Ratatoskr: sem pipeline não bloqueia', r.ok && /sem pipeline/.test(r.resultados.find((x) => x.id === 'build-verde').detalhe));
+    r = await Regras.validarExecucao('integrador', { prUrl: 'https://bitbucket.org/ws/repo/pull-requests/1' }, ctxR({ state: 'MERGED' }));
+    check('Ratatoskr: PR já mergeado barra', !r.ok && /está MERGED/.test(r.resultados.find((x) => x.id === 'pr-aprovado').motivo));
+    r = await Regras.validarExecucao('integrador', {}, ctxR({}));
+    check('Ratatoskr: sem link do PR barra', !r.ok && /sem link/.test(r.resultados.find((x) => x.id === 'pr-aprovado').motivo));
     r = await Regras.validarExecucao('relator', {}, ctx);
     check('standby sem regras de execução passa (quem barra é o modo)', r.ok && r.resultados.length === 0);
   }
@@ -193,7 +217,10 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
 
   console.log('\n=== Adaptador do Gemini (cliente falso) ===');
   {
-    check('config padrão: sugeridos, HIGH, teto 200', Ia.configPadrao().modeloOrquestrador === Ia.MODELOS_SUGERIDOS.orquestrador && Ia.configPadrao().nivelPensamento === 'HIGH' && Ia.configPadrao().tetoChamadasDia === 200);
+    check('config padrão: sugeridos, HIGH, teto 200, modelo DESLIGADO', Ia.configPadrao().modeloOrquestrador === Ia.MODELOS_SUGERIDOS.orquestrador && Ia.configPadrao().nivelPensamento === 'HIGH' && Ia.configPadrao().tetoChamadasDia === 200 && Ia.configPadrao().usarModelo === false);
+    check('normalizarConfig: usarModelo só true explícito', Ia.normalizarConfig({ usarModelo: true }).usarModelo === true && Ia.normalizarConfig({ usarModelo: 'sim' }).usarModelo === false);
+    const desligada = Ia.criarIa({ chave: 'k', config: {}, criarCliente: () => ({ models: {} }) });
+    check('com chave mas desligado: temChave sim, configurada (chamável) não', desligada.temChave === true && desligada.configurada === false && desligada.ligada === false);
     const n = Ia.normalizarConfig({ modeloOrquestrador: ' x ', nivelPensamento: 'low', tetoChamadasDia: '15', temperatura: 9 });
     check('normalizarConfig: apara, aceita nível em minúsculas, teto inteiro, temperatura no limite', n.modeloOrquestrador === 'x' && n.nivelPensamento === 'LOW' && n.tetoChamadasDia === 15 && n.temperatura === 2);
     check('normalizarConfig: nível inválido cai no padrão', Ia.normalizarConfig({ nivelPensamento: 'turbo' }).nivelPensamento === 'HIGH');
@@ -214,8 +241,8 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     const registradas = [];
     let teto = { ok: true };
     const contador = { podeChamar: () => teto, registrar: (u) => registradas.push(u) };
-    const ia = Ia.criarIa({ chave: 'k', config: { nivelPensamento: 'HIGH' }, criarCliente: clienteFalso, contador });
-    check('configurada com chave', ia.configurada === true && ia.modeloDo('orquestrador') === Ia.MODELOS_SUGERIDOS.orquestrador && ia.modeloDo('agentes') === Ia.MODELOS_SUGERIDOS.agentes);
+    const ia = Ia.criarIa({ chave: 'k', config: { nivelPensamento: 'HIGH', usarModelo: true }, criarCliente: clienteFalso, contador });
+    check('configurada com chave e ligada', ia.configurada === true && ia.temChave === true && ia.modeloDo('orquestrador') === Ia.MODELOS_SUGERIDOS.orquestrador && ia.modeloDo('agentes') === Ia.MODELOS_SUGERIDOS.agentes);
     const lm = await ia.listarModelos();
     check('listarModelos: só os que geram conteúdo, sem o prefixo models/, em ordem', lm.ok && lm.modelos.map((m) => m.id).join() === 'gemini-3.1-pro-preview,gemini-3.8-flash' && lm.modelos[1].entrada === 1000, JSON.stringify(lm));
     const r = await ia.gerarJson({ papel: 'orquestrador', sistema: 'S', conteudo: 'C', schema: { type: 'OBJECT' } });
@@ -242,7 +269,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     teto = { ok: false, motivo: 'teto de 200 chamadas hoje' };
     const rteto = await ia.gerarJson({ conteudo: 'C' });
     check('teto diário barra antes de chamar', !rteto.ok && rteto.codigo === 'teto' && /200/.test(rteto.erro));
-    const semChave = Ia.criarIa({ chave: '', criarCliente: clienteFalso });
+    const semChave = Ia.criarIa({ chave: '', config: { usarModelo: true }, criarCliente: clienteFalso });
     const rs = await semChave.gerarJson({ conteudo: 'C' });
     check('sem chave: codigo sem-chave, sem criar cliente', !semChave.configurada && !rs.ok && rs.codigo === 'sem-chave' && !(await semChave.listarModelos()).ok);
   }

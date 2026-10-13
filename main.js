@@ -9495,7 +9495,7 @@ function readIaKey() {
 }
 
 const ESCRITORIO_INTERVALO_MS = 5 * 60 * 1000;
-const escritorio = { loja: null, orq: null, timer: null, esperas: null, credenciais: null };
+const escritorio = { loja: null, orq: null, timer: null, esperas: null, credenciais: null, atividades: {}, prCache: new Map() };
 
 function escritorioEnviar(canal, dados) {
   const win = janelaPrincipal();
@@ -9563,6 +9563,24 @@ const ctxExecucaoEscritorio = {
   marcaDoDominio: async (dominio) => {
     const r = await invocarLocal('dns:marca', { dominio });
     return { marca: r && r.ok ? r.marca || null : null, ips: (r && r.ips) || [] };
+  },
+  // Huginn (ADR-152): para onde cada domínio aponta, pela mesma consulta da
+  // tela de suspensão (m3, vesta, outro, misto, erro).
+  apontamento: async (dominios) => {
+    const r = await invocarLocal('dns:checkBatch', { domains: dominios });
+    return r && r.ok ? (r.resultados || []).map((x) => ({ dominio: x.dominio, status: x.status, label: x.label, ips: x.ips || [] })) : [];
+  },
+  // Ratatoskr (ADR-152): o PR como o "Mergear PRs" o lê, com as credenciais
+  // gravadas; 60 s de cache porque duas regras olham o mesmo PR.
+  pr: async (url) => {
+    const agora = Date.now();
+    const c = escritorio.prCache.get(url);
+    if (c && agora - c.quando < 60000) return c.r;
+    const creds = lerCredsArquivo();
+    if (!creds) return { ok: false, error: 'Bitbucket não configurado' };
+    const r = await invocarLocal('pr:fetch', { url, creds });
+    escritorio.prCache.set(url, { quando: agora, r });
+    return r;
   },
 };
 
@@ -9652,8 +9670,11 @@ function iniciarEscritorio() {
       },
       ctxExecucao: ctxExecucaoEscritorio,
       // Fase 2 (ADR-150): Tyr e Freyr executam aqui mesmo; Thor vai pela
-      // ponte até a máquina de etapas do renderer.
+      // ponte até a máquina de etapas do renderer. Fase 3 (ADR-152): Huginn
+      // e Ratatoskr.
       executar: montarExecutores().executar,
+      // Um módulo rodando pela mão na tela é o agente dele trabalhando.
+      atividadeManual: (id) => escritorio.atividades[id] || null,
     });
     for (const a of carga.avisos || []) logEscritorio(`Escritório: ${a}`, 'warn');
     escritorio.orq.tratarInterrompidas(carga.interrompidas || []);
@@ -9695,7 +9716,8 @@ ipcMain.handle('ia:getConfig', () => ({ ok: true, config: readIaConfig(), temCha
 
 ipcMain.handle('ia:setConfig', (event, { config, apiKey } = {}) => {
   try {
-    fs.writeFileSync(iaConfigPath(), JSON.stringify(EscritorioIa.normalizarConfig(config), null, 2));
+    // A tela manda só os campos dela; o liga/desliga do modelo (Comando) fica.
+    fs.writeFileSync(iaConfigPath(), JSON.stringify(EscritorioIa.normalizarConfig({ ...readIaConfig(), ...(config || {}) }), null, 2));
     const chave = String(apiKey || '').trim();
     if (chave) {
       if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: 'Criptografia do sistema indisponível; não vou gravar a chave em texto puro.' };
@@ -9706,6 +9728,32 @@ ipcMain.handle('ia:setConfig', (event, { config, apiKey } = {}) => {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+});
+
+// Liga ou desliga o modelo (ADR-152): desligado, nenhuma chamada sai; a
+// tarefa desconhecida vira pendência e você ensina pela regra.
+ipcMain.handle('ia:usarModelo', (event, { ligar } = {}) => {
+  try {
+    const cfg = EscritorioIa.normalizarConfig({ ...readIaConfig(), usarModelo: !!ligar });
+    fs.writeFileSync(iaConfigPath(), JSON.stringify(cfg, null, 2));
+    if (escritorio.orq) escritorio.orq.trocarIa(montarIa());
+    logEscritorio(`Escritório: modelo ${cfg.usarModelo ? 'LIGADO (o que a triagem não reconhece vai ao Gemini)' : 'desligado (o que a triagem não reconhece vira pendência, sem custo)'}${cfg.usarModelo && !readIaKey() ? ' — sem chave gravada, continua sem chamar' : ''}.`, cfg.usarModelo ? 'warn' : 'info');
+    escritorioEnviar('escritorio:evento', { tipo: 'modelo' });
+    return { ok: true, usarModelo: cfg.usarModelo, temChave: !!readIaKey() };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// A atividade dos módulos acionados pela mão (ADR-152): a tela avisa quando
+// um começa e termina, e o cartão do agente mostra "trabalhando".
+ipcMain.handle('escritorio:atividade', (event, { agente, ligado, detalhe } = {}) => {
+  const id = String(agente || '');
+  if (!id) return { ok: false, error: 'sem agente' };
+  if (ligado) escritorio.atividades[id] = { detalhe: String(detalhe || ''), desde: new Date().toISOString() };
+  else delete escritorio.atividades[id];
+  escritorioEnviar('escritorio:evento', { tipo: 'atividade', agente: id, ligado: !!ligado });
+  return { ok: true };
 });
 
 ipcMain.handle('ia:removerChave', () => {

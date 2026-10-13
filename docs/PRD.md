@@ -458,6 +458,7 @@ continua o mesmo, agora com nome:
 | --- | --- | --- | --- |
 | **Tyr** (Bloqueador de Contatos) | `BLOQUEIO DE CONTATOS - {domínio}` / `RETIRAR CONTATOS…` | descobre a marca pelo IP e censura os contatos no /doutor (Busca Cliente, MPI Solutions) ou no painel MPI+ (ADR-116, ADR-121) | fecha a tarefa comentando "Contatos removidos" |
 | **Thor** (Publicador MPI+) | `Publicação (Troca de DNS) [MPI+] - {domínio}` com temporário `cliente.mpitemporario.com.br` | o Publicar MPI+ (4.7) inteiro, sem perguntar: backup do DNS do cliente no lugar da parada, empresa pelo caso/fila (ADR-122, ADR-123) | fecha a tarefa quando o site está no ar (SSL com o vigia, se o DNS demorar). **DNS do cliente**: publica, faz tags e planilha, e o site vai para a lista de espera como "aguardando o cliente" (ADR-142); a tarefa fica como aguardando externo; o vigia confere a cada 30 min e termina SSL, Search Console e tarefa quando o cliente apontar |
+| **Huginn** (Hospedagem & E-mails) | pela regra que você aprova ("Encaminhar sempre → Huginn · Ativação de SSL" ou "· Suspensão"), para tarefas sem padrão fixo de assunto | o mesmo e-mail da tela Ativar SSL / Suspender sites, pela sua caixa, um por domínio de cliente da tarefa, só se todos apontarem para a faixa da M3 e nunca repetindo o que esta tarefa já mandou (ADR-152) | a tarefa fica com você para fechar quando o suporte fizer; nada é escrito no Salesforce |
 | **Freyr** (Publicador Busca One) | `Publicação (Troca de DNS) - …` com o temporário `deploy.buscaclientes.com.br/{repo}/` (Busca Cliente) ou `producao.mpitemporario.com.br/{repo}/` (MPI Solutions) no comentário, ou "Apontado via registro." | a **parte automática** (ADR-132, ADR-133): cria ou acha as propriedades no Google na marca da empresa, commita o `geral.php` no repositório do Bitbucket com `$idProjetoBusca` = o "ID do painel xxxx" da tarefa (MPI Solutions: fixo 39) e manda o e-mail de criação de vhost e banco ao suporte, com o modelo da empresa. Roda inteiro no processo principal, sem depender da tela | a tarefa vai para **Em andamento** no seu nome e **fica aberta**: vhost, clone no servidor e DNS são manuais. As chaves e o resumo saem no terminal, nunca em comentário no Salesforce (ADR-134) |
 
 Na Busca One, tudo vem da própria tarefa, escrita no modelo combinado com o
@@ -662,8 +663,9 @@ toda tela e em todo seletor.
   Quando publicou), **Heimdall** (Conferente de Vínculos) e **Bragi**
   (Relator: Planilha do Relatório). Os quatro últimos ficam em **standby**:
   só rodam quando você aciona pelo módulo; o orquestrador no máximo sugere.
-  Cada agente automático tem o seu interruptor. Nesta versão executam Tyr,
-  Thor e Freyr (4.10); Huginn e Ratatoskr são a fase 3.
+  Cada agente automático tem o seu interruptor. Executam Tyr, Thor, Freyr
+  e Huginn (4.10); Ratatoskr executa, mas em standby. **Nenhum agente usa
+  modelo de IA**: são as ferramentas do Hub rodando sozinhas (ADR-152).
 - **Modo automático** (interruptor geral): liga a leitura da fila e a
   execução. **Modo observação**: lê, planeja, valida a seco e anota
   "executaria", sem executar; é como se começa. Com o geral desligado
@@ -693,11 +695,16 @@ toda tela e em todo seletor.
   decidido e por quê, qual regra validou, entradas, saídas e erros. Tarefa
   que estava executando quando o Hub fechou vira "retomar?" em vez de
   retomar sozinha. Falha comum tenta até 3 vezes e então escala para você.
-- **Modelo:** Gemini, pela chave em Configurações › Escritório & IA, com os
-  modelos escolhidos num seletor que lista o que a chave enxerga (o Pro para
-  o orquestrador, o Flash para os agentes), nível de pensamento e teto
-  diário de chamadas; os contadores do dia ficam na tela. Sem chave, o
-  Escritório funciona só com a triagem e as regras.
+- **Modelo (opcional, desligado por padrão):** o interruptor "Perguntar ao
+  Gemini" no Comando liga o modelo só para a tarefa que a triagem e as
+  regras não reconhecem (ler o comentário e propor a regra). Desligado, ela
+  vira pendência e você decide uma vez. A chave e os modelos ficam em
+  Configurações › Escritório & IA, com o teto diário de chamadas e os
+  contadores do dia na tela (ADR-152).
+- **Atividade dos módulos:** quando você aciona um módulo pela mão
+  (Conferir Vínculos, Planilha do Relatório, Quando publicou, Ouvidoria,
+  Bloquear Contatos, Publicação em Massa, Mergear PRs), o cartão do agente
+  mostra "trabalhando" com o nome do módulo.
 
 O painel flutuante da automação foi absorvido pelo Escritório (4.10,
 ADR-150).

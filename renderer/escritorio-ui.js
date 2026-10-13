@@ -133,13 +133,14 @@
         <div class="esc-switches">
           <label class="esc-switch ${s.ligado.geral ? 'on' : ''}"><input type="checkbox" id="escGeral" ${s.ligado.geral ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Modo automático</b><small>lê a fila a cada 5 min e encaminha sozinho</small></span></label>
           <label class="esc-switch ${s.ligado.observacao ? 'on' : ''}"><input type="checkbox" id="escObs" ${s.ligado.observacao ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Modo observação</b><small>só anota o que faria; nada executa</small></span></label>
+          <label class="esc-switch ${s.modelo.ligado ? 'on' : ''}" title="${s.modelo.temChave ? 'Ligado, o que a triagem não reconhece vai ao Gemini (custa tokens). Desligado, vira pendência e você ensina pela regra.' : 'Sem chave do Gemini gravada: ligar não chama nada. Configure em Configurações › Escritório & IA.'}"><input type="checkbox" id="escModelo" ${s.modelo.ligado ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Perguntar ao Gemini</b><small>${s.modelo.ligado ? (s.modelo.temChave ? 'o que a triagem não reconhece vai ao modelo' : 'ligado, mas sem chave: não chama') : 'desligado: sem custo; o desconhecido vira pendência'}</small></span></label>
           <div class="esc-stat"><b>${s.contadores.chamadas}</b><small>chamadas ao modelo hoje</small></div>
           <div class="esc-stat"><b>${fmtK(s.contadores.tokensEntrada + s.contadores.tokensSaida + s.contadores.tokensPensamento)}</b><small>tokens hoje</small></div>
           <div class="esc-stat"><b>${abertas.length}</b><small>tarefa(s) em aberto</small></div>
           <div class="esc-stat"><b>${s.regras.filter((r) => r.ativa !== false).length}</b><small>regra(s) ativa(s)</small></div>
         </div>
         ${linhaEsperas()}
-        ${!s.modelo.configurado ? '<p class="hint warn-text mt8">Sem chave do Gemini: tarefa que a triagem do Hub não reconhece vira pendência. Configure em Configurações › Escritório &amp; IA.</p>' : ''}
+        ${!s.modelo.configurado ? '<p class="hint mt8">Sem modelo: tarefa que a triagem não reconhece vira pendência, e você decide uma vez (Ignorar sempre, Avisar sempre, Encaminhar sempre). Os agentes não usam modelo nunca.</p>' : ''}
       </div>
 
       <div class="home-sec-title anim-in">Agentes <span class="r">${s.agentes.filter((a) => a.modo === 'auto').length} automáticos · ${s.agentes.filter((a) => a.modo === 'standby').length} em standby</span></div>
@@ -156,6 +157,23 @@
   const fmtK = (n) => (n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n || 0));
   // "Thor · Publicador MPI+ · Publicar MPI+ / Publicação em Massa", para os seletores.
   const rotuloAg = (a) => `${a.nome}${a.papel ? ' · ' + a.papel : ''}${a.modulosNomes ? ' · ' + a.modulosNomes : ''}`;
+  // As opções do "Encaminhar sempre": um agente, ou um agente com um preset
+  // (Huginn · Ativação de SSL / Huginn · Suspensão). Valor "agente|preset".
+  function opcoesEncaminhar(agentes, selecionado) {
+    const out = [];
+    for (const a of agentes) {
+      const presets = Array.isArray(a.presets) ? a.presets : [];
+      if (!presets.length) out.push(`<option value="${esc(a.id)}" ${selecionado === a.id ? 'selected' : ''}>${esc(rotuloAg(a))}</option>`);
+      for (const p of presets) out.push(`<option value="${esc(a.id)}|${esc(p.id)}" ${selecionado === a.id + '|' + p.id ? 'selected' : ''}>${esc(a.nome)} · ${esc(p.nome)} · ${esc(a.modulosNomes || '')}</option>`);
+    }
+    return out.join('');
+  }
+  function lerEncaminhar(sel, agentes) {
+    const [agente, preset] = String(sel && sel.value || '').split('|');
+    const a = agentes.find((x) => x.id === agente);
+    const p = a && preset ? (a.presets || []).find((x) => x.id === preset) : null;
+    return { agente, parametros: p ? { ...p.parametros } : {} };
+  }
   // A lista de espera do Publicar MPI+ (ADR-103/142), que o painel flutuante
   // mostrava: quem aguarda o cliente apontar e quem aguarda a propagação.
   function linhaEsperas() {
@@ -174,6 +192,7 @@
       <div class="esc-agente-nome">${esc(a.nome)}${a.papel ? `<span class="esc-agente-papel"> · ${esc(a.papel)}</span>` : ''}</div>
       <div class="esc-agente-funcao">${esc(a.funcao)}</div>
       ${a.modulosNomes ? `<div class="esc-agente-modulos">${esc(a.modulosNomes)}</div>` : ''}
+      ${a.atividade ? `<div class="esc-agente-atividade">${esc(a.atividade)}</div>` : ''}
       <div class="esc-agente-rodape">
         ${badge(rot, tom === 'off' ? 'neutral' : tom)}
         ${a.tarefas ? `<span class="dim">${a.tarefas} tarefa(s)</span>` : ''}
@@ -202,7 +221,7 @@
             <input type="text" class="esc-resposta" placeholder="Ou diga o que fazer com pedidos assim (o modelo propõe a regra)" data-texto>
             <button class="btn compact ghost" data-acao="texto">Responder</button>
             ${!p.regraId ? '<button class="btn compact ghost" data-acao="avisar-sempre" title="Propõe uma regra: pedidos assim sempre vêm para você, sem passar pelo modelo">Avisar sempre</button>' : ''}
-            <span class="esc-encaminhar"><select data-agente-sel>${agentesAuto.map((a) => `<option value="${esc(a.id)}">${esc(rotuloAg(a))}</option>`).join('')}</select>
+            <span class="esc-encaminhar"><select data-agente-sel>${opcoesEncaminhar(agentesAuto, '')}</select>
             <button class="btn compact ghost" data-acao="encaminhar" title="Propõe uma regra para encaminhar sempre">Encaminhar sempre</button>
             <button class="btn compact ghost" data-acao="so-desta-vez" title="Encaminha só estas, sem regra">Só desta vez</button></span>
             <button class="btn compact ghost" data-acao="ignorar-estas" title="Só estas tarefas">Ignorar estas</button>` : ''}
@@ -212,7 +231,7 @@
             <button class="btn compact ghost" data-acao="ignorar-estas" title="Só estas tarefas">Ignorar estas</button>
             <button class="btn compact ghost" data-acao="ignorar-sempre" title="Propõe uma regra para ignorar sempre tarefas assim">Ignorar sempre</button>
             <button class="btn compact ghost" data-acao="avisar-sempre" title="Propõe uma regra: pedidos assim sempre vêm para você, sem passar pelo modelo">Avisar sempre</button>
-            <span class="esc-encaminhar"><select data-agente-sel>${agentesAuto.map((a) => `<option value="${esc(a.id)}" ${p.agente === a.id ? 'selected' : ''}>${esc(rotuloAg(a))}</option>`).join('')}</select>
+            <span class="esc-encaminhar"><select data-agente-sel>${opcoesEncaminhar(agentesAuto, p.agente || '')}</select>
             <button class="btn compact ghost" data-acao="encaminhar" title="Propõe uma regra para encaminhar sempre">Encaminhar sempre</button>
             <button class="btn compact ghost" data-acao="so-desta-vez" title="Encaminha só estas, sem regra">Só desta vez</button></span>
             <button class="btn compact ghost" data-acao="descartar" title="Fecha a pendência e ignora as tarefas">Descartar</button>` : ''}
@@ -349,6 +368,7 @@
     });
     painel.querySelector('#escGeral')?.addEventListener('change', (e) => chamar('escritorioLigar', { geral: e.target.checked }));
     painel.querySelector('#escObs')?.addEventListener('change', (e) => chamar('escritorioLigar', { observacao: e.target.checked }));
+    painel.querySelector('#escModelo')?.addEventListener('change', (e) => chamar('iaUsarModelo', { ligar: e.target.checked }));
     painel.querySelectorAll('[data-agente-toggle]').forEach((c) => c.addEventListener('change', (e) => chamar('escritorioLigar', { agente: c.dataset.agenteToggle, valor: e.target.checked })));
     painel.querySelectorAll('.esc-tab').forEach((b) => b.addEventListener('click', () => { ui.aba = b.dataset.aba; desenhar(); }));
     painel.querySelectorAll('[data-hist]').forEach((b) => b.addEventListener('click', async () => { const r = await chamar('escritorioTarefa', { id: b.dataset.hist }, { recarregar: false }); if (r.ok) { ui.historico = r.tarefa; desenhar(); } }));
@@ -379,8 +399,8 @@
       if (!id) return;
       if (acao === 'texto') { const texto = pendEl.querySelector('[data-texto]').value.trim(); if (!texto) { logar('Escreva a resposta antes de enviar.', 'warn'); return; } b.disabled = true; b.textContent = 'enviando…'; await chamar('escritorioResponder', { id, resposta: { acao: 'texto', texto } }); return; }
       if (['ignorar-estas', 'ignorar-sempre', 'avisar-sempre', 'tratada', 'retomar', 'descartar'].includes(acao)) { await chamar('escritorioResponder', { id, resposta: { acao } }); return; }
-      if (acao === 'encaminhar') { await chamar('escritorioResponder', { id, resposta: { acao: 'encaminhar', agente: pendEl.querySelector('[data-agente-sel]').value } }); return; }
-      if (acao === 'so-desta-vez') { await chamar('escritorioAplicarSemRegra', { id, agente: pendEl.querySelector('[data-agente-sel]').value, parametros: {} }); return; }
+      if (acao === 'encaminhar') { const e = lerEncaminhar(pendEl.querySelector('[data-agente-sel]'), ui.snap.agentes); await chamar('escritorioResponder', { id, resposta: { acao: 'encaminhar', agente: e.agente, parametros: e.parametros } }); return; }
+      if (acao === 'so-desta-vez') { const e = lerEncaminhar(pendEl.querySelector('[data-agente-sel]'), ui.snap.agentes); await chamar('escritorioAplicarSemRegra', { id, agente: e.agente, parametros: e.parametros }); return; }
       if (acao === 'aprovar-regra') { const form = pendEl.querySelector('[data-form]'); const regra = lerFormRegra(form); const r = await chamar('escritorioAprovarRegra', { id, regra }); if (!r.ok) { guardarEdicao(form, regra, id); desenhar(); } else ui.editando = null; return; }
       if (acao === 'descartar-proposta') { ui.editando = null; await chamar('escritorioResponder', { id, resposta: { acao: 'descartar' } }); return; }
     }));
@@ -420,6 +440,13 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
   else iniciar();
+
+  // Os módulos acionados pela mão avisam quando começam e terminam (ADR-152):
+  // o cartão do agente mostra "trabalhando" com o módulo.
+  window.hubEscritorioAtividade = function (agente, ligado, detalhe) {
+    if (!api().escritorioAtividade) return;
+    api().escritorioAtividade({ agente, ligado: !!ligado, detalhe: detalhe || '' }).catch(() => {});
+  };
 
   window.hubEscritorio = { ui, carregar, desenhar, abrir, lerFormRegra, atenderPonte };
 })();

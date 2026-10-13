@@ -1535,3 +1535,4 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .esc-tabela td .esc-leitura { font-family: var(--sans); font-size: var(--fs-xs); margin-top: 2px; max-width: 420px; white-space: normal; }
 .esc-agente-papel { font-weight: 500; font-size: var(--fs-sm); color: var(--text-dim); }
 .esc-agente-modulos { font-size: var(--fs-xs); color: var(--text-faint); }
+.esc-agente-atividade { font-size: var(--fs-xs); color: var(--accent-2); margin-top: 2px; }

@@ -358,6 +358,12 @@ function apararTerminal() {
   }
 }
 
+// Um módulo rodando pela mão é o agente dele "trabalhando" no Escritório
+// (ADR-152). Quem avisa é o próprio módulo, no começo e no fim.
+function escAtividade(agente, ligado, detalhe) {
+  try { if (typeof window.hubEscritorioAtividade === 'function') window.hubEscritorioAtividade(agente, ligado, detalhe); } catch (e) { /* a tela do Escritório pode não existir num build antigo */ }
+}
+
 // `arquivo: false` mostra sem gravar no arquivo do dia: é o que o Escritório
 // usa para as linhas que o processo principal já gravou (ADR-149).
 function log(message, type = 'info', { arquivo = true } = {}) {
@@ -1465,13 +1471,13 @@ async function bloquearContatosDoutor() {
     ? `Desbloquear os contatos de ${dominio} no /doutor (${nomeMarca})?\n\nOs telefones/WhatsApp da empresa voltam a aparecer no site.`
     : `Bloquear os contatos de ${dominio} no /doutor (${nomeMarca})?\n\nOs telefones/WhatsApp da empresa são removidos do site.`;
   if (!confirm(pergunta)) { log('Ação cancelada.', 'info'); return; }
-  doutorEstado.rodando = true;
+  doutorEstado.rodando = true; escAtividade('bloqueador', true, 'Bloquear Contatos');
   doutorEstado.ultimo = null;
   renderDoutorTool();
   log(`/doutor: ${desb ? 'desbloqueando' : 'bloqueando'} os contatos de ${dominio} (${nomeMarca}).`, 'cmd');
   const res = await withBusy(`${desb ? 'desbloqueando' : 'bloqueando'} contatos de ${dominio}`, () => window.api.doutorBloquear({ dominio, marca, acao }));
   if (res.log) for (const e of res.log) log(e.message, e.type);
-  doutorEstado.rodando = false;
+  doutorEstado.rodando = false; escAtividade('bloqueador', false);
   const alvo = res.empresa || dominio;
   if (res.ok && res.jaEstava) doutorEstado.ultimo = { ok: true, titulo: `${alvo}: já estava ${desb ? 'com contatos no ar' : 'sem contatos'}`, sub: 'nada a fazer' };
   else if (res.ok) doutorEstado.ultimo = { ok: true, titulo: `Contatos ${desb ? 'restaurados' : 'removidos'}: ${alvo}`, sub: desb ? 'os telefones voltam ao site' : 'os telefones saem do site (o painel pode ter mostrado 504)' };
@@ -1669,7 +1675,7 @@ async function rodarOuvidoria() {
   if (ouvEstado.rodando || !ouvEstado.dominios.length) return;
   const sf = await window.api.salesforceGetConfig();
   if (!(sf && sf.ok && sf.conectado)) { log('Conecte o Salesforce nas configurações antes de conferir.', 'error'); return; }
-  ouvEstado.rodando = true;
+  ouvEstado.rodando = true; escAtividade('auditor', true, 'Ouvidoria & Auditoria');
   ouvEstado.parar = false;
   ouvEstado.linhas = [];
   ouvEstado.feito = false;
@@ -1683,7 +1689,7 @@ async function rodarOuvidoria() {
     renderOuvidoria();
     if (linha.precisaReconectar) { log('Salesforce recusou o acesso. Reconecte e rode de novo.', 'error'); break; }
   }
-  ouvEstado.rodando = false;
+  ouvEstado.rodando = false; escAtividade('auditor', false);
   ouvEstado.parar = false;
   ouvEstado.feito = true;
   const achados = ouvEstado.linhas.filter((l) => l.achou);
@@ -1829,7 +1835,7 @@ function renderQuando() {
 
 async function rodarQuando() {
   if (qpEstado.rodando || !qpEstado.dominios.length) return;
-  qpEstado.rodando = true;
+  qpEstado.rodando = true; escAtividade('auditor', true, 'Quando publicou');
   qpEstado.parar = false;
   qpEstado.linhas = [];
   renderQuando();
@@ -1847,7 +1853,7 @@ async function rodarQuando() {
     }
     renderQuando();
   }
-  qpEstado.rodando = false;
+  qpEstado.rodando = false; escAtividade('auditor', false);
   qpEstado.parar = false;
   const c = (s) => qpEstado.linhas.filter((l) => l.situacao === s).length;
   log(`Quando publicou: ${c('publicado')} com data, ${c('sem repositório')} sem repositório, ${c('não encontrado')} não encontrado(s), ${c('erro')} erro(s), de ${qpEstado.linhas.length}.`, 'success');
@@ -2223,7 +2229,7 @@ function vincTipoLog(r) {
 async function rodarVinculos({ continuar = false } = {}) {
   if (vincEstado.rodando || !vincEstado.itens.length) return;
   const V = window.Vinculos;
-  vincEstado.rodando = true;
+  vincEstado.rodando = true; escAtividade('conferente', true, 'Conferir Vínculos');
   vincEstado.parar = false;
   if (!continuar) vincEstado.resultados = [];
   const fila = continuar ? vincRestantes() : vincEstado.itens;
@@ -2264,7 +2270,7 @@ async function rodarVinculos({ continuar = false } = {}) {
       }
     }
   } finally {
-    vincEstado.rodando = false;
+    vincEstado.rodando = false; escAtividade('conferente', false);
     vincEstado.parar = false;
     window.api.manterAcordado(false, 'vinculos').catch(() => {});
     if (btn) btn.disabled = false;
@@ -2287,7 +2293,7 @@ async function vincVincularIncompletos() {
   if (!fila.length) { log('Ninguém incompleto para vincular.', 'info'); return; }
   if (!state.googleSaPath) { log('Configure o caminho da service account do Google nas Configurações antes de vincular.', 'error'); return; }
   if (!(state.brandAccounts?.mpiplus || '').trim()) log('Sem conta do Google configurada para a MPI+ nas Configurações: o Relatório do painel não vai ser sincronizado, só as Integrações.', 'warn');
-  vincEstado.rodando = true;
+  vincEstado.rodando = true; escAtividade('conferente', true, 'Conferir Vínculos');
   vincEstado.parar = false;
   renderVinculos();
   log(`Vincular os incompletos: ${fila.length} cliente(s), um por vez. ${vincEstado.criar ? 'Crio no Google o que não existir' : 'Só reaproveito o que já existe no Google'}; o que existe nunca é duplicado (ADR-047). Depois de cada um, leio o painel de novo.`, 'cmd');
@@ -2340,7 +2346,7 @@ async function vincVincularIncompletos() {
       renderVinculos();
     }
   } finally {
-    vincEstado.rodando = false;
+    vincEstado.rodando = false; escAtividade('conferente', false);
     vincEstado.parar = false;
     window.api.manterAcordado(false, 'vinculos').catch(() => {});
   }
@@ -2565,7 +2571,7 @@ function relDeps() {
 async function rodarRelatorio({ continuar = false } = {}) {
   if (relEstado.rodando || !relEstado.itens.length) return;
   const R = window.Relatorio;
-  relEstado.rodando = true;
+  relEstado.rodando = true; escAtividade('relator', true, 'Planilha do Relatório');
   relEstado.parar = false;
   if (!continuar) relEstado.resultados = [];
   const fila = continuar ? relRestantes() : relEstado.itens;
@@ -2587,7 +2593,7 @@ async function rodarRelatorio({ continuar = false } = {}) {
       renderRelatorio();
     }
   } finally {
-    relEstado.rodando = false;
+    relEstado.rodando = false; escAtividade('relator', false);
     relEstado.parar = false;
     window.api.manterAcordado(false, 'relatorio').catch(() => {});
   }
@@ -3170,6 +3176,7 @@ async function mergeItem(localId) {
   }
 
   state.queue[idx] = { ...item, status: 'merging' };
+  escAtividade('integrador', true, 'Mergear PRs');
   renderQueue();
 
   // Tudo que sair no terminal a partir daqui é o registro deste merge.
@@ -3195,6 +3202,7 @@ async function mergeItem(localId) {
 
   // Registra tentativa que deu certo E tentativa que falhou: saber por que um
   // merge não passou é justamente o que some quando o terminal é limpo.
+  escAtividade('integrador', false);
   await recordMerge(item, res, logSince(marca));
 
   // Só depois do await, senão o card pode ter sido removido nesse meio-tempo.
@@ -4899,7 +4907,7 @@ async function conferirCasosSalesforce() {
   if (!linhas.length) return;
   const sf = await window.api.salesforceGetConfig().catch(() => null);
   if (!sf || !sf.ok || !sf.conectado) { log('O Salesforce não está conectado. Conecte nas configurações e tente de novo.', 'error'); return; }
-  bulkRodando = true;
+  bulkRodando = true; escAtividade('publicador-mpiplus', true, 'Publicação em Massa');
   renderBulkLista();
   log(`Conferindo no Salesforce o caso de ${linhas.length} site(s). Só leitura: nada é criado.`, 'cmd');
   const achados = [];
@@ -4921,7 +4929,7 @@ async function conferirCasosSalesforce() {
       }
     }
   } finally {
-    bulkRodando = false;
+    bulkRodando = false; escAtividade('publicador-mpiplus', false); escAtividade('publicador-mpiplus', false);
     renderBulkLista();
   }
   log(`Conferência: ${achados.length} com caso encontrado, ${semCaso.length} sem.`, semCaso.length ? 'warn' : 'success');
@@ -4939,13 +4947,13 @@ async function criarTarefasPendentes() {
   }
   bulkSfConectado = true;
   const linhas = bulkSfPendentes.slice();
-  bulkRodando = true;
+  bulkRodando = true; escAtividade('publicador-mpiplus', true, 'Publicação em Massa');
   renderBulkLista();
   log(`Salesforce: criando as ${linhas.length} tarefa(s) pendente(s).`, 'cmd');
   try {
     await criarTarefasSalesforce(linhas);
   } finally {
-    bulkRodando = false;
+    bulkRodando = false; escAtividade('publicador-mpiplus', false); escAtividade('publicador-mpiplus', false);
     renderBulkLista();
   }
   await fecharRodadaSalva();
@@ -5233,7 +5241,7 @@ async function rodarBulk({ retomando = false } = {}) {
 
   // Sem confirmação de lista (ADR-072): o botão diz o que vai acontecer, e a
   // lista já está na tela. A parada que fica é a do DNS, uma por domínio.
-  bulkRodando = true;
+  bulkRodando = true; escAtividade('publicador-mpiplus', true, 'Publicação em Massa');
   bulkParar = false;
   bulkParouNoMeio = false;
   // Rodada longa: o Windows não pode suspender o app no meio (ADR-094).
@@ -5442,7 +5450,7 @@ async function rodarBulk({ retomando = false } = {}) {
     renderBulkLista();
   }
 
-  bulkRodando = false;
+  bulkRodando = false; escAtividade('publicador-mpiplus', false);
   bulkParar = false;
   window.api.manterAcordado(false).catch(() => {});
   if (bulkParouNoMeio) {
@@ -5524,7 +5532,7 @@ async function conferirBulkPublicacao() {
   const fila = bulkRows.filter(bulkTemPainel);
   if (!fila.length) return;
 
-  bulkRodando = true;
+  bulkRodando = true; escAtividade('publicador-mpiplus', true, 'Publicação em Massa');
   bulkParar = false;
   bulkParouNoMeio = false;
   renderBulkLista();
@@ -5570,7 +5578,7 @@ async function conferirBulkPublicacao() {
     renderBulkLista();
   }
 
-  bulkRodando = false;
+  bulkRodando = false; escAtividade('publicador-mpiplus', false);
   bulkParar = false;
   if (bulkParouNoMeio) { bulkParouNoMeio = false; await pararTerminou(); log('Conferência parada por você.', 'warn'); }
   renderBulkLista();

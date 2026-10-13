@@ -27,6 +27,9 @@ function montar(over = {}) {
     'bitbucket:commitGeral': (p) => ({ ok: true, log: [], workspace: p.workspace, repo: p.repo, branch: 'main', applied: Object.keys(p.values) }),
     'mail:sendBatch': (p) => ({ ok: true, log: [], enviados: p.domains, falhas: [], total: 1 }),
     'salesforce:moverTarefa': () => ({ ok: true, log: [] }),
+    'mail:sendBatch': (p) => ({ ok: true, log: [], enviados: p.domains, falhas: [], total: p.domains.length }),
+    'pr:fetch': (p) => ({ ok: true, pr: { workspace: 'ws', repo: 'repo', id: '7', title: 'Ajuste', author: 'Ana', state: 'OPEN', sourceBranch: 'feat', destBranch: 'main', approvals: 1, buildState: 'SUCCESSFUL', url: p.url } }),
+    'pr:merge': () => ({ ok: true, mergedHash: 'abcdef1234567890' }),
     ...(over.respostas || {}),
   };
   const ponteChamadas = [];
@@ -37,7 +40,7 @@ function montar(over = {}) {
     parar: () => !!over.parar,
     config: {
       creds: () => (over.semCreds ? null : { email: 'eu@x.test', token: 'tok' }),
-      hubState: () => ({ bitbucketWorkspaces: { bc: 'bcws', mpisolutions: 'mpiws' }, bitbucketWorkspace: 'padrao' }),
+      hubState: () => ({ bitbucketWorkspaces: { bc: 'bcws', mpisolutions: 'mpiws' }, bitbucketWorkspace: 'padrao', ...(over.hubState || {}) }),
       saPath: () => (over.semSa ? '' : 'C:/sa.json'),
       msConectado: () => !over.semMs,
       emailVhost: () => over.emailVhost === undefined ? { to: 'infra@m3.test', cc: '' } : over.emailVhost,
@@ -149,12 +152,59 @@ function montar(over = {}) {
     check('sem a janela: pula com motivo', !r.ok && r.pulou && /janela/.test(r.motivo));
   }
 
+  console.log('\n=== Huginn: pedido de SSL e de suspensão ao suporte ===');
+  {
+    let m = montar();
+    let r = await m.ex.executar({ agente: 'hospedagem', parametros: { acao: 'ssl', dominios: ['a.com.br', 'b.com.br'], empresaFila: 'mpisolutions' }, tarefa: { id: '00T1', historico: [] } });
+    check('SSL: um e-mail por domínio, modelo do SSL com o projeto da fila, destinatário padrão', r.ok && m.nomes().join() === 'mail:sendBatch' && m.arg('mail:sendBatch').domains.join() === 'a.com.br,b.com.br' && m.arg('mail:sendBatch').subjectTemplate === 'Ativação SSL - MPI Solutions - {dominio}' && m.arg('mail:sendBatch').to.join() === 'suporte@m3solutions.com.br' && /enviado para a\.com\.br, b\.com\.br/.test(r.mensagem) && r.detalhe.enviados.join() === 'a.com.br,b.com.br', JSON.stringify([r, m.arg('mail:sendBatch')]));
+    m = montar({ hubState: { mail: { to: 'outro@m3.test', cc: '', subject: 'Suspender {dominio}', body: 'corpo' } } });
+    r = await m.ex.executar({ agente: 'hospedagem', parametros: { acao: 'suspensao', dominios: 'c.com.br' }, tarefa: { id: '00T2' } });
+    check('suspensão: o modelo editado na tela (hub-state) vence o padrão', r.ok && m.arg('mail:sendBatch').subjectTemplate === 'Suspender {dominio}' && m.arg('mail:sendBatch').to.join() === 'outro@m3.test' && m.arg('mail:sendBatch').cc.length === 0, JSON.stringify(m.arg('mail:sendBatch')));
+    m = montar();
+    r = await m.ex.executar({ agente: 'hospedagem', parametros: { acao: 'ssl', dominios: ['a.com.br', 'b.com.br'] }, tarefa: { id: '00T3', historico: [{ tipo: 'execucao', detalhe: { enviados: ['a.com.br'] } }] } });
+    check('o que esta tarefa já mandou não vai de novo', r.ok && m.arg('mail:sendBatch').domains.join() === 'b.com.br');
+    r = await m.ex.executar({ agente: 'hospedagem', parametros: { acao: 'ssl', dominios: ['a.com.br'] }, tarefa: { id: '00T4', historico: [{ tipo: 'execucao', detalhe: { enviados: ['a.com.br'] } }] } });
+    check('tudo já enviado: desiste com o motivo', !r.ok && r.desistir && /já enviado para a\.com\.br/.test(r.motivo));
+    m = montar({ respostas: { 'mail:sendBatch': (p) => ({ ok: true, enviados: [p.domains[0]], falhas: [{ dominio: p.domains[1], erro: 'x' }], total: 2 }) } });
+    r = await m.ex.executar({ agente: 'hospedagem', parametros: { acao: 'ssl', dominios: ['a.com.br', 'b.com.br'] }, tarefa: { id: '00T5' } });
+    check('envio parcial: erro comum, com os enviados no detalhe (a próxima tentativa manda só o que faltou)', !r.ok && !r.desistir && /não foram b\.com\.br/.test(r.motivo) && r.detalhe.enviados.join() === 'a.com.br');
+    m = montar({ semMs: true });
+    r = await m.ex.executar({ agente: 'hospedagem', parametros: { acao: 'ssl', dominios: ['a.com.br'] }, tarefa: { id: '00T6' } });
+    check('sem Microsoft: erro comum, nenhuma chamada', !r.ok && !r.desistir && /Microsoft/.test(r.motivo) && m.chamadas.length === 0);
+    m = montar();
+    r = await m.ex.executar({ agente: 'hospedagem', parametros: { acao: 'reiniciar', dominios: ['a.com.br'] }, tarefa: { id: '00T7' } });
+    check('ação desconhecida: desiste', !r.ok && r.desistir && /desconhecida/.test(r.motivo));
+    r = await m.ex.executar({ agente: 'hospedagem', parametros: { acao: 'ssl', dominios: ['deploy.buscaclientes.com.br'] }, tarefa: { id: '00T8' } });
+    check('só host nosso: desiste, nada enviado', !r.ok && r.desistir && /sem domínio de cliente/.test(r.motivo));
+  }
+
+  console.log('\n=== Ratatoskr: merge do pull request ===');
+  {
+    let m = montar();
+    let r = await m.ex.executar({ agente: 'integrador', parametros: { prUrl: 'https://bitbucket.org/ws/repo/pull-requests/7' }, tarefa: { id: '00T1' } });
+    check('lê o PR e mergeia com merge_commit e fechando a branch, com as credenciais', r.ok && m.nomes().join() === 'pr:fetch,pr:merge' && m.arg('pr:merge').workspace === 'ws' && m.arg('pr:merge').id === '7' && m.arg('pr:merge').strategy === 'merge_commit' && m.arg('pr:merge').closeSourceBranch === true && m.arg('pr:merge').creds.token === 'tok' && /PR #7 de ws\/repo mergeado \(abcdef12/.test(r.mensagem), JSON.stringify([r, m.arg('pr:merge')]));
+    m = montar({ hubState: { strategy: 'squash', closeSourceBranch: false } });
+    r = await m.ex.executar({ agente: 'integrador', parametros: { prUrl: 'https://bitbucket.org/ws/repo/pull-requests/7' }, tarefa: {} });
+    check('estratégia e fechar branch do hub-state', r.ok && m.arg('pr:merge').strategy === 'squash' && m.arg('pr:merge').closeSourceBranch === false);
+    m = montar({ respostas: { 'pr:fetch': (p) => ({ ok: true, pr: { workspace: 'ws', repo: 'repo', id: '7', state: 'MERGED', url: p.url } }) } });
+    r = await m.ex.executar({ agente: 'integrador', parametros: { prUrl: 'https://bitbucket.org/ws/repo/pull-requests/7' }, tarefa: {} });
+    check('PR já mergeado: desiste sem tentar', !r.ok && r.desistir && /está MERGED/.test(r.motivo) && !m.nomes().includes('pr:merge'));
+    m = montar({ respostas: { 'pr:merge': () => ({ ok: false, error: 'conflito' }) } });
+    r = await m.ex.executar({ agente: 'integrador', parametros: { prUrl: 'https://bitbucket.org/ws/repo/pull-requests/7' }, tarefa: {} });
+    check('merge recusado: erro comum com o motivo', !r.ok && !r.desistir && /conflito/.test(r.motivo));
+    m = montar({ semCreds: true });
+    r = await m.ex.executar({ agente: 'integrador', parametros: { prUrl: 'https://bitbucket.org/ws/repo/pull-requests/7' }, tarefa: {} });
+    check('sem Bitbucket: erro comum, nenhuma chamada', !r.ok && !r.desistir && m.chamadas.length === 0);
+    r = await montar().ex.executar({ agente: 'integrador', parametros: {}, tarefa: {} });
+    check('sem link do PR: desiste', !r.ok && r.desistir && /sem link/.test(r.motivo));
+  }
+
   console.log('\n=== Contrato geral ===');
   {
     const m = montar();
-    const r = await m.ex.executar({ agente: 'hospedagem', parametros: {}, tarefa: {} });
+    const r = await m.ex.executar({ agente: 'relator', parametros: {}, tarefa: {} });
     check('agente sem executor nesta versão: desiste com motivo claro', !r.ok && r.desistir && /ainda não executa/.test(r.motivo));
-    check('lista dos que executam', m.ex.agentesComExecutor.join() === 'bloqueador,publicador-buscaone,publicador-mpiplus');
+    check('lista dos que executam', m.ex.agentesComExecutor.join() === 'bloqueador,publicador-buscaone,publicador-mpiplus,hospedagem,integrador');
     const m2 = montar({ respostas: { 'dns:marca': () => { throw new Error('estourou'); } } });
     const r2 = await m2.ex.executar({ agente: 'bloqueador', parametros: { dominio: 'a.com.br' }, tarefa: {} });
     check('exceção dentro do executor vira erro comum, não derruba o orquestrador', !r2.ok && !r2.desistir && /estourou/.test(r2.motivo));

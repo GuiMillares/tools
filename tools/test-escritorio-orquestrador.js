@@ -39,7 +39,7 @@ function montar({ tarefas = [], ia = 'padrao', executar = undefined, ctx = undef
   const chamadasIa = [];
   const respostasIa = [];
   const iaFalsa = ia === null ? null : {
-    configurada: ia !== 'sem-chave',
+    configurada: ia !== 'sem-chave', temChave: ia !== 'sem-chave', ligada: true,
     modeloDo: (p) => (p === 'agentes' ? 'flash' : 'pro'),
     gerarJson: async (pedido) => { chamadasIa.push(pedido); const r = respostasIa.length ? respostasIa.shift() : { ok: true, dados: { decisao: 'pergunta', motivo: 'não sei', confianca: 0.3, pergunta: 'O que faço com isso?' }, uso: { entrada: 10, saida: 5, pensamento: 0 }, modelo: 'pro' }; return typeof r === 'function' ? r(pedido) : r; },
   };
@@ -182,7 +182,22 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     await m.orq.varrer({ manual: true });
     check('conhecida pela triagem segue sem modelo', m.loja.tarefa('00T-MPI').estado === T.PLANEJADA);
     const p = m.loja.pendenciasAbertas()[0];
-    check('desconhecida vira pendência dizendo que o modelo não está configurado', p && /modelo não está configurado/.test(p.pergunta) && m.loja.tarefa('00T-SSL1').estado === T.PENDENTE);
+    check('desconhecida vira pendência dizendo que o modelo não está configurado, com a leitura do começo do comentário', p && /modelo não está configurado/.test(p.pergunta) && /Ignorar sempre, Avisar sempre ou Encaminhar sempre/.test(p.pergunta) && m.loja.tarefa('00T-SSL1').estado === T.PENDENTE && m.loja.tarefa('00T-SSL1').leitura === 'por favor ativar', p && p.pergunta);
+    // Modelo com chave mas DESLIGADO (ADR-152): mesma coisa, sem chamada.
+    {
+      const m2 = montar({ tarefas: [SSL1] });
+      m2.orq.trocarIa({ configurada: false, temChave: true, ligada: false, modeloDo: () => 'pro', gerarJson: async () => { throw new Error('não era para chamar'); } });
+      await m2.orq.varrer({ manual: true });
+      const p2 = m2.loja.pendenciasAbertas()[0];
+      check('modelo desligado: pendência diz que está desligado e nada é chamado', p2 && /o modelo está desligado/.test(p2.pergunta) && m2.orq.snapshot().modelo.ligado === false && m2.orq.snapshot().modelo.temChave === true, p2 && p2.pergunta);
+      // "Encaminhar sempre" com preset (Huginn · SSL): a regra leva o parâmetro.
+      const r2 = await m2.orq.responder(p2.id, { acao: 'encaminhar', agente: 'hospedagem', parametros: { acao: 'ssl' } });
+      check('encaminhar com preset: regra para o Huginn com acao=ssl', r2.ok && r2.pendencia.proposta.regra.entao.agente === 'hospedagem' && r2.pendencia.proposta.regra.entao.parametros.acao === 'ssl');
+      const r3 = await m2.orq.aprovarRegra(p2.id);
+      const t2 = m2.loja.tarefa('00T-SSL1');
+      check('aprovada: planejada para o Huginn com os domínios da tarefa e a ação do preset', r3.ok && t2.estado === T.PLANEJADA && t2.plano.agente === 'hospedagem' && t2.plano.parametros.acao === 'ssl' && t2.plano.parametros.dominios.join() === 'a.com.br', JSON.stringify(t2.plano));
+      m2.limpar();
+    }
     const r = await m.orq.responder(p.id, { acao: 'texto', texto: 'manda para a hospedagem' });
     check('resposta em texto sem modelo: proposta vazia com aviso para montar à mão', r.ok && r.pendencia.status === 'respondida' && r.pendencia.proposta.regra === null && /sem modelo/.test(r.pendencia.proposta.erros[0]));
     const snap = m.orq.snapshot();
@@ -305,6 +320,12 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     m.fila.tarefas.push(sf('00T-MPI2', 'Publicação (Troca de DNS) [MPI+] - cliente.com.br', 'https://cliente.mpitemporario.com.br/', { id: '00T-MPI2' }));
     await m.orq.varrer();
     check('mesmo domínio já concluído: barrado pela regra de duplicidade', m.loja.tarefa('00T-MPI2').estado === T.PENDENTE && m.loja.pendenciasAbertas().some((p) => p.tarefas.includes('00T-MPI2') && /Sem duplicidade/.test(p.pergunta)));
+    // Atividade manual (ADR-152): um módulo rodando pela mão é o agente trabalhando.
+    const atividades = { relator: { detalhe: 'Planilha do Relatório', desde: 'x' } };
+    const orqAt = criarOrquestrador({ loja: m.loja, lerFila: async () => ({ ok: true, filas: FILAS, instancia: 'https://sf', tarefas: [] }), atividadeManual: (id) => atividades[id] || null });
+    const sa = orqAt.snapshot().agentes;
+    check('agente em standby com o módulo rodando pela mão aparece trabalhando, com o módulo', sa.find((a) => a.id === 'relator').estado === 'trabalhando' && sa.find((a) => a.id === 'relator').atividade === 'Planilha do Relatório' && sa.find((a) => a.id === 'auditor').estado === 'standby');
+    check('o snapshot leva os presets do Huginn', sa.find((a) => a.id === 'hospedagem').presets.map((p) => p.id).join() === 'ssl,suspensao');
     const snap = m.orq.snapshot();
     check('snapshot: agentes com estado, tarefas, pendências, regras, contadores', snap.agentes.length === 8 && snap.agentes.find((a) => a.id === 'relator').estado === 'standby' && snap.agentes.find((a) => a.id === 'bloqueador').estado === 'aguardando' && snap.tarefas.length >= 7 && snap.pendencias.length >= 3 && Array.isArray(snap.regras) && typeof snap.contadores.chamadas === 'number' && snap.ligado.geral === true);
     check('snapshot: tarefa leva plano com validação e o último evento', snap.tarefas.find((x) => x.id === '00T-MPI').plano.validacao.ok === true && snap.tarefas.find((x) => x.id === '00T-MPI').ultimo.tipo === 'estado');

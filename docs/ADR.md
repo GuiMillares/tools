@@ -7225,6 +7225,73 @@ www, raiz intacta, MX no lugar, remoções, aplicação) e `test-triagem.js` o
 1116 é descartada e começada de novo, para a etapa do contato consultar o
 raiz.
 
+## ADR-152 — Escritório, fase 3: agentes sem modelo (o Gemini é opcional e nasce desligado), Huginn e Ratatoskr executam, e os módulos acionados pela mão aparecem como o agente trabalhando
+
+**Status:** aceita — fase 3 de 5. Ajusta a ADR-149 no papel do modelo: ele
+deixa de ser parte do fluxo e vira uma opção desligada.
+
+**Contexto.** Em 13/10/2026, ao pedir a fase 3, o Guilherme mudou uma
+decisão da proposta: pelo uso que tem do Hub, o Gemini ia custar caro (pôs
+R$ 30 e sabe que vai além), e os agentes "não serão modelos de IA; serão
+apenas as ferramentas automatizadas, igual tínhamos antes, porém automático,
+com os botões que temos hoje". A ideia dos agentes e da tela 3D continua.
+De fato os agentes já eram código desde a fase 1: o único uso de modelo era
+o orquestrador, na tarefa que a triagem não reconhece e na proposta de regra
+a partir da resposta.
+
+**Decisão.**
+
+1. **O modelo é opcional e nasce desligado.** `ia-config.json` ganha
+   `usarModelo` (padrão `false`); `criarIa` passa a expor `temChave` e
+   `ligada` à parte de `configurada` (= tem chave E está ligada, a única
+   condição em que uma chamada sai). Um interruptor no Comando do Escritório,
+   "Perguntar ao Gemini", liga e desliga (`ia:usarModelo`), e o `ia:setConfig`
+   da aba de Configurações preserva esse valor. Desligado ou sem chave, a
+   tarefa que a triagem e as regras não reconhecem vira pendência com a
+   leitura do começo do comentário e a instrução: Ignorar sempre, Avisar
+   sempre ou Encaminhar sempre para um agente. Esse caminho já existia e não
+   chama nada. Os agentes nunca usaram modelo e seguem assim.
+2. **Huginn executa** (`lib/escritorio/executores.js`): o pedido de
+   ativação de SSL ou de suspensão ao suporte, pela sua caixa, um e-mail por
+   domínio, com os mesmos modelos da tela "Suspender sites / Ativar SSL"
+   (ADR-023, ADR-057), que agora moram em `lib/hospedagem.js` (dual): o que
+   a tela gravou no hub-state (`mail`, `mailSsl`) vence, inclusive em branco.
+   Parâmetros: `acao` (ssl | suspensao), `dominios` (os de cliente da tarefa,
+   que a triagem passa a extrair do assunto e do comentário, sem e-mails nem
+   hosts nossos) e `projeto` (ou a fila da tarefa) para o `{projeto}` do
+   SSL. **Regras de execução reais**, em código: ação conhecida; Microsoft
+   conectada; **domínios na faixa da M3** (pelo mesmo `dns:checkBatch` da
+   tela: Vesta, fora, misto ou sem DNS barram, dizendo qual); **e-mail não
+   repetido** (o histórico da tarefa guarda os domínios enviados; o que já
+   foi não vai de novo, e só barra quando todos já foram). Envio parcial é
+   erro comum com os enviados no detalhe, e a nova tentativa manda só o que
+   faltou. Nada é escrito no Salesforce (a tarefa fica para você fechar
+   quando o suporte fizer), como combinado. Como o assunto dessas tarefas
+   não tem padrão fixo, o Huginn entra pela regra: o "Encaminhar sempre"
+   oferece **presets** do catálogo ("Huginn · Ativação de SSL", "Huginn ·
+   Suspensão") que já levam o parâmetro `acao`.
+3. **Ratatoskr executa**, mas continua em standby (decisão da proposta): o
+   executor lê o PR (`pr:fetch`) e mergeia (`pr:merge`) com a estratégia do
+   hub-state (merge commit por padrão) fechando a branch; as regras
+   `PR aprovado` (aberto, ≥ 1 aprovação) e `Build verde` (SUCCESSFUL, ou sem
+   pipeline) leem o PR pelo contexto, com 60 s de cache. A triagem extrai o
+   link do PR (`prUrlDoTexto`). Em standby, uma regra que aponte para ele
+   vira sugestão; virar automático é mudar o `modo` no catálogo.
+4. **Atividade dos módulos pela mão.** O app.js avisa o Escritório quando um
+   módulo começa e termina (`escAtividade` → `escritorio:atividade`):
+   Bloquear Contatos (Tyr), Ouvidoria & Auditoria e Quando publicou (Mímir),
+   Conferir Vínculos (Heimdall), Planilha do Relatório (Bragi), Publicação em
+   Massa (Thor), Mergear PRs (Ratatoskr). O cartão do agente mostra
+   "trabalhando" com o nome do módulo, mesmo em standby; é o estado que a
+   tela 3D vai animar.
+
+**Consequências.** O Hub não gasta nada com modelo até você ligar o
+interruptor, e a única coisa que o Gemini faria (ler o comentário de tarefa
+desconhecida e propor a regra) continua disponível para quem ligar. Huginn
+manda SSL e suspensão pela fila com a mesma validação da tela, sem repetir
+e-mail. Ratatoskr está pronto para o dia em que sair do standby. `npm test`
+ganhou as verificações dos dois executores, das regras e do interruptor.
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30

@@ -19,15 +19,15 @@ const SNAP = {
   ok: true,
   ligado: { geral: false, observacao: true, agentes: { bloqueador: false } },
   rodando: false,
-  modelo: { configurado: true, orquestrador: 'gemini-3.1-pro-preview', agentes: 'gemini-3.8-flash' },
+  modelo: { configurado: false, temChave: true, ligado: false, orquestrador: 'gemini-3.1-pro-preview', agentes: 'gemini-3.8-flash' },
   contadores: { dia: '2026-10-13', chamadas: 3, tokensEntrada: 1200, tokensSaida: 300, tokensPensamento: 100 },
   ultimaVarredura: { quando: '2026-10-13T12:00:00.000Z', ok: true, lidas: 4 },
   salas: [],
   agentes: [
     { id: 'publicador-mpiplus', nome: 'Thor', papel: 'Publicador MPI+', modulosNomes: 'Publicar MPI+ / Publicação em Massa', funcao: 'PUBLICAÇÃO MPI+', modo: 'auto', modulos: ['publish'], sala: { numero: '02', nome: 'PUBLICAÇÃO' }, ligado: true, estado: 'ocioso', tarefas: 1 },
     { id: 'bloqueador', nome: 'Tyr', papel: 'Bloqueador de Contatos', modulosNomes: 'Bloquear Contatos', funcao: 'BLOQUEIO', modo: 'auto', modulos: ['doutor'], sala: { numero: '04', nome: 'CONTATOS' }, ligado: false, estado: 'desligado', tarefas: 0 },
-    { id: 'hospedagem', nome: 'Huginn', papel: 'Hospedagem & E-mails', modulosNomes: 'Ativação SSL / E-mails / Suspensão & E-mails', funcao: 'SSL', modo: 'auto', modulos: ['ssl'], sala: { numero: '05', nome: 'HOSPEDAGEM' }, ligado: true, estado: 'aguardando', tarefas: 2 },
-    { id: 'relator', nome: 'Bragi', papel: 'Relator', modulosNomes: 'Planilha do Relatório', funcao: 'PLANILHA', modo: 'standby', modulos: ['relatorio'], sala: { numero: '09', nome: 'RELATÓRIO' }, ligado: true, estado: 'standby', tarefas: 0 },
+    { id: 'hospedagem', nome: 'Huginn', papel: 'Hospedagem & E-mails', modulosNomes: 'Ativação SSL / E-mails / Suspensão & E-mails', funcao: 'SSL', modo: 'auto', modulos: ['ssl'], presets: [{ id: 'ssl', nome: 'Ativação de SSL', parametros: { acao: 'ssl' } }, { id: 'suspensao', nome: 'Suspensão', parametros: { acao: 'suspensao' } }], sala: { numero: '05', nome: 'HOSPEDAGEM' }, ligado: true, estado: 'aguardando', tarefas: 2 },
+    { id: 'relator', nome: 'Bragi', papel: 'Relator', modulosNomes: 'Planilha do Relatório', funcao: 'PLANILHA', modo: 'standby', modulos: ['relatorio'], sala: { numero: '09', nome: 'RELATÓRIO' }, ligado: true, estado: 'trabalhando', atividade: 'Planilha do Relatório', tarefas: 0 },
   ],
   orquestrador: { id: 'orquestrador', nome: 'Odin', papel: 'Orquestrador' },
   tarefas: [
@@ -136,12 +136,19 @@ const STUB = `
     check('responder em texto manda a resposta certa', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-1","resposta":{"acao":"texto","texto":"é sempre a hospedagem"}}');
     await page.click('[data-pend="P-1"] [data-acao="ignorar-sempre"]');
     check('"Ignorar sempre"', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-1","resposta":{"acao":"ignorar-sempre"}}');
-    await page.selectOption('[data-pend="P-1"] [data-agente-sel]', 'hospedagem');
+    check('o seletor oferece o Huginn com os dois presets, não o Huginn seco', await page.evaluate(() => { const vals = [...document.querySelectorAll('[data-pend="P-1"] [data-agente-sel] option')].map((o) => o.value); return vals.includes('hospedagem|ssl') && vals.includes('hospedagem|suspensao') && !vals.includes('hospedagem'); }));
+    await page.selectOption('[data-pend="P-1"] [data-agente-sel]', 'hospedagem|ssl');
     await page.click('[data-pend="P-1"] [data-acao="encaminhar"]');
-    check('"Encaminhar sempre" leva o agente escolhido', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-1","resposta":{"acao":"encaminhar","agente":"hospedagem"}}');
-    await page.selectOption('[data-pend="P-1"] [data-agente-sel]', 'hospedagem');
+    check('"Encaminhar sempre" leva o agente e os parâmetros do preset', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-1","resposta":{"acao":"encaminhar","agente":"hospedagem","parametros":{"acao":"ssl"}}}', JSON.stringify(await ultima('escritorioResponder')));
+    await page.selectOption('[data-pend="P-1"] [data-agente-sel]', 'hospedagem|suspensao');
     await page.click('[data-pend="P-1"] [data-acao="so-desta-vez"]');
-    check('"Só desta vez" chama escritorioAplicarSemRegra', JSON.stringify(await ultima('escritorioAplicarSemRegra')) === '{"id":"P-1","agente":"hospedagem","parametros":{}}');
+    check('"Só desta vez" chama escritorioAplicarSemRegra com o preset', JSON.stringify(await ultima('escritorioAplicarSemRegra')) === '{"id":"P-1","agente":"hospedagem","parametros":{"acao":"suspensao"}}');
+    check('o cartão do agente com módulo rodando pela mão mostra trabalhando e o módulo', await page.evaluate(() => { const c = document.querySelector('.esc-agente[data-agente="relator"]'); return c.classList.contains('est-trabalhando') && /Planilha do Relatório/.test(c.querySelector('.esc-agente-atividade').textContent); }));
+    check('o interruptor do modelo começa desligado e diz que não custa', await page.evaluate(() => !document.getElementById('escModelo').checked && /sem custo/.test(document.querySelector('label:has(#escModelo)').textContent)));
+    await page.click('label:has(#escModelo)');
+    check('ligar o modelo chama iaUsarModelo({ ligar: true })', JSON.stringify(await ultima('iaUsarModelo')) === '{"ligar":true}');
+    await page.evaluate(() => window.hubEscritorioAtividade('auditor', true, 'Quando publicou'));
+    check('hubEscritorioAtividade manda a atividade do módulo ao processo principal', JSON.stringify(await ultima('escritorioAtividade')) === '{"agente":"auditor","ligado":true,"detalhe":"Quando publicou"}');
     await page.click('[data-pend="P-3"] [data-acao="retomar"]');
     check('"Retomar" na interrompida', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-3","resposta":{"acao":"retomar"}}');
 

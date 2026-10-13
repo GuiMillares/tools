@@ -172,6 +172,8 @@ contextBridge.exposeInMainWorld('api', {
   iaSetConfig: (payload) => ipcRenderer.invoke('ia:setConfig', payload),
   iaRemoverChave: () => ipcRenderer.invoke('ia:removerChave'),
   iaModelos: () => ipcRenderer.invoke('ia:modelos'),
+  iaUsarModelo: (payload) => ipcRenderer.invoke('ia:usarModelo', payload),
+  escritorioAtividade: (payload) => ipcRenderer.invoke('escritorio:atividade', payload),
   escritorioEstado: () => ipcRenderer.invoke('escritorio:estado'),
   escritorioLigar: (payload) => ipcRenderer.invoke('escritorio:ligar', payload),
   escritorioRodar: () => ipcRenderer.invoke('escritorio:rodar'),
