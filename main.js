@@ -9682,7 +9682,9 @@ function iniciarEscritorio() {
     const l = loja.ligado;
     const abertas = loja.tarefasAbertas().length;
     const pend = loja.pendenciasAbertas().length;
-    logEscritorio(`Escritório pronto: modo ${!l.geral ? 'manual' : l.observacao ? 'automático em observação (só anota)' : 'automático'}, ${abertas} tarefa(s) em aberto, ${pend} pendência(s), ${loja.listarRegras().length} regra(s) aprendida(s), modelo ${readIaKey() ? readIaConfig().modeloOrquestrador : 'não configurado'}.`, 'info');
+    const iaCfg = readIaConfig();
+    const modeloTexto = !iaCfg.usarModelo ? 'desligado (sem custo)' : readIaKey() ? `${iaCfg.modeloOrquestrador} ligado` : 'ligado, mas sem chave';
+    logEscritorio(`Escritório pronto: modo ${!l.geral ? 'manual' : l.observacao ? 'automático em observação (só anota)' : 'automático'}, ${abertas} tarefa(s) em aberto, ${pend} pendência(s), ${loja.listarRegras().length} regra(s) aprendida(s), modelo ${modeloTexto}.`, 'info');
   } catch (e) {
     logEscritorio(`Escritório não iniciou: ${e.message}`, 'error');
   }
