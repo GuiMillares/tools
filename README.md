@@ -369,7 +369,7 @@ A chave fica criptografada nesta máquina, como a do Bitbucket, e nunca volta pa
 
 > **Por que não o SecurityTrails.** Era o plano inicial, mas o serviço não tem mais plano gratuito público, o preço hoje começa na casa dos US$ 500/mês. A WhoisXML entrega a mesma resposta com 500 créditos grátis.
 
-## 12. Configurando a IA do Escritório (Gemini)
+## 12. Configurando o Escritório (Gemini e e-mail de vhost)
 
 O Escritório (a tela de abertura do Hub, ADR-149) usa o Gemini para o que a
 triagem do Hub e as regras aprendidas não resolvem. Sem chave ele funciona
@@ -381,10 +381,18 @@ igual, só que toda tarefa desconhecida vira pendência.
    os produtos, e as tarefas levam razão social e e-mail de cliente; no
    pago, não usa. O modelo Pro (`gemini-3.1-pro-preview`, o do
    orquestrador) só responde com faturamento.
-3. No Hub, Configurações › **IA & Escritório**: cole a chave (fica
+3. No Hub, Configurações › **Escritório & IA**: cole a chave (fica
    criptografada nesta máquina e nunca volta para a tela), clique em
    "Listar os modelos desta chave" e escolha o modelo do orquestrador (o
    Pro) e o dos agentes (o Flash). Os nomes vêm da API; nada é fixo no
    código. Ajuste o teto diário de chamadas se quiser (200 por padrão).
 4. Salve (Ctrl+S). O chip "ESCRITÓRIO" no topo e a tela mostram o modelo e
    os contadores do dia.
+
+Na mesma aba fica o **e-mail de vhost e banco** que o Freyr (Publicador
+Busca One) manda ao suporte: "Para" e "Cc" editáveis; em branco, vale o
+destino do e-mail de ativação de SSL. Os agentes têm nomes da mitologia
+nórdica (Odin orquestra; Thor publica MPI+; Freyr publica Busca One; Tyr
+bloqueia contatos; Huginn, Ratatoskr, Mímir, Heimdall e Bragi são os
+demais); o papel e os módulos de cada um aparecem ao lado do nome
+(ADR-150).

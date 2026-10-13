@@ -194,4 +194,13 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('escritorio:log', handler);
     return () => ipcRenderer.removeListener('escritorio:log', handler);
   },
+  // A ponte (ADR-150): o processo principal pede, a tela roda o driver do
+  // Publicar MPI+ e devolve; ao nascer, a tela avisa (chamadas penduradas falham).
+  onEscritorioExecutar: (callback) => {
+    const handler = (_event, dados) => callback(dados);
+    ipcRenderer.on('escritorio:executar', handler);
+    return () => ipcRenderer.removeListener('escritorio:executar', handler);
+  },
+  escritorioResultado: (payload) => ipcRenderer.invoke('escritorio:resultado', payload),
+  escritorioRendererPronto: () => ipcRenderer.invoke('escritorio:rendererPronto'),
 });

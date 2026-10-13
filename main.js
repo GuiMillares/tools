@@ -9441,6 +9441,7 @@ ipcMain.handle('sistema:credenciais', () => {
 const EscritorioLoja = require(path.join(__dirname, 'lib', 'escritorio', 'loja'));
 const EscritorioOrquestrador = require(path.join(__dirname, 'lib', 'escritorio', 'orquestrador'));
 const EscritorioIa = require(path.join(__dirname, 'lib', 'escritorio', 'ia'));
+const EscritorioExecutores = require(path.join(__dirname, 'lib', 'escritorio', 'executores'));
 
 const iaConfigPath = () => path.join(app.getPath('userData'), 'ia-config.json');
 const iaKeyPath = () => path.join(app.getPath('userData'), 'gemini-key.enc');
@@ -9534,6 +9535,75 @@ const ctxExecucaoEscritorio = {
   },
 };
 
+// ---------- a ponte main → renderer (ADR-150) ----------
+//
+// A máquina de etapas do Publicar MPI+ mora no renderer (ADR-122). O
+// orquestrador manda `escritorio:executar` { id, driver, payload }, a tela
+// roda o driver (window.hubPublicarTarefaAuto) e devolve por
+// `escritorio:resultado`. Uma publicação pode levar mais de meia hora (a
+// espera da propagação), então não há prazo curto; se a janela recarregar no
+// meio, o renderer avisa que nasceu de novo e as chamadas penduradas falham
+// com motivo, em vez de esperar para sempre.
+const pontePendentes = new Map();
+let ponteSeq = 0;
+function executarNoRenderer(driver, payload) {
+  return new Promise((resolve) => {
+    const win = janelaPrincipal();
+    if (!win) { resolve({ ok: false, pulou: true, motivo: 'a janela do Hub não está aberta' }); return; }
+    const id = `ponte-${++ponteSeq}`;
+    pontePendentes.set(id, { resolve, driver, quando: Date.now() });
+    try { win.webContents.send('escritorio:executar', { id, driver, payload }); } catch (e) {
+      pontePendentes.delete(id);
+      resolve({ ok: false, pulou: true, motivo: `não consegui falar com a janela (${e.message})` });
+    }
+  });
+}
+ipcMain.handle('escritorio:resultado', (event, { id, resultado } = {}) => {
+  const p = pontePendentes.get(id);
+  if (!p) return { ok: false, error: 'chamada desconhecida' };
+  pontePendentes.delete(id);
+  p.resolve(resultado || { ok: false, motivo: 'o driver não devolveu nada' });
+  return { ok: true };
+});
+ipcMain.handle('escritorio:rendererPronto', () => {
+  for (const [id, p] of pontePendentes) {
+    pontePendentes.delete(id);
+    p.resolve({ ok: false, motivo: `o Hub recarregou no meio da ${p.driver}; o estado da publicação ficou na tela` });
+  }
+  return { ok: true };
+});
+
+// O que o Freyr (Busca One) precisa ler desta máquina, sem o renderer: as
+// credenciais do Bitbucket (cifradas), a workspace por marca e o e-mail de
+// vhost (hub-state), a service account (google-config) e a sessão Microsoft.
+function lerHubStateArquivo() {
+  try { return fs.existsSync(hubStatePath()) ? JSON.parse(fs.readFileSync(hubStatePath(), 'utf-8')) || {} : {}; } catch (e) { return {}; }
+}
+function lerCredsArquivo() {
+  try { return fs.existsSync(credsPath()) ? JSON.parse(safeStorage.decryptString(fs.readFileSync(credsPath()))) : null; } catch (e) { return null; }
+}
+function emailVhostConfigurado() {
+  const hub = lerHubStateArquivo();
+  if (hub.mailVhost && typeof hub.mailVhost === 'object' && String(hub.mailVhost.to || '').trim()) return { to: String(hub.mailVhost.to || ''), cc: String(hub.mailVhost.cc || '') };
+  if (hub.mailSsl && typeof hub.mailSsl === 'object' && String(hub.mailSsl.to || '').trim()) return { to: String(hub.mailSsl.to || ''), cc: String(hub.mailSsl.cc == null ? '' : hub.mailSsl.cc) };
+  return null;
+}
+function montarExecutores() {
+  return EscritorioExecutores.criarExecutores({
+    ferramentas: invocarLocal,
+    log: logEscritorio,
+    ponte: executarNoRenderer,
+    parar: () => !!paradaPedida,
+    config: {
+      creds: lerCredsArquivo,
+      hubState: lerHubStateArquivo,
+      saPath: () => { try { const g = fs.existsSync(googleConfigPath()) ? JSON.parse(fs.readFileSync(googleConfigPath(), 'utf-8')) : {}; return g.saPath || ''; } catch (e) { return ''; } },
+      msConectado: () => { const t = readMsToken(); return !!(t && (t.refresh_token || t.access_token)); },
+      emailVhost: emailVhostConfigurado,
+    },
+  });
+}
+
 function iniciarEscritorio() {
   try {
     const loja = EscritorioLoja.criarLoja({ pasta: app.getPath('userData') });
@@ -9550,8 +9620,9 @@ function iniciarEscritorio() {
         return r && r.ok ? { razao: r.razao || '', empresa: r.empresa || '', via: r.via || '' } : null;
       },
       ctxExecucao: ctxExecucaoEscritorio,
-      // deps.executar entra na fase 2, com os agentes; sem ele o plano fica
-      // guardado e o log avisa.
+      // Fase 2 (ADR-150): Tyr e Freyr executam aqui mesmo; Thor vai pela
+      // ponte até a máquina de etapas do renderer.
+      executar: montarExecutores().executar,
     });
     for (const a of carga.avisos || []) logEscritorio(`Escritório: ${a}`, 'warn');
     escritorio.orq.tratarInterrompidas(carga.interrompidas || []);

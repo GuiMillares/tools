@@ -109,7 +109,7 @@
         <button class="cfg-tab" data-cfg-tab="salesforce">Salesforce &amp; Servidores</button>
         <button class="cfg-tab" data-cfg-tab="paineis">Painéis &amp; /Doutor</button>
         <button class="cfg-tab" data-cfg-tab="acesso">Conceder acesso</button>
-        <button class="cfg-tab" data-cfg-tab="ia">IA &amp; Escritório</button>
+        <button class="cfg-tab" data-cfg-tab="ia">Escritório &amp; IA</button>
       </div>
 
       <div class="cfg-pane active" data-cfg-pane="geral">
@@ -363,8 +363,24 @@
         <div id="cfgGrant"></div>
       </div>
 
-      <!-- Escritório (ADR-149): o modelo que o orquestrador e os agentes usam. -->
+      <!-- Escritório (ADR-149): o modelo que o orquestrador e os agentes usam;
+           e o e-mail de vhost da Busca One (Freyr), que morava no painel
+           flutuante da automação (ADR-150). -->
       <div class="cfg-pane" data-cfg-pane="ia">
+        <div class="sec">
+          <div class="sec-head"><span class="sec-title">E-mail de vhost e banco (Busca One)</span><span class="sec-meta">Freyr</span></div>
+          <p class="hint">Para quem vai o pedido de vhost e banco quando o Freyr publica uma Busca One. Assunto e corpo são fixos, do jeito que a equipe manda; só o domínio muda. Em branco, vale o mesmo destino do e-mail de ativação de SSL.</p>
+          <div class="grid-2">
+            <label class="field">
+              <span>Para</span>
+              <input id="vhostParaInput" type="text" placeholder="suporte@m3solutions.com.br" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="field">
+              <span>Cc</span>
+              <input id="vhostCcInput" type="text" placeholder="everton.lima@buscacliente.com.br" autocomplete="off" spellcheck="false" />
+            </label>
+          </div>
+        </div>
         <div class="sec">
           <div class="sec-head"><span class="sec-title">Gemini (o modelo do Escritório)</span><span class="sec-meta">Google AI Studio</span></div>
           <p class="hint">O orquestrador só chama o modelo para o que a triagem do Hub e as regras aprendidas não resolvem; os agentes, só onde há texto livre para ler ou falha para explicar. Toda ação passa pela validação em código antes. A chave fica criptografada nesta máquina (DPAPI) e nunca volta para a tela: em branco, não altera a que já está gravada.</p>

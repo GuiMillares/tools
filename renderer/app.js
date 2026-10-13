@@ -8573,6 +8573,7 @@ function openSettings(tab) {
 
   renderSalesforce();
   preencherConfigIa();
+  preencherVhost();
 
   el.dnsHistKeyInput.value = '';
   window.api.dnsHistStatus().then((r) => {
@@ -8605,6 +8606,21 @@ const iaEl = () => ({
   status: document.getElementById('iaStatus'), listar: document.getElementById('iaListarBtn'), remover: document.getElementById('iaRemoverBtn'),
 });
 let iaConfigLida = null;
+// O e-mail de vhost da Busca One (ADR-132): editado aqui, gravado no
+// hub-state (mailVhost), lido pelo Freyr no processo principal (ADR-150).
+function vhostAtual() {
+  if (state.mailVhost && typeof state.mailVhost === 'object') return { to: String(state.mailVhost.to || ''), cc: String(state.mailVhost.cc || '') };
+  const ssl = state.mailSsl || (typeof MAIL_MODOS !== 'undefined' && MAIL_MODOS.ssl && MAIL_MODOS.ssl.defaults) || {};
+  const padrao = (window.BuscaOne && window.BuscaOne.EMAIL_VHOST_PADRAO) || { to: '', cc: '' };
+  return { to: String(ssl.to || padrao.to), cc: String(ssl.cc != null ? ssl.cc : padrao.cc) };
+}
+function preencherVhost() {
+  const para = document.getElementById('vhostParaInput');
+  const cc = document.getElementById('vhostCcInput');
+  if (!para || !cc) return;
+  const v = vhostAtual();
+  para.value = v.to; cc.value = v.cc;
+}
 function preencherConfigIa() {
   const f = iaEl();
   if (!f.key || !window.api.iaGetConfig) return;
@@ -8774,6 +8790,21 @@ el.saveSettingsBtn.addEventListener('click', async () => {
     if (!resSf.ok) {
       log(`Erro ao salvar a configuração do Salesforce: ${resSf.error}`, 'error');
       return;
+    }
+  }
+
+  {
+    // E-mail de vhost (Freyr): no hub-state, como sempre foi (mailVhost).
+    const para = document.getElementById('vhostParaInput');
+    const cc = document.getElementById('vhostCcInput');
+    if (para && cc) {
+      const novo = { to: para.value.trim(), cc: cc.value.trim() };
+      const atual = vhostAtual();
+      if (novo.to !== atual.to || novo.cc !== atual.cc) {
+        state.mailVhost = novo;
+        await saveHubState();
+        log(`E-mail de vhost: para ${novo.to || '(em branco)'}${novo.cc ? ', cc ' + novo.cc : ''}.`, 'info');
+      }
     }
   }
 

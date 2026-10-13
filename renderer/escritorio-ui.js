@@ -117,13 +117,14 @@
         <div class="home-head-left">
           <div class="home-hi">
             <span class="home-hi__ola">Escritório</span>
-            <span class="home-hi__sub">01 / SALA DE COMANDO · orquestrador${s.modelo.configurado ? ` · ${esc(s.modelo.orquestrador)}` : ' · sem modelo'}</span>
+            <span class="home-hi__sub">01 / SALA DE COMANDO · ${esc((s.orquestrador && s.orquestrador.nome) || 'Odin')}, o orquestrador${s.modelo.configurado ? ` · ${esc(s.modelo.orquestrador)}` : ' · sem modelo'}</span>
           </div>
         </div>
         <div class="home-head-right">
           <span class="home-pill ${s.ligado.geral ? (s.ligado.observacao ? 'cyan' : '') : 'dim'}">${modo}</span>
           <span class="home-pill ${pendAbertas.length ? 'warn' : 'dim'}">${pendAbertas.length} pendência(s)</span>
           <button class="btn compact ghost" id="escRodar" ${s.rodando ? 'disabled' : ''}>${s.rodando ? 'varrendo…' : 'Rodar agora'}</button>
+          <button class="btn compact danger" id="escFreio" title="Desliga o modo automático e, se houver publicação no meio, interrompe (ADR-102)">Freio</button>
         </div>
       </div>
 
@@ -137,7 +138,8 @@
           <div class="esc-stat"><b>${abertas.length}</b><small>tarefa(s) em aberto</small></div>
           <div class="esc-stat"><b>${s.regras.filter((r) => r.ativa !== false).length}</b><small>regra(s) ativa(s)</small></div>
         </div>
-        ${!s.modelo.configurado ? '<p class="hint warn-text mt8">Sem chave do Gemini: tarefa que a triagem do Hub não reconhece vira pendência. Configure em Configurações › IA &amp; Escritório.</p>' : ''}
+        ${linhaEsperas()}
+        ${!s.modelo.configurado ? '<p class="hint warn-text mt8">Sem chave do Gemini: tarefa que a triagem do Hub não reconhece vira pendência. Configure em Configurações › Escritório &amp; IA.</p>' : ''}
       </div>
 
       <div class="home-sec-title anim-in">Agentes <span class="r">${s.agentes.filter((a) => a.modo === 'auto').length} automáticos · ${s.agentes.filter((a) => a.modo === 'standby').length} em standby</span></div>
@@ -152,13 +154,26 @@
     ligarEventos(painel);
   }
   const fmtK = (n) => (n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n || 0));
+  // "Thor · Publicador MPI+ · Publicar MPI+ / Publicação em Massa", para os seletores.
+  const rotuloAg = (a) => `${a.nome}${a.papel ? ' · ' + a.papel : ''}${a.modulosNomes ? ' · ' + a.modulosNomes : ''}`;
+  // A lista de espera do Publicar MPI+ (ADR-103/142), que o painel flutuante
+  // mostrava: quem aguarda o cliente apontar e quem aguarda a propagação.
+  function linhaEsperas() {
+    const lista = (typeof esperas !== 'undefined' && Array.isArray(esperas)) ? esperas.filter((e) => e && e.status !== 'concluido') : [];
+    if (!lista.length) return '';
+    const cli = lista.filter((e) => e.cliente).map((e) => e.dominio);
+    const prop = lista.filter((e) => !e.cliente).map((e) => e.dominio);
+    const falta = lista.filter((e) => e.status === 'falhou').length;
+    return `<p class="hint mt8" id="escEsperas">Aguardando DNS (o vigia do Publicar MPI+ termina quando apontar): ${cli.length ? `<b>o cliente apontar</b> ${esc(cli.join(', '))}` : ''}${cli.length && prop.length ? ' · ' : ''}${prop.length ? `<b>a propagação</b> ${esc(prop.join(', '))}` : ''}${falta ? ` · <span class="warn-text">${falta} com pendência (ver a lista do Publicar MPI+)</span>` : ''}</p>`;
+  }
 
   function cardAgente(a) {
     const [rot, tom] = ESTADO_AGENTE[a.estado] || [a.estado, 'neutral'];
     return `<div class="esc-agente ${a.modo} est-${esc(a.estado)}" data-agente="${esc(a.id)}">
       <div class="esc-agente-sala">${esc(a.sala ? a.sala.numero + ' / ' + a.sala.nome : '')}</div>
-      <div class="esc-agente-nome">${esc(a.nome)}</div>
+      <div class="esc-agente-nome">${esc(a.nome)}${a.papel ? `<span class="esc-agente-papel"> · ${esc(a.papel)}</span>` : ''}</div>
       <div class="esc-agente-funcao">${esc(a.funcao)}</div>
+      ${a.modulosNomes ? `<div class="esc-agente-modulos">${esc(a.modulosNomes)}</div>` : ''}
       <div class="esc-agente-rodape">
         ${badge(rot, tom === 'off' ? 'neutral' : tom)}
         ${a.tarefas ? `<span class="dim">${a.tarefas} tarefa(s)</span>` : ''}
@@ -187,7 +202,7 @@
             <input type="text" class="esc-resposta" placeholder="Ou diga o que fazer com pedidos assim (o modelo propõe a regra)" data-texto>
             <button class="btn compact ghost" data-acao="texto">Responder</button>
             ${!p.regraId ? '<button class="btn compact ghost" data-acao="avisar-sempre" title="Propõe uma regra: pedidos assim sempre vêm para você, sem passar pelo modelo">Avisar sempre</button>' : ''}
-            <span class="esc-encaminhar"><select data-agente-sel>${agentesAuto.map((a) => `<option value="${esc(a.id)}">${esc(a.nome)}</option>`).join('')}</select>
+            <span class="esc-encaminhar"><select data-agente-sel>${agentesAuto.map((a) => `<option value="${esc(a.id)}">${esc(rotuloAg(a))}</option>`).join('')}</select>
             <button class="btn compact ghost" data-acao="encaminhar" title="Propõe uma regra para encaminhar sempre">Encaminhar sempre</button>
             <button class="btn compact ghost" data-acao="so-desta-vez" title="Encaminha só estas, sem regra">Só desta vez</button></span>
             <button class="btn compact ghost" data-acao="ignorar-estas" title="Só estas tarefas">Ignorar estas</button>` : ''}
@@ -197,7 +212,7 @@
             <button class="btn compact ghost" data-acao="ignorar-estas" title="Só estas tarefas">Ignorar estas</button>
             <button class="btn compact ghost" data-acao="ignorar-sempre" title="Propõe uma regra para ignorar sempre tarefas assim">Ignorar sempre</button>
             <button class="btn compact ghost" data-acao="avisar-sempre" title="Propõe uma regra: pedidos assim sempre vêm para você, sem passar pelo modelo">Avisar sempre</button>
-            <span class="esc-encaminhar"><select data-agente-sel>${agentesAuto.map((a) => `<option value="${esc(a.id)}" ${p.agente === a.id ? 'selected' : ''}>${esc(a.nome)}</option>`).join('')}</select>
+            <span class="esc-encaminhar"><select data-agente-sel>${agentesAuto.map((a) => `<option value="${esc(a.id)}" ${p.agente === a.id ? 'selected' : ''}>${esc(rotuloAg(a))}</option>`).join('')}</select>
             <button class="btn compact ghost" data-acao="encaminhar" title="Propõe uma regra para encaminhar sempre">Encaminhar sempre</button>
             <button class="btn compact ghost" data-acao="so-desta-vez" title="Encaminha só estas, sem regra">Só desta vez</button></span>
             <button class="btn compact ghost" data-acao="descartar" title="Fecha a pendência e ignora as tarefas">Descartar</button>` : ''}
@@ -232,7 +247,7 @@
       <button class="text-btn" data-add-cond>+ condição</button>
       <div class="esc-regra-entao">
         <label>então <select data-acao-sel>${[['encaminhar', 'encaminhar para'], ['avisar', 'avisar você (o Hub não faz)'], ['ignorar', 'ignorar']].map(([v, n]) => `<option value="${v}" ${entao.acao === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-        <select data-agente-regra ${entao.acao !== 'encaminhar' ? 'disabled' : ''}>${s.agentes.map((a) => `<option value="${esc(a.id)}" ${entao.agente === a.id ? 'selected' : ''}>${esc(a.nome)}${a.modo === 'standby' ? ' (standby: vira sugestão)' : ''}</option>`).join('')}</select>
+        <select data-agente-regra ${entao.acao !== 'encaminhar' ? 'disabled' : ''}>${s.agentes.map((a) => `<option value="${esc(a.id)}" ${entao.agente === a.id ? 'selected' : ''}>${esc(rotuloAg(a))}${a.modo === 'standby' ? ' (standby: vira sugestão)' : ''}</option>`).join('')}</select>
       </div>
       <div class="grid-2">
         <label class="field"><span>Parâmetros fixos (chave=valor, um por linha; o resto vem da tarefa)</span><textarea rows="2" data-params>${esc(params)}</textarea></label>
@@ -323,6 +338,15 @@
 
   function ligarEventos(painel) {
     painel.querySelector('#escRodar')?.addEventListener('click', async () => { ui.snap.rodando = true; desenhar(); await chamar('escritorioRodar'); });
+    painel.querySelector('#escFreio')?.addEventListener('click', async () => {
+      // Desliga o modo automático (nada novo começa) e, se há uma publicação
+      // no meio, puxa o freio do Hub (ADR-102), que o próprio fluxo solta ao
+      // terminar de parar.
+      const publicando = typeof pub !== 'undefined' && pub && (pub.emAndamento || pub.rodando);
+      if (publicando && typeof pararAgora === 'function') { try { pararAgora(); } catch (e) {} }
+      logar(`Freio: modo automático desligado${publicando ? '; interrompendo a publicação em andamento' : ''}.`, 'warn');
+      await chamar('escritorioLigar', { geral: false });
+    });
     painel.querySelector('#escGeral')?.addEventListener('change', (e) => chamar('escritorioLigar', { geral: e.target.checked }));
     painel.querySelector('#escObs')?.addEventListener('change', (e) => chamar('escritorioLigar', { observacao: e.target.checked }));
     painel.querySelectorAll('[data-agente-toggle]').forEach((c) => c.addEventListener('change', (e) => chamar('escritorioLigar', { agente: c.dataset.agenteToggle, valor: e.target.checked })));
@@ -367,8 +391,26 @@
   }
 
   // ---------- início ----------
+  // A ponte (ADR-150): o orquestrador do processo principal pede, esta tela
+  // roda o driver do Publicar MPI+ (automacao-ui.js) e devolve o desfecho.
+  async function atenderPonte(d) {
+    const pedido = d || {};
+    let resultado;
+    try {
+      if (pedido.driver === 'publicarMpiPlus' && typeof window.hubPublicarTarefaAuto === 'function') resultado = await window.hubPublicarTarefaAuto(pedido.payload || {});
+      else resultado = { ok: false, desistir: true, motivo: `driver desconhecido na tela: ${pedido.driver || '?'}` };
+    } catch (e) {
+      resultado = { ok: false, motivo: e && e.message ? e.message : String(e) };
+    }
+    if (api().escritorioResultado) api().escritorioResultado({ id: pedido.id, resultado }).catch(() => {});
+    agendarRefresh();
+    return resultado;
+  }
+
   function iniciar() {
     montarChip();
+    if (api().onEscritorioExecutar) api().onEscritorioExecutar(atenderPonte);
+    if (api().escritorioRendererPronto) api().escritorioRendererPronto().catch(() => {});
     if (api().onEscritorioLog) api().onEscritorioLog((d) => logar(d && d.message, (d && d.type) || 'info'));
     if (api().onEscritorioEvento) api().onEscritorioEvento(() => agendarRefresh());
     // O app.js pode ter desenhado antes de este script existir (o render()
@@ -379,5 +421,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
   else iniciar();
 
-  window.hubEscritorio = { ui, carregar, desenhar, abrir, lerFormRegra };
+  window.hubEscritorio = { ui, carregar, desenhar, abrir, lerFormRegra, atenderPonte };
 })();

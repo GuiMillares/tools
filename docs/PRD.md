@@ -399,7 +399,7 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
   WHOIS/DNS não tem mais cartão: um domínio na busca do topo, ou `whois
   <domínio>` no terminal, responde no terminal da direita. As ferramentas
   ficam na barra lateral; a grade "Automações & scripts" saiu (ADR-127). O
-  painel flutuante da automação da fila (4.10) aparece em todas as telas.
+  chip do Escritório (4.15) aparece no topo em todas as telas.
 - **Terminal de atividade:** painel direito, presente em todas as
   ferramentas. É onde toda chamada de API e todo aviso aparecem. Ver ADR-011.
   Minimiza (vira um trilho fino que conta o que chegou, em vermelho se veio
@@ -437,29 +437,20 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
   Hub estiver aberto, inclusive na primeira chamada da manhã (ADR-136); só
   pede reconexão se o Salesforce revogar o acesso.
 
-### 4.10 Automação da fila — painel flutuante
+### 4.10 Automação da fila — pelo Escritório
 
-Um monitor que lê a fila de deploy do Salesforce a cada 5 minutos e executa
-sozinho o que já sabe fazer, uma tarefa por vez (ADR-119, ADR-120). Na
-fase 2 do Escritório (4.15, ADR-149) este painel é absorvido pelo orquestrador;
-nesta versão continua como está. Mora num
-painel flutuante no canto da tela, com **três interruptores que começam sempre
-desligados** — um automatizador não religa sozinho ao abrir o app —, "Rodar
-agora" e o freio de emergência, que desliga tudo. Antes de agir, cada
-varredura escreve a **anotação da fila** numa linha: quantas tarefas abertas,
-os domínios por tipo (publicação MPI+, Busca One, bloqueio), quem está na
-lista de espera e não será tocado, e quantas já foram tratadas na sessão
-(ADR-142). Cada tarefa tem o desfecho no terminal (feito / aguardando, com o
-motivo / pulei, com o motivo / erro), não só o resumo; erro comum tenta de novo
-até três varreduras e aí deixa para a mão. O painel mostra, embaixo do status,
-os domínios que **aguardam o cliente apontar** e os que aguardam a propagação,
-lidos da lista de espera do Publicar MPI+ (sobrevive a reabrir o Hub).
+Até a 1.0.76 era um painel flutuante com três interruptores, um relógio de
+5 minutos e o motor da fila dentro da tela (ADR-119, ADR-120). Na fase 2 do
+Escritório (ADR-150) tudo isso passou para o orquestrador (4.15): é ele quem
+lê a fila, decide, valida em código e manda executar, com um interruptor por
+agente e o histórico por tarefa. O que a automação faz por tipo de tarefa
+continua o mesmo, agora com nome:
 
-| Interruptor | Tarefa da fila | O que o Hub faz | Como termina |
+| Agente | Tarefa da fila | O que o Hub faz | Como termina |
 | --- | --- | --- | --- |
-| Bloqueio de contatos | `BLOQUEIO DE CONTATOS - {domínio}` / `RETIRAR CONTATOS…` | descobre a marca pelo IP e censura os contatos no /doutor (Busca Cliente, MPI Solutions) ou no painel MPI+ (ADR-116, ADR-121) | fecha a tarefa comentando "Contatos removidos" |
-| Publicação MPI+ | `Publicação (Troca de DNS) [MPI+] - {domínio}` com temporário `cliente.mpitemporario.com.br` | o Publicar MPI+ (4.7) inteiro, sem perguntar: backup do DNS do cliente no lugar da parada, empresa pelo caso/fila (ADR-122, ADR-123) | fecha a tarefa quando o site está no ar (SSL com o vigia, se o DNS demorar). **DNS do cliente**: publica, faz tags e planilha, e o site vai para a lista de espera como "aguardando o cliente" (ADR-142); a tarefa fica anotada e a fila segue para a próxima; o vigia confere a cada 30 min e termina SSL, Search Console e tarefa quando o cliente apontar |
-| Publicação Busca One | `Publicação (Troca de DNS) - …` com o temporário `deploy.buscaclientes.com.br/{repo}/` (Busca Cliente) ou `producao.mpitemporario.com.br/{repo}/` (MPI Solutions) no comentário, ou "Apontado via registro." | a **parte automática** (ADR-132, ADR-133): cria ou acha as propriedades no Google na marca da empresa, commita o `geral.php` no repositório do Bitbucket com `$idProjetoBusca` = o "ID do painel xxxx" da tarefa (MPI Solutions: fixo 39) e manda o e-mail de criação de vhost e banco ao suporte, com o modelo da empresa | a tarefa vai para **Em andamento** no seu nome e **fica aberta**: vhost, clone no servidor e DNS são manuais. As chaves e o resumo saem no terminal, nunca em comentário no Salesforce (ADR-134) |
+| **Tyr** (Bloqueador de Contatos) | `BLOQUEIO DE CONTATOS - {domínio}` / `RETIRAR CONTATOS…` | descobre a marca pelo IP e censura os contatos no /doutor (Busca Cliente, MPI Solutions) ou no painel MPI+ (ADR-116, ADR-121) | fecha a tarefa comentando "Contatos removidos" |
+| **Thor** (Publicador MPI+) | `Publicação (Troca de DNS) [MPI+] - {domínio}` com temporário `cliente.mpitemporario.com.br` | o Publicar MPI+ (4.7) inteiro, sem perguntar: backup do DNS do cliente no lugar da parada, empresa pelo caso/fila (ADR-122, ADR-123) | fecha a tarefa quando o site está no ar (SSL com o vigia, se o DNS demorar). **DNS do cliente**: publica, faz tags e planilha, e o site vai para a lista de espera como "aguardando o cliente" (ADR-142); a tarefa fica como aguardando externo; o vigia confere a cada 30 min e termina SSL, Search Console e tarefa quando o cliente apontar |
+| **Freyr** (Publicador Busca One) | `Publicação (Troca de DNS) - …` com o temporário `deploy.buscaclientes.com.br/{repo}/` (Busca Cliente) ou `producao.mpitemporario.com.br/{repo}/` (MPI Solutions) no comentário, ou "Apontado via registro." | a **parte automática** (ADR-132, ADR-133): cria ou acha as propriedades no Google na marca da empresa, commita o `geral.php` no repositório do Bitbucket com `$idProjetoBusca` = o "ID do painel xxxx" da tarefa (MPI Solutions: fixo 39) e manda o e-mail de criação de vhost e banco ao suporte, com o modelo da empresa. Roda inteiro no processo principal, sem depender da tela | a tarefa vai para **Em andamento** no seu nome e **fica aberta**: vhost, clone no servidor e DNS são manuais. As chaves e o resumo saem no terminal, nunca em comentário no Salesforce (ADR-134) |
 
 Na Busca One, tudo vem da própria tarefa, escrita no modelo combinado com o
 atendimento:
@@ -477,12 +468,21 @@ repositório** do Bitbucket, que nem sempre coincide com o domínio; o
 **domínio real é o outro domínio da tarefa** (título ou comentário, fora os
 nossos hosts e os e-mails), e é ele que vai para as propriedades, o
 `geral.php` e o e-mail. Sem temporário, a empresa vem do caso da tarefa e
-depois da fila. O destinatário e a cópia do e-mail de vhost são editáveis no
-painel e ficam gravados; o assunto ("Criação de Vhost e Banco - Busca
-Cliente - {domínio}", ou "- MPI -") e o corpo são fixos, do jeito que a
-equipe manda. Nada é enviado sem a conta Microsoft conectada, o Bitbucket
-configurado e a service account do Google — e, faltando qualquer um, nada é
-feito (nem as propriedades), para a tarefa ser retomada inteira depois.
+depois da fila. O destinatário e a cópia do e-mail de vhost ficam em
+Configurações › **Escritório & IA** e são gravados; o assunto ("Criação de
+Vhost e Banco - Busca Cliente - {domínio}", ou "- MPI -") e o corpo são
+fixos, do jeito que a equipe manda. Nada é enviado sem a conta Microsoft
+conectada, o Bitbucket configurado e a service account do Google — e,
+faltando qualquer um, nada é feito (nem as propriedades), para a tarefa ser
+retomada inteira depois.
+
+Antes de agir, cada agente passa pela validação em código do Escritório
+(domínio válido, temporário MPI+, fora da lista de espera do DNS, sem
+duplicidade, marca pelo apontamento, credenciais gravadas); o que não passa
+vira pendência com o motivo. Erro comum tenta de novo até três varreduras e
+então escala para você; "o Hub está ocupado com outra publicação" só adia.
+O botão **Freio** do Escritório desliga o modo automático e interrompe uma
+publicação no meio (ADR-102).
 
 ### 4.11 Quando publicou — `hosting`
 
@@ -628,12 +628,12 @@ as sessões do Hub) para conferir alguns clientes antes da planilha inteira.
 ### 4.15 Escritório — `escritorio`
 
 A tela principal do Hub (a primeira da barra lateral e a de abertura): o
-**orquestrador** e os **agentes** que fazem sozinhos o que hoje é feito
-módulo a módulo (ADR-149). O orquestrador lê a fila de deploy do Salesforce
-a cada 5 minutos, decide o que cada tarefa precisa e para qual agente vai,
-valida em código e executa ou pergunta. Fase 1 (esta versão): tudo isso
-menos a execução, que fica guardada como plano enquanto os agentes não
-existem.
+**orquestrador** e os **agentes** que fazem sozinhos o que antes era feito
+módulo a módulo (ADR-149, ADR-150). O orquestrador, **Odin**, lê a fila de
+deploy do Salesforce a cada 5 minutos, decide o que cada tarefa precisa e
+para qual agente vai, valida em código e executa ou pergunta. Os nomes são
+da mitologia nórdica; o papel e os módulos de cada um aparecem ao lado em
+toda tela e em todo seletor.
 
 - **Como ele decide, sempre nesta ordem:** uma regra aprendida que case com
   a tarefa; a triagem do próprio Hub (publicação MPI+, Busca One e bloqueio
@@ -646,19 +646,23 @@ existem.
   um site em subdiretório, por exemplo): vira pendência "para você", com a
   leitura, até você marcar como tratada. Tarefas do mesmo tipo de pedido
   (pelo comentário, não só pelo assunto) entram na mesma pendência.
-- **Agentes** (um cartão cada, com a sala): Publicador MPI+ (Publicar MPI+ e
-  Publicação em Massa), Publicador Busca One (propriedades, geral.php, vhost),
-  Bloqueador de Contatos, Hospedagem & E-mails (SSL e suspensão), Integrador
-  (merge de PRs), Auditor (Ouvidoria & Auditoria, Quando publicou),
-  Conferente de Vínculos e Relator (Planilha do Relatório). Os quatro
-  últimos ficam em **standby**: só rodam quando você aciona pelo módulo; o
-  orquestrador no máximo sugere. Cada agente automático tem o seu
-  interruptor.
+- **Agentes** (um cartão cada, com a sala): **Thor** (Publicador MPI+:
+  Publicar MPI+ e Publicação em Massa), **Freyr** (Publicador Busca One:
+  propriedades, geral.php, vhost), **Tyr** (Bloqueador de Contatos),
+  **Huginn** (Hospedagem & E-mails: SSL e suspensão), **Ratatoskr**
+  (Integrador: merge de PRs), **Mímir** (Auditor: Ouvidoria & Auditoria,
+  Quando publicou), **Heimdall** (Conferente de Vínculos) e **Bragi**
+  (Relator: Planilha do Relatório). Os quatro últimos ficam em **standby**:
+  só rodam quando você aciona pelo módulo; o orquestrador no máximo sugere.
+  Cada agente automático tem o seu interruptor. Nesta versão executam Tyr,
+  Thor e Freyr (4.10); Huginn e Ratatoskr são a fase 3.
 - **Modo automático** (interruptor geral): liga a leitura da fila e a
   execução. **Modo observação**: lê, planeja, valida a seco e anota
-  "executaria", sem executar; é como a fase 1 roda. Com o geral desligado
+  "executaria", sem executar; é como se começa. Com o geral desligado
   (modo manual), o plano espera o seu "Executar". Os interruptores lembram a
-  escolha ao reabrir.
+  escolha ao reabrir. O botão **Freio** desliga o automático e interrompe
+  uma publicação no meio. O Comando mostra quem está na lista de espera do
+  DNS (aguardando o cliente ou a propagação).
 - **Validação em código antes de agir:** cada agente tem regras com nome
   (domínio válido, temporário MPI+, fora da lista de espera do DNS, sem
   duplicidade, marca pelo apontamento, credenciais gravadas…); o que não
@@ -681,14 +685,14 @@ existem.
   decidido e por quê, qual regra validou, entradas, saídas e erros. Tarefa
   que estava executando quando o Hub fechou vira "retomar?" em vez de
   retomar sozinha. Falha comum tenta até 3 vezes e então escala para você.
-- **Modelo:** Gemini, pela chave em Configurações › IA & Escritório, com os
+- **Modelo:** Gemini, pela chave em Configurações › Escritório & IA, com os
   modelos escolhidos num seletor que lista o que a chave enxerga (o Pro para
   o orquestrador, o Flash para os agentes), nível de pensamento e teto
   diário de chamadas; os contadores do dia ficam na tela. Sem chave, o
   Escritório funciona só com a triagem e as regras.
 
-O painel flutuante da automação (4.10) continua nesta fase; na fase 2 ele é
-absorvido pelo Escritório.
+O painel flutuante da automação foi absorvido pelo Escritório (4.10,
+ADR-150).
 
 ## 5. Fora de escopo
 

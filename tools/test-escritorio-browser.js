@@ -24,11 +24,12 @@ const SNAP = {
   ultimaVarredura: { quando: '2026-10-13T12:00:00.000Z', ok: true, lidas: 4 },
   salas: [],
   agentes: [
-    { id: 'publicador-mpiplus', nome: 'Publicador MPI+', funcao: 'PUBLICAÇÃO MPI+', modo: 'auto', modulos: ['publish'], sala: { numero: '02', nome: 'PUBLICAÇÃO' }, ligado: true, estado: 'ocioso', tarefas: 1 },
-    { id: 'bloqueador', nome: 'Bloqueador de Contatos', funcao: 'BLOQUEIO', modo: 'auto', modulos: ['doutor'], sala: { numero: '04', nome: 'CONTATOS' }, ligado: false, estado: 'desligado', tarefas: 0 },
-    { id: 'hospedagem', nome: 'Hospedagem & E-mails', funcao: 'SSL', modo: 'auto', modulos: ['ssl'], sala: { numero: '05', nome: 'HOSPEDAGEM' }, ligado: true, estado: 'aguardando', tarefas: 2 },
-    { id: 'relator', nome: 'Relator', funcao: 'PLANILHA', modo: 'standby', modulos: ['relatorio'], sala: { numero: '09', nome: 'RELATÓRIO' }, ligado: true, estado: 'standby', tarefas: 0 },
+    { id: 'publicador-mpiplus', nome: 'Thor', papel: 'Publicador MPI+', modulosNomes: 'Publicar MPI+ / Publicação em Massa', funcao: 'PUBLICAÇÃO MPI+', modo: 'auto', modulos: ['publish'], sala: { numero: '02', nome: 'PUBLICAÇÃO' }, ligado: true, estado: 'ocioso', tarefas: 1 },
+    { id: 'bloqueador', nome: 'Tyr', papel: 'Bloqueador de Contatos', modulosNomes: 'Bloquear Contatos', funcao: 'BLOQUEIO', modo: 'auto', modulos: ['doutor'], sala: { numero: '04', nome: 'CONTATOS' }, ligado: false, estado: 'desligado', tarefas: 0 },
+    { id: 'hospedagem', nome: 'Huginn', papel: 'Hospedagem & E-mails', modulosNomes: 'Ativação SSL / E-mails / Suspensão & E-mails', funcao: 'SSL', modo: 'auto', modulos: ['ssl'], sala: { numero: '05', nome: 'HOSPEDAGEM' }, ligado: true, estado: 'aguardando', tarefas: 2 },
+    { id: 'relator', nome: 'Bragi', papel: 'Relator', modulosNomes: 'Planilha do Relatório', funcao: 'PLANILHA', modo: 'standby', modulos: ['relatorio'], sala: { numero: '09', nome: 'RELATÓRIO' }, ligado: true, estado: 'standby', tarefas: 0 },
   ],
+  orquestrador: { id: 'orquestrador', nome: 'Odin', papel: 'Orquestrador' },
   tarefas: [
     { id: '00T1', assunto: 'Publicação (Troca de DNS) [MPI+] - cliente.com.br', link: 'https://sf/1', empresaFila: 'bc', estado: 'planejada', rotulo: 'planejada', tom: 'run', estadoDesde: '2026-10-13T12:00:00.000Z', agente: 'publicador-mpiplus', agenteNome: 'Publicador MPI+', pendenciaId: null, tentativas: 0, plano: { agente: 'publicador-mpiplus', origem: 'triagem', parametros: { dominio: 'cliente.com.br' }, etapas: [], validacao: { ok: true, resultados: [{ nome: 'Domínio válido', ok: true }] } }, ultimo: { quando: '2026-10-13T12:00:01.000Z', tipo: 'validacao', motivo: '' } },
     { id: '00T2', assunto: 'Ativação de SSL - a.com.br', link: 'https://sf/2', empresaFila: 'bc', estado: 'pendente', rotulo: 'pendente', tom: 'warn', estadoDesde: '2026-10-13T11:00:00.000Z', agente: null, agenteNome: '', pendenciaId: 'P-1', tentativas: 0, plano: null, ultimo: { quando: '2026-10-13T11:00:00.000Z', tipo: 'pendencia', motivo: 'q' } },
@@ -65,9 +66,10 @@ const STUB = `
     iaSetConfig: () => ({ ok: true, temChave: true }),
     iaModelos: () => ({ ok: true, modelos: [{ id: 'gemini-3.8-flash', nome: 'Gemini 3.8 Flash' }, { id: 'gemini-3.1-pro-preview', nome: 'Gemini 3.1 Pro' }] }),
   };
+  respostas.onEscritorioExecutar = (cb) => { window.__ponte = cb; return () => {}; };
   window.api = new Proxy({}, { get: (t, name) => (...args) => {
     window.__calls.push({ name, args });
-    if (String(name).startsWith('on')) return () => {};
+    if (String(name).startsWith('on')) return respostas[name] ? respostas[name](...args) : () => {};
     const r = respostas[name] ? respostas[name](...args) : { ok: true };
     return Promise.resolve(r);
   } });
@@ -89,12 +91,26 @@ const STUB = `
     check('o Hub abre no Escritório, acima do Início na barra lateral', await page.evaluate(() => state.view === 'escritorio' && document.querySelector('#navList .nav-item').textContent.trim() === 'Escritório' && document.querySelector('#navList .nav-item.active').textContent.trim() === 'Escritório'));
     check('o chip no topo mostra o modo e as pendências', await page.evaluate(() => /ESCRITÓRIO · manual · 4 pend\./.test(document.getElementById('tbEscritorio').textContent.replace(/\s+/g, ' '))), await page.evaluate(() => document.getElementById('tbEscritorio').textContent));
     check('a lista de espera do app foi mandada para o processo principal', (await chamadas('escritorioEsperas')).length >= 1);
-    check('cartões dos 4 agentes, com sala, função, estado e o interruptor só nos automáticos', await page.evaluate(() => {
+    check('cartões dos 4 agentes, com sala, nome nórdico, papel, módulos, estado e o interruptor só nos automáticos', await page.evaluate(() => {
       const cards = [...document.querySelectorAll('.esc-agente')];
       const bl = document.querySelector('.esc-agente[data-agente="bloqueador"]');
       const rel = document.querySelector('.esc-agente[data-agente="relator"]');
-      return cards.length === 4 && /02 \/ PUBLICAÇÃO/.test(cards[0].textContent) && bl.classList.contains('est-desligado') && !bl.querySelector('[data-agente-toggle]').checked && rel.classList.contains('standby') && !rel.querySelector('[data-agente-toggle]') && /standby/.test(rel.textContent);
+      return cards.length === 4 && /02 \/ PUBLICAÇÃO/.test(cards[0].textContent) && /Thor/.test(cards[0].querySelector('.esc-agente-nome').textContent) && /Publicador MPI\+/.test(cards[0].querySelector('.esc-agente-papel').textContent) && /Publicar MPI\+ \/ Publicação em Massa/.test(cards[0].querySelector('.esc-agente-modulos').textContent) && bl.classList.contains('est-desligado') && !bl.querySelector('[data-agente-toggle]').checked && rel.classList.contains('standby') && !rel.querySelector('[data-agente-toggle]') && /standby/.test(rel.textContent);
     }));
+    check('o cabeçalho apresenta Odin como orquestrador', await page.evaluate(() => /Odin, o orquestrador/.test(document.querySelector('.home-hi__sub').textContent)));
+    check('o seletor de agente mostra nome · papel · módulos', await page.evaluate(() => [...document.querySelectorAll('[data-pend="P-1"] [data-agente-sel] option')].some((o) => o.textContent === 'Thor · Publicador MPI+ · Publicar MPI+ / Publicação em Massa')));
+    check('a tela avisou que nasceu (as chamadas penduradas da ponte falham) e registrou a ponte', (await chamadas('escritorioRendererPronto')).length === 1 && await page.evaluate(() => typeof window.__ponte === 'function'));
+    const ponte = await page.evaluate(async () => {
+      window.hubPublicarTarefaAuto = async (p) => ({ ok: true, mensagem: 'publicado ' + p.dominio });
+      const r = await window.__ponte({ id: 'ponte-7', driver: 'publicarMpiPlus', payload: { dominio: 'a.com.br', temporario: 'a.mpitemporario.com.br' } });
+      const r2 = await window.__ponte({ id: 'ponte-8', driver: 'outro', payload: {} });
+      return { r, r2, devolvidos: window.__calls.filter((c) => c.name === 'escritorioResultado').map((c) => c.args[0]) };
+    });
+    check('a ponte roda o driver do Publicar MPI+ e devolve o desfecho ao processo principal', ponte.r.ok && ponte.devolvidos.length === 2 && ponte.devolvidos[0].id === 'ponte-7' && ponte.devolvidos[0].resultado.mensagem === 'publicado a.com.br', JSON.stringify(ponte));
+    check('driver desconhecido na ponte desiste com motivo, sem exceção', !ponte.r2.ok && ponte.r2.desistir && /driver desconhecido/.test(ponte.r2.motivo));
+    check('a linha "Aguardando DNS" aparece quando a lista de espera tem alguém', await page.evaluate(() => { esperas = [{ dominio: 'w.com.br', status: 'esperando', cliente: true }]; window.hubEscritorio.desenhar(); const el = document.getElementById('escEsperas'); const ok = !!el && /o cliente apontar/.test(el.textContent) && /w\.com\.br/.test(el.textContent); esperas = []; window.hubEscritorio.desenhar(); return ok && !document.getElementById('escEsperas'); }));
+    await page.click('#escFreio');
+    check('o Freio desliga o modo automático', JSON.stringify(await ultima('escritorioLigar')) === '{"geral":false}');
     check('o comando mostra os contadores e a última varredura', await page.evaluate(() => /3/.test(document.querySelector('.esc-stat b').textContent) && /última varredura/.test(document.querySelector('.esc-comando .sec-meta').textContent)));
     check('as pendências abertas aparecem (4), a fechada não', await page.evaluate(() => document.querySelectorAll('.esc-pend').length === 4 && !document.querySelector('[data-pend="P-0"]')));
     check('a pendência "para você" mostra a leitura do comentário, a categoria e o botão de tratada', await page.evaluate(() => { const p = document.querySelector('[data-pend="P-4"]'); return p && p.classList.contains('tipo-humano') && /para você/.test(p.querySelector('.sec-title').textContent) && /republicar-site-subdiretorio/.test(p.querySelector('.sec-meta').textContent) && /Republicar o site em subdiretório que sumiu por conflito/.test(p.querySelector('.esc-leitura').textContent) && !!p.querySelector('[data-acao="tratada"]') && !!p.querySelector('[data-acao="avisar-sempre"]'); }));
@@ -190,6 +206,8 @@ const STUB = `
     await page.click('#iaListarBtn');
     await page.waitForFunction(() => document.querySelectorAll('#iaModelosLista option').length === 2, { timeout: 3000 });
     check('listar modelos preenche a lista dos campos', true);
+    check('a aba traz os campos do e-mail de vhost com o padrão (suporte da M3)', await page.evaluate(() => document.getElementById('vhostParaInput').value === 'suporte@m3solutions.com.br' && document.getElementById('vhostCcInput').value === 'everton.lima@buscacliente.com.br'), await page.evaluate(() => document.getElementById('vhostParaInput').value));
+    await page.fill('#vhostParaInput', 'infra@m3.test');
     await page.fill('#iaKeyInput', 'AIza-teste');
     await page.fill('#iaModeloAgInput', 'gemini-3.8-flash');
     await page.selectOption('#iaNivelSelect', 'LOW');
@@ -198,6 +216,8 @@ const STUB = `
     const cfg = await ultima('iaSetConfig');
     check('salvar manda a chave e a configuração', cfg && cfg.apiKey === 'AIza-teste' && cfg.config.nivelPensamento === 'LOW' && cfg.config.modeloOrquestrador === 'gemini-3.1-pro-preview' && cfg.config.tetoChamadasDia === 200, JSON.stringify(cfg));
     check('a chave some do campo depois de salvar', await page.evaluate(() => document.getElementById('iaKeyInput').value === ''));
+    const hub = (await chamadas('setHubState')).map((c) => c.args[0].mailVhost).filter(Boolean);
+    check('o e-mail de vhost editado foi para o hub-state (mailVhost)', hub.length >= 1 && hub[hub.length - 1].to === 'infra@m3.test' && await page.evaluate(() => state.mailVhost && state.mailVhost.to === 'infra@m3.test'), JSON.stringify(hub));
     check('sem erro de página no fim', erros.length === 0, erros.join(' | '));
   } catch (e) {
     falhas++;

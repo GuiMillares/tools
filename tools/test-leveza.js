@@ -69,7 +69,11 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
   check('a rodada em massa liga e desliga', /manterAcordado\(true\)/.test(rodada) && /manterAcordado\(false\)/.test(rodada));
   const etapa = recorta(app, 'async function pubRodarEtapa(', '\n}');
   check("a etapa da publicação segura como 'publicacao' e solta no finally", /manterAcordado\(true, 'publicacao'\)/.test(etapa) && /finally \{[\s\S]*manterAcordado\(false, 'publicacao'\)/.test(etapa));
-  check("a automação segura como 'automacao' ao ligar e solta ao desligar", /function ligarTimer\(\)[\s\S]*?manterAcordado\(true, 'automacao'\)[\s\S]*?function desligarTimer\(\)[\s\S]*?manterAcordado\(false, 'automacao'\)/.test(auto));
+  // O relógio da automação saiu do renderer (ADR-150): é o orquestrador do
+  // Escritório, no processo principal, que segura a janela enquanto o modo
+  // automático está ligado, e solta ao desligar.
+  check("o Escritório segura como 'escritorio' com o modo automático ligado e solta ao desligar", /function revisarTimerEscritorio\(\)[\s\S]*?invocarLocal\('energia:manterAcordado', \{ ligar: ligado, motivo: 'escritorio' \}\)/.test(main));
+  check('o renderer da automação não tem mais relógio nem manterAcordado (absorvido pelo Escritório)', !/ligarTimer|manterAcordado/.test(auto));
 
   console.log('\n=== Nada pulsa para sempre ===');
   const infinitas = [...css.matchAll(/^([^{}\n]+)\{[^}]*animation:[^;}]*infinite/gm)].map((m) => m[1].trim());

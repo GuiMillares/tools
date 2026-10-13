@@ -5039,6 +5039,8 @@ onde o domínio aponta: `149.18.103.138` MPI Solutions, `149.18.102.39` MPI+,
 
 ## ADR-120 — Monitor da fila em 2º plano (motor puro + painel flutuante)
 
+**Status:** substituída pela ADR-150 no painel flutuante, nos interruptores e no relógio do renderer (o Escritório faz isso); o motor `lib/automacao.js` continua, chamado pelo executor do Tyr
+
 **Decisão.** `lib/automacao.js` é o motor (puro, injetável, testado sem
 Electron): varre a fila a cada 5 min, triagem, executa uma tarefa por vez,
 respeita "parar" e o que já foi processado, e fecha a tarefa no Salesforce ao
@@ -7071,6 +7073,101 @@ de tarefa existem na fila além de publicação e bloqueio. Toda decisão tem
 dono e motivo no histórico. `npm test` ganhou três arquivos (puro,
 orquestrador e navegador) e segue inteiro. Custo: cada tarefa desconhecida é
 uma chamada ao Pro; as conhecidas não chamam modelo nenhum.
+
+## ADR-150 — Escritório, fase 2: os agentes executam (Tyr e Freyr no processo principal, Thor pela ponte), o painel flutuante é absorvido e os nomes vêm da mitologia nórdica
+
+**Status:** aceita — fase 2 de 5. Substitui a ADR-120 no que diz respeito ao
+painel flutuante e ao relógio do renderer (o motor `lib/automacao.js`
+continua, agora chamado pelo executor); mantém a ADR-122 (o driver do
+Publicar MPI+ no renderer) e a ADR-132/133 (a publicação Busca One), que
+passam a ser acionados pelo orquestrador.
+
+**Contexto.** Aprovada a fase 1 (ADR-149) em 13/10/2026, o pedido foi:
+começar a fase 2; mostrar o nome do módulo ao lado de cada agente nos
+seletores; e batizar o orquestrador e os agentes com nomes da mitologia
+nórdica, à escolha do Hub. Até aqui o painel flutuante da ADR-120 continuava
+lendo a fila por conta própria, em paralelo ao Escritório, com três
+interruptores que nasciam desligados e com os campos do e-mail de vhost.
+
+**Decisão.**
+
+1. **Nomes.** Cada agente tem `nome` (nórdico), `papel` (o nome funcional de
+   antes) e `modulosNomes` (os módulos do Hub que cobre, por extenso); os
+   `id`s não mudam, porque a loja e as regras os guardam. Em toda tela e em
+   todo texto o agente aparece como "Nome (papel)" ou "Nome · papel ·
+   módulos":
+   | Nome | Papel | Módulos | Por quê |
+   | --- | --- | --- | --- |
+   | **Odin** | Orquestrador | a fila | vê tudo da Sala de Comando e distribui |
+   | **Thor** | Publicador MPI+ | Publicar MPI+ / Publicação em Massa | o trabalho pesado, do DNS ao SSL |
+   | **Freyr** | Publicador Busca One | Propriedades Google (geral.php, vhost) | semeia o site novo: propriedades, chaves, pedido ao suporte |
+   | **Tyr** | Bloqueador de Contatos | Bloquear Contatos | o deus que prendeu Fenrir: bloqueia e tranca |
+   | **Huginn** | Hospedagem & E-mails | Ativação SSL / E-mails, Suspensão & E-mails | o corvo mensageiro de Odin: leva os pedidos ao suporte |
+   | **Ratatoskr** | Integrador | Mergear PRs | o esquilo que corre entre os galhos de Yggdrasil: junta branches |
+   | **Mímir** | Auditor | Ouvidoria & Auditoria, Quando publicou | a cabeça sábia que Odin consulta |
+   | **Heimdall** | Conferente de Vínculos | Conferir Vínculos | o vigia que vê e ouve tudo |
+   | **Bragi** | Relator | Planilha do Relatório | o deus da poesia: quem conta e registra |
+2. **Os executores** (`lib/escritorio/executores.js`, puros, testados com
+   ferramentas falsas em `tools/test-escritorio-executores.js`) são o
+   `deps.executar` do orquestrador. Eles reaproveitam as rotinas que o Hub já
+   tem pelos canais do IPC registrados (`invocarLocal`, ADR-149):
+   - **Tyr** chama `lib/automacao.js → processarBloqueio` com `dns:marca`,
+     `doutor:bloquear`, `painel:bloquear` e `salesforce:fecharTarefa`: marca
+     pelo IP, /doutor ou painel idealplus, tarefa fechada com "Contatos
+     removidos". O "pulou" do motor antigo (marca não resolvida) vira
+     `desistir` de primeira.
+   - **Freyr** roda **inteiro no processo principal**: a cola que morava no
+     renderer (`hubPublicarBuscaOneAuto`) foi portada para o executor, lendo
+     desta máquina o que o `state` do app.js tinha — credenciais do
+     Bitbucket (`credentials.enc`), workspace por marca e e-mail de vhost
+     (`hub-state.json`), service account (`google-config.json`), sessão
+     Microsoft (`ms-token.enc`). A empresa vem do temporário, senão do caso
+     (`salesforce:contexto`), senão da fila (ADR-123/133), com o aviso quando
+     discordam; o `$idProjetoBusca` fixo da marca (39 na MPI Solutions) vem
+     da própria `lib/busca-one.js`. O destinatário padrão do vhost passou a
+     morar na lib (`EMAIL_VHOST_PADRAO`). O renderer não tem mais esse driver.
+   - **Thor** vai pela **ponte main → renderer**: `escritorio:executar`
+     { id, driver, payload } → a tela roda `window.hubPublicarTarefaAuto`
+     (a máquina de etapas do Publicar MPI+, ADR-122, que continua em
+     `renderer/automacao-ui.js`) → `escritorio:resultado`. Sem prazo curto
+     (uma publicação espera a propagação por até 30 min); se a janela
+     recarregar no meio, ela avisa `escritorio:rendererPronto` e as chamadas
+     penduradas falham com motivo em vez de esperar para sempre. "Já há uma
+     publicação em andamento" e "o freio está puxado" voltam como `pulou`.
+   - O contrato é o do orquestrador: `ok` conclui; `aguardando` vai para
+     aguardando externo (lista de espera do DNS); `pulou` **adia** a tarefa
+     (volta a planejada sem contar tentativa, estado novo
+     executando → planejada); `desistir` escala de primeira; erro comum
+     conta tentativa até o teto (3) e escala.
+3. **O painel flutuante da ADR-120 foi absorvido.** `renderer/automacao-ui.js`
+   ficou só com o driver do Publicar MPI+, a consulta à lista de espera
+   (`window.hubAutomacao.emEspera`) e o atalho `hubBloquearPainel`; não há
+   mais interruptores, relógio de 5 min nem motor no renderer. Os
+   interruptores são os dos agentes no Escritório; o relógio é o do
+   orquestrador; os campos "Vhost para / Cc" foram para Configurações ›
+   **Escritório & IA**, gravados no mesmo `mailVhost` do hub-state; a
+   anotação "aguardando o cliente / a propagação" aparece no Comando do
+   Escritório, lida da lista de espera; e um botão **Freio** desliga o modo
+   automático e, se houver publicação no meio, puxa o freio do Hub
+   (ADR-102), que o próprio fluxo solta ao terminar de parar.
+4. **Segurança continua a mesma da fase 1:** o executor só roda depois da
+   validação de execução do catálogo, com o modo automático ligado, a
+   observação desligada e o agente ligado; em modo manual, pelo botão
+   "Executar" de cada tarefa. Um executor por vez (a varredura é sequencial e
+   não se sobrepõe). Huginn, Ratatoskr, Mímir, Heimdall e Bragi ainda não
+   executam: "o agente ainda não executa nesta versão" vira escalada com
+   motivo (Huginn e Ratatoskr são a fase 3; os três em standby só rodam pela
+   mão, por decisão).
+
+**Consequências.** Ligado o modo automático e desligada a observação, a fila
+é tratada pelo Escritório: bloqueios, publicações MPI+ e Busca One saem
+sozinhos, com histórico por tarefa. Quem reabre o Hub não precisa religar
+interruptor nenhum (o painel antigo nascia desligado; o Escritório lembra). O
+`test-busca-one-browser.js` saiu: as mesmas verificações (ordem das
+chamadas, empresa pelo temporário/caso/fila, ID fixo, destinatário, falta de
+configuração) moram no `test-escritorio-executores.js`, sem Chromium. O
+`test-automacao-browser.js` passou a provar o contrário do que provava: que o
+painel não existe mais e que o driver do MPI+ segue exposto.
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

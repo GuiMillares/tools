@@ -83,7 +83,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     check('sem a fila, casa a outra', Regras.casarRegra(regras, { ...fato, fila: 'mpisolutions' }).id === 'a');
     check('nada casa → null', Regras.casarRegra(regras, { ...fato, assunto: 'Outra coisa' }) === null);
     const v = Regras.validarRegra({ quando: [{ campo: 'assunto', op: 'comeca', valor: 'Ativação de SSL' }], entao: { acao: 'encaminhar', agente: 'hospedagem', parametros: { acao: 'ssl' } } });
-    check('validarRegra normaliza e descreve', v.ok && v.regra.ativa === true && /Quando assunto começa com "Ativação de SSL" → Hospedagem & E-mails com acao=ssl/.test(v.regra.descricao), v.regra.descricao);
+    check('validarRegra normaliza e descreve', v.ok && v.regra.ativa === true && /Quando assunto começa com "Ativação de SSL" → Huginn \(Hospedagem & E-mails\) com acao=ssl/.test(v.regra.descricao), v.regra.descricao);
     const v2 = Regras.validarRegra({ quando: [{ campo: 'x', op: 'igual', valor: '' }], entao: { acao: 'encaminhar', agente: 'ninguem' } });
     check('validarRegra acusa campo, valor e agente inválidos', !v2.ok && v2.erros.length === 3, v2.erros.join(' | '));
     check('validarRegra: regra vazia falha', !Regras.validarRegra({}).ok);
