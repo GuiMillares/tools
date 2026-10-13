@@ -638,9 +638,14 @@ existem.
 - **Como ele decide, sempre nesta ordem:** uma regra aprendida que case com
   a tarefa; a triagem do próprio Hub (publicação MPI+, Busca One e bloqueio
   de contatos nascem planejadas sem modelo nenhum); o modelo (Gemini), só
-  para o que sobrou, que responde plano, pergunta ou ignorar; e, sem modelo
-  configurado, pergunta. **Ele nunca chuta**: parâmetro que não está na
-  tarefa vira pergunta. Tarefas do mesmo tipo entram na mesma pergunta.
+  para o que sobrou, que **lê o comentário inteiro** (o assunto costuma ser
+  genérico) e responde plano, pergunta, avisar ou ignorar, com uma leitura de
+  uma linha do que o comentário pede; e, sem modelo configurado, pergunta.
+  **Ele nunca chuta**: parâmetro que não está na tarefa vira pergunta.
+  **"Avisar"** é o pedido que é operação real mas o Hub não faz (republicar
+  um site em subdiretório, por exemplo): vira pendência "para você", com a
+  leitura, até você marcar como tratada. Tarefas do mesmo tipo de pedido
+  (pelo comentário, não só pelo assunto) entram na mesma pendência.
 - **Agentes** (um cartão cada, com a sala): Publicador MPI+ (Publicar MPI+ e
   Publicação em Massa), Publicador Busca One (propriedades, geral.php, vhost),
   Bloqueador de Contatos, Hospedagem & E-mails (SSL e suspensão), Integrador
@@ -659,10 +664,12 @@ existem.
   duplicidade, marca pelo apontamento, credenciais gravadas…); o que não
   passa barra e vira pendência com o motivo; o que não dá para conferir
   também barra, nunca aprova no escuro.
-- **Pendências:** a pergunta, as tarefas que ela cobre e as respostas:
-  texto livre (o modelo propõe uma regra), "Ignorar estas", "Ignorar
-  sempre", "Encaminhar sempre para…", "Só desta vez", "Marcar como tratada",
-  "Retomar" / "Descartar" para tarefa interrompida. **Regra só entra depois
+- **Pendências:** a pergunta, as tarefas que ela cobre (cada uma com a
+  leitura do comentário) e as respostas: texto livre (o modelo propõe uma
+  regra), "Ignorar estas", "Ignorar sempre", "Avisar sempre", "Encaminhar
+  sempre para…", "Só desta vez", "Marcar como tratada", "Retomar" /
+  "Descartar" para tarefa interrompida. Quando o assunto é genérico, a regra
+  proposta inclui um trecho do comentário ("comentário contém …"). **Regra só entra depois
   que você aprova** o texto proposto, num formulário editável; aprovada, as
   tarefas são reanalisadas na hora.
 - **Regras aprendidas:** lista com descrição, ativa/inativa, usos e origem;

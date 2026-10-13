@@ -1529,3 +1529,7 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .esc-hist-linha.tipo-erro .esc-hist-tipo, .esc-hist-linha.tipo-barrada .esc-hist-tipo { color: var(--error); }
 .esc-hist-linha.tipo-pendencia .esc-hist-tipo { color: var(--warning); }
 .esc-hist-linha.tipo-execucao .esc-hist-tipo { color: var(--green); }
+.esc-pend.tipo-humano { border-left-color: var(--accent-2); }
+.esc-pend-tarefa { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; width: 100%; }
+.esc-leitura { font-size: var(--fs-sm); color: var(--text-dim); line-height: 1.35; }
+.esc-tabela td .esc-leitura { font-family: var(--sans); font-size: var(--fs-xs); margin-top: 2px; max-width: 420px; white-space: normal; }

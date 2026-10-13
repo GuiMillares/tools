@@ -137,6 +137,45 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     m.limpar();
   }
 
+  console.log('\n=== O comentário manda: mesmo assunto, pedidos diferentes ===');
+  {
+    const COMENT1 = 'Boa tarde time, tudo bem?\n\nEsse cliente possui dois contratos conosco, um Doutores da Web e um Busca Clientes.\n\nAparentemente, dentro do Doutores ele recebeu uma bonificação de palavra, que é a mesma do nosso subdiretório. Com isso, o nosso site acabou caindo.\n\nAnteriormente o nosso site era: www.adetech.com.br/eletromecanicos\n\nPoderiam verificar e republicar o site novamente?';
+    const COMENT2 = 'Favor trocar o DNS do cliente para o servidor novo, o temporário é cliente2.mpitemporario.com.br';
+    const m = montar({ tarefas: [sf('00T-AJ1', 'Ajuste Site MPI - adetech.com.br', COMENT1), sf('00T-AJ2', 'Ajuste Site MPI - cliente2.com.br', COMENT2)] });
+    m.respostasIa.push({ ok: true, dados: { leitura: 'Republicar o site Busca One que sumiu em www.adetech.com.br/eletromecanicos por conflito com palavra bonificada no Doutores', categoria: 'republicar-site-subdiretorio', trechoChave: 'republicar o site novamente', decisao: 'avisar', motivo: 'nenhum agente publica site em subdiretório', confianca: 0.85 }, uso: { entrada: 1, saida: 1 }, modelo: 'pro' });
+    m.respostasIa.push({ ok: true, dados: { leitura: 'Trocar o DNS do cliente2.com.br para o servidor novo', categoria: 'trocar-dns', trechoChave: 'trocar o DNS', decisao: 'pergunta', motivo: 'é publicação MPI+ sem o padrão do assunto?', confianca: 0.5, pergunta: 'Ajuste de site pedindo troca de DNS é publicação MPI+?' }, uso: { entrada: 1, saida: 1 }, modelo: 'pro' });
+    await m.orq.varrer({ manual: true });
+    const t1 = m.loja.tarefa('00T-AJ1'); const t2 = m.loja.tarefa('00T-AJ2');
+    check('o modelo recebeu o comentário inteiro das duas', m.chamadasIa.length === 2 && /republicar o site novamente/.test(m.chamadasIa[0].conteudo) && /cliente2\.mpitemporario/.test(m.chamadasIa[1].conteudo));
+    check('a leitura e a categoria ficam na tarefa', /Republicar o site Busca One/.test(t1.leitura) && t1.categoria === 'republicar-site-subdiretorio' && t2.categoria === 'trocar-dns');
+    const pend = m.loja.pendenciasAbertas();
+    check('mesmo assunto, pedidos diferentes → DUAS pendências, não uma', pend.length === 2 && pend.every((p) => p.tarefas.length === 1), JSON.stringify(pend.map((p) => [p.tipo, p.padrao, p.tarefas])));
+    const ph = pend.find((p) => p.tipo === 'humano'); const pq = pend.find((p) => p.tipo === 'pergunta');
+    check('"avisar" vira pendência para você, com a leitura e o motivo', ph && ph.tarefas[0] === '00T-AJ1' && /Precisa de você: Republicar o site Busca One/.test(ph.pergunta) && /subdiretório/.test(ph.pergunta) && ph.contexto.trechoChave === 'republicar o site novamente' && t1.estado === T.PENDENTE, ph && ph.pergunta);
+    check('a pergunta leva a leitura do comentário e agrupa por categoria', pq && /o comentário pede: Trocar o DNS/.test(pq.pergunta) && pq.padrao === 'ajuste site mpi - {dominio}:trocar-dns', pq && pq.padrao);
+    check('o log avisa que precisa de você', temLog(m.logs, /adetech\.com\.br: precisa de você/));
+    // Mais uma tarefa do primeiro tipo entra na mesma pendência; de outro tipo, não.
+    m.fila.tarefas.push(sf('00T-AJ3', 'Ajuste Site MPI - outro.com.br', 'Outro cliente com site em subdiretório que sumiu, favor republicar o site novamente'));
+    m.respostasIa.push({ ok: true, dados: { leitura: 'Republicar site em subdiretório', categoria: 'republicar-site-subdiretorio', trechoChave: 'republicar o site novamente', decisao: 'avisar', motivo: 'idem', confianca: 0.8 }, uso: {}, modelo: 'pro' });
+    await m.orq.varrer({ manual: true });
+    check('tarefa do mesmo tipo (pela categoria) entra na pendência existente', m.loja.pendencia(ph.id).tarefas.join() === '00T-AJ1,00T-AJ3' && m.loja.pendenciasAbertas().length === 2);
+    // "Avisar sempre": regra pelo assunto + trecho do comentário; aprovada, a
+    // pendência fica aberta para você tratar e as próximas entram nela sem modelo.
+    let r = await m.orq.responder(ph.id, { acao: 'avisar-sempre' });
+    check('avisar-sempre propõe regra com assunto começa com + comentário contém o trecho', r.ok && r.pendencia.proposta.regra.quando.length === 2 && r.pendencia.proposta.regra.quando[1].campo === 'descricao' && r.pendencia.proposta.regra.quando[1].valor === 'republicar o site novamente' && r.pendencia.proposta.regra.entao.acao === 'avisar', JSON.stringify(r.pendencia.proposta));
+    r = await m.orq.aprovarRegra(ph.id);
+    const pa = m.loja.pendencia(ph.id);
+    check('aprovada: a regra existe e a pendência segue aberta, para você, com as duas tarefas', r.ok && m.loja.listarRegras().length === 1 && pa.status === 'aberta' && pa.tipo === 'humano' && pa.tarefas.join() === '00T-AJ1,00T-AJ3' && t1.estado === T.PENDENTE, JSON.stringify([pa.status, pa.tipo, pa.tarefas]));
+    const antesIa = m.chamadasIa.length;
+    m.fila.tarefas.push(sf('00T-AJ4', 'Ajuste Site MPI - mais.com.br', 'Cliente pede para republicar o site novamente, sumiu do ar'));
+    await m.orq.varrer({ manual: true });
+    check('a próxima do mesmo tipo entra na pendência pela regra, sem chamar o modelo, com a leitura do começo do comentário', m.chamadasIa.length === antesIa && m.loja.pendencia(ph.id).tarefas.join() === '00T-AJ1,00T-AJ3,00T-AJ4' && /Cliente pede para republicar/.test(m.loja.tarefa('00T-AJ4').leitura) && m.loja.listarRegras()[0].usos === 1);
+    r = await m.orq.responder(ph.id, { acao: 'tratada' });
+    check('"tratada" conclui as três e fecha a pendência', r.ok && ['00T-AJ1', '00T-AJ3', '00T-AJ4'].every((id) => m.loja.tarefa(id).estado === T.CONCLUIDA) && m.loja.pendencia(ph.id).status === 'fechada');
+    check('snapshot leva leitura e categoria da tarefa', m.orq.snapshot().tarefas.find((x) => x.id === '00T-AJ2').leitura === 'Trocar o DNS do cliente2.com.br para o servidor novo' && m.orq.snapshot().tarefas.find((x) => x.id === '00T-AJ2').categoria === 'trocar-dns');
+    m.limpar();
+  }
+
   console.log('\n=== Sem modelo configurado ===');
   {
     const m = montar({ tarefas: [SSL1, MPI], ia: null });

@@ -35,11 +35,13 @@ const SNAP = {
     { id: '00T3', assunto: 'Ativação de SSL - b.com.br', link: '', empresaFila: 'bc', estado: 'pendente', rotulo: 'pendente', tom: 'warn', estadoDesde: '2026-10-13T11:00:00.000Z', agente: null, agenteNome: '', pendenciaId: 'P-1', tentativas: 0, plano: null, ultimo: null },
     { id: '00T4', assunto: 'BLOQUEIO DE CONTATOS - x.com.br', link: '', empresaFila: null, estado: 'aguardando_confirmacao', rotulo: 'aguardando confirmação', tom: 'warn', estadoDesde: '2026-10-13T10:00:00.000Z', agente: 'bloqueador', agenteNome: 'Bloqueador de Contatos', pendenciaId: null, tentativas: 0, plano: { agente: 'bloqueador', origem: 'triagem', parametros: {}, etapas: [], validacao: null }, ultimo: null },
     { id: '00T5', assunto: 'Reunião', link: '', empresaFila: null, estado: 'ignorada', rotulo: 'ignorada', tom: 'neutral', estadoDesde: '2026-10-13T09:00:00.000Z', agente: null, agenteNome: '', pendenciaId: null, tentativas: 0, plano: null, ultimo: null },
+    { id: '00T6', assunto: 'Ajuste Site MPI - adetech.com.br', link: 'https://sf/6', empresaFila: 'bc', estado: 'pendente', rotulo: 'pendente', tom: 'warn', estadoDesde: '2026-10-13T08:00:00.000Z', agente: null, agenteNome: '', pendenciaId: 'P-4', tentativas: 0, leitura: 'Republicar o site em subdiretório que sumiu por conflito com palavra bonificada', categoria: 'republicar-site-subdiretorio', plano: null, ultimo: null },
   ],
   pendencias: [
     { id: 'P-1', tipo: 'pergunta', padrao: 'ativacao de ssl - {dominio}', pergunta: 'Ativação de SSL vai para quem?', agente: null, contexto: { assuntoExemplo: 'Ativação de SSL - a.com.br' }, tarefas: ['00T2', '00T3'], criadaEm: '2026-10-13T11:00:00.000Z', status: 'aberta', proposta: null },
     { id: 'P-2', tipo: 'pergunta', padrao: 'x', pergunta: 'Pergunta respondida', agente: 'hospedagem', contexto: { assuntoExemplo: 'Suspensão - y.com.br' }, tarefas: [], criadaEm: '2026-10-13T10:00:00.000Z', status: 'respondida', proposta: { regra: { descricao: 'Suspensão → hospedagem', quando: [{ campo: 'assunto', op: 'comeca', valor: 'Suspensão' }], entao: { acao: 'encaminhar', agente: 'hospedagem', parametros: { acao: 'suspensao' } } }, erros: [], justificativa: 'o operador disse' } },
     { id: 'P-3', tipo: 'retomar', padrao: 'retomar:z', pergunta: 'O Hub fechou enquanto…', agente: 'bloqueador', contexto: {}, tarefas: [], criadaEm: '2026-10-13T09:00:00.000Z', status: 'aberta', proposta: null },
+    { id: 'P-4', tipo: 'humano', padrao: 'humano:ajuste site mpi - {dominio}:republicar-site-subdiretorio', pergunta: 'Precisa de você: Republicar o site em subdiretório que sumiu. Nenhum agente publica subdiretório. Marque como tratada quando fizer.', agente: null, contexto: { assuntoExemplo: 'Ajuste Site MPI - adetech.com.br', categoria: 'republicar-site-subdiretorio', trechoChave: 'republicar o site novamente' }, tarefas: ['00T6'], criadaEm: '2026-10-13T08:00:00.000Z', status: 'aberta', proposta: null },
     { id: 'P-0', tipo: 'pergunta', padrao: 'velha', pergunta: 'fechada', agente: null, contexto: {}, tarefas: [], criadaEm: '2026-10-12T09:00:00.000Z', status: 'fechada', proposta: null },
   ],
   regras: [{ id: 'R-1', descricao: 'Quando assunto começa com "Cobrança" → ignorar', ativa: true, usos: 4, origem: 'pendência P-9', criadaEm: '2026-10-12T09:00:00.000Z', quando: [{ campo: 'assunto', op: 'comeca', valor: 'Cobrança' }], entao: { acao: 'ignorar', agente: '', parametros: {} } }],
@@ -85,7 +87,7 @@ const STUB = `
 
     check('index.html inteiro carrega sem erro de página', erros.length === 0, erros.join(' | '));
     check('o Hub abre no Escritório, acima do Início na barra lateral', await page.evaluate(() => state.view === 'escritorio' && document.querySelector('#navList .nav-item').textContent.trim() === 'Escritório' && document.querySelector('#navList .nav-item.active').textContent.trim() === 'Escritório'));
-    check('o chip no topo mostra o modo e as pendências', await page.evaluate(() => /ESCRITÓRIO · manual · 3 pend\./.test(document.getElementById('tbEscritorio').textContent.replace(/\s+/g, ' '))), await page.evaluate(() => document.getElementById('tbEscritorio').textContent));
+    check('o chip no topo mostra o modo e as pendências', await page.evaluate(() => /ESCRITÓRIO · manual · 4 pend\./.test(document.getElementById('tbEscritorio').textContent.replace(/\s+/g, ' '))), await page.evaluate(() => document.getElementById('tbEscritorio').textContent));
     check('a lista de espera do app foi mandada para o processo principal', (await chamadas('escritorioEsperas')).length >= 1);
     check('cartões dos 4 agentes, com sala, função, estado e o interruptor só nos automáticos', await page.evaluate(() => {
       const cards = [...document.querySelectorAll('.esc-agente')];
@@ -94,7 +96,12 @@ const STUB = `
       return cards.length === 4 && /02 \/ PUBLICAÇÃO/.test(cards[0].textContent) && bl.classList.contains('est-desligado') && !bl.querySelector('[data-agente-toggle]').checked && rel.classList.contains('standby') && !rel.querySelector('[data-agente-toggle]') && /standby/.test(rel.textContent);
     }));
     check('o comando mostra os contadores e a última varredura', await page.evaluate(() => /3/.test(document.querySelector('.esc-stat b').textContent) && /última varredura/.test(document.querySelector('.esc-comando .sec-meta').textContent)));
-    check('as pendências abertas aparecem (3), a fechada não', await page.evaluate(() => document.querySelectorAll('.esc-pend').length === 3 && !document.querySelector('[data-pend="P-0"]')));
+    check('as pendências abertas aparecem (4), a fechada não', await page.evaluate(() => document.querySelectorAll('.esc-pend').length === 4 && !document.querySelector('[data-pend="P-0"]')));
+    check('a pendência "para você" mostra a leitura do comentário, a categoria e o botão de tratada', await page.evaluate(() => { const p = document.querySelector('[data-pend="P-4"]'); return p && p.classList.contains('tipo-humano') && /para você/.test(p.querySelector('.sec-title').textContent) && /republicar-site-subdiretorio/.test(p.querySelector('.sec-meta').textContent) && /Republicar o site em subdiretório que sumiu por conflito/.test(p.querySelector('.esc-leitura').textContent) && !!p.querySelector('[data-acao="tratada"]') && !!p.querySelector('[data-acao="avisar-sempre"]'); }));
+    await page.click('[data-pend="P-4"] [data-acao="avisar-sempre"]');
+    check('"Avisar sempre" manda a resposta certa', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-4","resposta":{"acao":"avisar-sempre"}}');
+    await page.click('[data-pend="P-4"] [data-acao="tratada"]');
+    check('"Marcar como tratada" na pendência para você', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-4","resposta":{"acao":"tratada"}}');
     check('a pendência agrupa as duas tarefas', await page.evaluate(() => document.querySelectorAll('[data-pend="P-1"] .esc-chip').length === 2));
 
     // Interruptores.
@@ -136,7 +143,7 @@ const STUB = `
 
     // Fila de tarefas e histórico.
     await page.click('.esc-tab[data-aba="fila"]');
-    check('a fila lista as tarefas abertas (4), não a ignorada', await page.evaluate(() => document.querySelectorAll('.esc-tabela tbody tr').length === 4 && !document.querySelector('[data-tarefa="00T5"]')));
+    check('a fila lista as tarefas abertas (5), não a ignorada, com a leitura do comentário', await page.evaluate(() => document.querySelectorAll('.esc-tabela tbody tr').length === 5 && !document.querySelector('[data-tarefa="00T5"]') && /Republicar o site/.test(document.querySelector('[data-tarefa="00T6"] .esc-leitura').textContent)));
     check('tarefa aguardando confirmação tem o botão Executar', await page.evaluate(() => !!document.querySelector('[data-tarefa="00T4"] [data-confirmar]')));
     await page.click('[data-tarefa="00T4"] [data-confirmar]');
     check('Executar chama escritorioConfirmar', JSON.stringify(await ultima('escritorioConfirmar')) === '{"id":"00T4"}');
@@ -157,7 +164,7 @@ const STUB = `
     const salva = await ultima('escritorioRegraSalvar');
     check('desligar a regra salva com ativa=false e o mesmo id', salva && salva.regra.id === 'R-1' && salva.regra.ativa === false);
     await page.click('[data-editar-regra="R-1"]');
-    check('editar abre o formulário com a regra', await page.evaluate(() => { const f = document.querySelector('[data-form="regra"]'); return f && f.dataset.regraId === 'R-1' && f.querySelector('[data-valor]').value === 'Cobrança' && f.querySelector('[data-acao-sel]').value === 'ignorar'; }));
+    check('editar abre o formulário com a regra, e a ação tem "avisar"', await page.evaluate(() => { const f = document.querySelector('[data-form="regra"]'); return f && f.dataset.regraId === 'R-1' && f.querySelector('[data-valor]').value === 'Cobrança' && f.querySelector('[data-acao-sel]').value === 'ignorar' && [...f.querySelectorAll('[data-acao-sel] option')].some((o) => o.value === 'avisar'); }));
     await page.click('[data-form="regra"] [data-add-cond]');
     check('+ condição adiciona uma linha mantendo a primeira', await page.evaluate(() => document.querySelectorAll('[data-form="regra"] [data-cond]').length === 2 && document.querySelector('[data-form="regra"] [data-valor]').value === 'Cobrança'));
     await page.fill('[data-form="regra"] [data-cond="1"] [data-valor]', 'bc');

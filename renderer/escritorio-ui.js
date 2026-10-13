@@ -175,18 +175,28 @@
       const aberta = ui.pendenciaAberta === p.id;
       const agentesAuto = s.agentes.filter((a) => a.modo === 'auto');
       return `<div class="sec esc-pend tipo-${esc(p.tipo)} ${p.status === 'respondida' ? 'respondida' : ''}" data-pend="${esc(p.id)}">
-        <div class="sec-head"><span class="sec-title">${esc(p.id)} · ${p.tipo === 'retomar' ? 'retomar?' : p.tipo === 'sugestao' ? 'sugestão' : p.status === 'respondida' ? 'proposta de regra' : 'pergunta'}</span><span class="sec-meta">${hora(p.criadaEm)} · ${tarefas.length} tarefa(s)${p.agente ? ' · ' + esc((s.agentes.find((a) => a.id === p.agente) || { nome: p.agente }).nome) : ''}</span></div>
+        <div class="sec-head"><span class="sec-title">${esc(p.id)} · ${p.tipo === 'retomar' ? 'retomar?' : p.tipo === 'sugestao' ? 'sugestão' : p.tipo === 'humano' ? 'para você' : p.status === 'respondida' ? 'proposta de regra' : 'pergunta'}</span><span class="sec-meta">${hora(p.criadaEm)} · ${tarefas.length} tarefa(s)${p.agente ? ' · ' + esc((s.agentes.find((a) => a.id === p.agente) || { nome: p.agente }).nome) : ''}${p.contexto && p.contexto.categoria ? ' · ' + esc(p.contexto.categoria) : ''}</span></div>
         <p class="esc-pergunta">${esc(p.pergunta)}</p>
-        <div class="esc-pend-tarefas">${tarefas.slice(0, 6).map((t) => `<span class="esc-chip" title="${esc(t.id)}">${esc(t.assunto)}</span>`).join('')}${tarefas.length > 6 ? `<span class="dim">+${tarefas.length - 6}</span>` : ''}</div>
+        <div class="esc-pend-tarefas">${tarefas.slice(0, 8).map((t) => `<div class="esc-pend-tarefa" title="${esc(t.id)}"><span class="esc-chip">${esc(t.assunto)}</span>${t.leitura ? `<span class="esc-leitura">${esc(t.leitura)}</span>` : ''}${t.link ? `<button class="text-btn" data-link="${esc(t.link)}">abrir</button>` : ''}</div>`).join('')}${tarefas.length > 8 ? `<span class="dim">+${tarefas.length - 8}</span>` : ''}</div>
         ${p.status === 'respondida' ? htmlProposta(p) : `
         <div class="esc-pend-acoes">
           ${p.tipo === 'retomar' ? `<button class="btn compact primary" data-acao="retomar">Retomar</button><button class="btn compact ghost" data-acao="descartar">Descartar</button>` : ''}
           ${p.tipo === 'sugestao' ? `<button class="btn compact primary" data-acao="tratada">Marcar como tratada</button><button class="btn compact ghost" data-acao="ignorar-estas">Ignorar estas</button>` : ''}
+          ${p.tipo === 'humano' ? `
+            <button class="btn compact primary" data-acao="tratada" title="Você fez à mão: conclui as tarefas e fecha">Marcar como tratada</button>
+            <input type="text" class="esc-resposta" placeholder="Ou diga o que fazer com pedidos assim (o modelo propõe a regra)" data-texto>
+            <button class="btn compact ghost" data-acao="texto">Responder</button>
+            ${!p.regraId ? '<button class="btn compact ghost" data-acao="avisar-sempre" title="Propõe uma regra: pedidos assim sempre vêm para você, sem passar pelo modelo">Avisar sempre</button>' : ''}
+            <span class="esc-encaminhar"><select data-agente-sel>${agentesAuto.map((a) => `<option value="${esc(a.id)}">${esc(a.nome)}</option>`).join('')}</select>
+            <button class="btn compact ghost" data-acao="encaminhar" title="Propõe uma regra para encaminhar sempre">Encaminhar sempre</button>
+            <button class="btn compact ghost" data-acao="so-desta-vez" title="Encaminha só estas, sem regra">Só desta vez</button></span>
+            <button class="btn compact ghost" data-acao="ignorar-estas" title="Só estas tarefas">Ignorar estas</button>` : ''}
           ${p.tipo === 'pergunta' ? `
             <input type="text" class="esc-resposta" placeholder="Responda em texto (o modelo propõe a regra) ou use os botões" data-texto>
             <button class="btn compact primary" data-acao="texto">Responder</button>
             <button class="btn compact ghost" data-acao="ignorar-estas" title="Só estas tarefas">Ignorar estas</button>
-            <button class="btn compact ghost" data-acao="ignorar-sempre" title="Propõe uma regra para ignorar sempre tarefas com este assunto">Ignorar sempre</button>
+            <button class="btn compact ghost" data-acao="ignorar-sempre" title="Propõe uma regra para ignorar sempre tarefas assim">Ignorar sempre</button>
+            <button class="btn compact ghost" data-acao="avisar-sempre" title="Propõe uma regra: pedidos assim sempre vêm para você, sem passar pelo modelo">Avisar sempre</button>
             <span class="esc-encaminhar"><select data-agente-sel>${agentesAuto.map((a) => `<option value="${esc(a.id)}" ${p.agente === a.id ? 'selected' : ''}>${esc(a.nome)}</option>`).join('')}</select>
             <button class="btn compact ghost" data-acao="encaminhar" title="Propõe uma regra para encaminhar sempre">Encaminhar sempre</button>
             <button class="btn compact ghost" data-acao="so-desta-vez" title="Encaminha só estas, sem regra">Só desta vez</button></span>
@@ -221,8 +231,8 @@
       <div class="esc-conds">${conds.map((c, i) => linhaCond(c, i)).join('')}</div>
       <button class="text-btn" data-add-cond>+ condição</button>
       <div class="esc-regra-entao">
-        <label>então <select data-acao-sel>${[['encaminhar', 'encaminhar para'], ['ignorar', 'ignorar']].map(([v, n]) => `<option value="${v}" ${entao.acao === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-        <select data-agente-regra ${entao.acao === 'ignorar' ? 'disabled' : ''}>${s.agentes.map((a) => `<option value="${esc(a.id)}" ${entao.agente === a.id ? 'selected' : ''}>${esc(a.nome)}${a.modo === 'standby' ? ' (standby: vira sugestão)' : ''}</option>`).join('')}</select>
+        <label>então <select data-acao-sel>${[['encaminhar', 'encaminhar para'], ['avisar', 'avisar você (o Hub não faz)'], ['ignorar', 'ignorar']].map(([v, n]) => `<option value="${v}" ${entao.acao === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <select data-agente-regra ${entao.acao !== 'encaminhar' ? 'disabled' : ''}>${s.agentes.map((a) => `<option value="${esc(a.id)}" ${entao.agente === a.id ? 'selected' : ''}>${esc(a.nome)}${a.modo === 'standby' ? ' (standby: vira sugestão)' : ''}</option>`).join('')}</select>
       </div>
       <div class="grid-2">
         <label class="field"><span>Parâmetros fixos (chave=valor, um por linha; o resto vem da tarefa)</span><textarea rows="2" data-params>${esc(params)}</textarea></label>
@@ -246,14 +256,14 @@
       const m = linha.match(/^\s*([^=\s]+)\s*=\s*(.*?)\s*$/);
       if (m) parametros[m[1]] = m[2];
     }
-    return { id: form.dataset.regraId || null, quando, entao: { acao, agente: acao === 'ignorar' ? '' : form.querySelector('[data-agente-regra]').value, parametros }, descricao: form.querySelector('[data-descricao]').value.trim() };
+    return { id: form.dataset.regraId || null, quando, entao: { acao, agente: acao !== 'encaminhar' ? '' : form.querySelector('[data-agente-regra]').value, parametros }, descricao: form.querySelector('[data-descricao]').value.trim() };
   }
 
   function htmlFila(lista, fechadas = false) {
     if (!lista.length) return `<div class="empty-state"><p>${fechadas ? 'Nada concluído ou ignorado ainda.' : '<strong>Fila vazia.</strong> Ligue o modo automático ou clique em "Rodar agora" para ler a fila do Salesforce.'}</p></div>`;
     return `<div class="table-wrap"><table class="table esc-tabela"><thead><tr><th>Tarefa</th><th>Estado</th><th>Agente</th><th>Plano</th><th>Último evento</th><th></th></tr></thead><tbody>
       ${lista.map((t) => `<tr data-tarefa="${esc(t.id)}">
-        <td title="${esc(t.id)}"><span class="esc-assunto">${esc(t.assunto)}</span>${t.empresaFila ? `<span class="dim"> · ${t.empresaFila === 'bc' ? 'BC' : 'MPI'}</span>` : ''}</td>
+        <td title="${esc(t.id)}"><span class="esc-assunto">${esc(t.assunto)}</span>${t.empresaFila ? `<span class="dim"> · ${t.empresaFila === 'bc' ? 'BC' : 'MPI'}</span>` : ''}${t.leitura ? `<div class="esc-leitura">${esc(t.leitura)}</div>` : ''}</td>
         <td>${badge(t.rotulo, t.tom)}${t.tentativas ? `<span class="dim"> ${t.tentativas}×</span>` : ''}</td>
         <td>${esc(t.agenteNome || '—')}</td>
         <td class="faint">${t.plano ? `via ${esc(t.plano.origem)}${t.plano.validacao ? (t.plano.validacao.ok ? ' · regras ok' : ' · <span class="warn-text">regra barrou</span>') : ''}` : (t.pendenciaId ? esc(t.pendenciaId) : '—')}</td>
@@ -344,7 +354,7 @@
       if (acao === 'salvar-regra') { const form = painel.querySelector('[data-form="regra"]'); const r = await chamar('escritorioRegraSalvar', { regra: lerFormRegra(form) }); if (r.ok) ui.editando = null; else guardarEdicao(form, lerFormRegra(form)); desenhar(); return; }
       if (!id) return;
       if (acao === 'texto') { const texto = pendEl.querySelector('[data-texto]').value.trim(); if (!texto) { logar('Escreva a resposta antes de enviar.', 'warn'); return; } b.disabled = true; b.textContent = 'enviando…'; await chamar('escritorioResponder', { id, resposta: { acao: 'texto', texto } }); return; }
-      if (['ignorar-estas', 'ignorar-sempre', 'tratada', 'retomar', 'descartar'].includes(acao)) { await chamar('escritorioResponder', { id, resposta: { acao } }); return; }
+      if (['ignorar-estas', 'ignorar-sempre', 'avisar-sempre', 'tratada', 'retomar', 'descartar'].includes(acao)) { await chamar('escritorioResponder', { id, resposta: { acao } }); return; }
       if (acao === 'encaminhar') { await chamar('escritorioResponder', { id, resposta: { acao: 'encaminhar', agente: pendEl.querySelector('[data-agente-sel]').value } }); return; }
       if (acao === 'so-desta-vez') { await chamar('escritorioAplicarSemRegra', { id, agente: pendEl.querySelector('[data-agente-sel]').value, parametros: {} }); return; }
       if (acao === 'aprovar-regra') { const form = pendEl.querySelector('[data-form]'); const regra = lerFormRegra(form); const r = await chamar('escritorioAprovarRegra', { id, regra }); if (!r.ok) { guardarEdicao(form, regra, id); desenhar(); } else ui.editando = null; return; }

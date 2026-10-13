@@ -7044,6 +7044,24 @@ Salesforce além das que os fluxos de hoje já fazem; fila a cada 5 min.
    e do Integrador (PR aprovado, build verde) estão declaradas e barram com
    "verificação ainda não implementada (fase 3)"; a tela 3D é a fase 5.
 
+**Ajuste do mesmo dia (13/10/2026): o comentário manda.** O assunto das
+tarefas costuma ser genérico ("Ajuste Site MPI" serve para republicar um
+site em subdiretório que sumiu por conflito com uma palavra bonificada do
+Doutores da Web, e também para trocar um DNS); o pedido de verdade está no
+comentário. Então: (a) o modelo devolve, além da decisão, a **leitura** (uma
+linha com o que o comentário pede), a **categoria** do pedido (slug) e um
+**trecho literal** do comentário que identifica o tipo; a leitura fica na
+tarefa e aparece na tela; (b) a decisão ganhou **"avisar"**: é operação real,
+mas nenhum agente do catálogo faz — vira pendência **"para você"**, com a
+leitura, e fecha com "Marcar como tratada"; (c) as pendências agrupam por
+assunto **e categoria**, não só pelo assunto; (d) as regras ganharam a ação
+`avisar`, e a proposta do modelo precisa incluir `descricao contem <trecho>`
+quando o assunto é genérico; as regras rápidas ("Ignorar sempre", "Avisar
+sempre", "Encaminhar sempre") usam o trecho que o modelo apontou; (e) aprovar
+uma regra de avisar mantém a pendência aberta, já como "para você", e as
+próximas tarefas que a regra pegar entram nela sem passar pelo modelo, com a
+leitura tirada do começo do comentário.
+
 **Consequências.** O Hub abre no Escritório, em modo manual com observação
 ligada: nada muda no que a automação da fila faz hoje. Ligando o modo
 automático, a cada 5 min o orquestrador lê a fila, planeja o que reconhece,
