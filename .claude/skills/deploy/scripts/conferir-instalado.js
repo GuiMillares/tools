@@ -62,8 +62,20 @@ for (const a of fora) aviso(`${a} não vai para o instalador (fora de build.file
 // Os que entram têm que estar no asar com o conteúdo do repositório.
 for (const a of dentro) {
   if (!lista.includes('/' + a)) { falha(`${a} deveria estar no asar e não está`); continue; }
-  const doAsar = asar.extractFile(asarPath, a);
+  // O leitor do asar separa o caminho pelo separador do sistema: com barra
+  // normal, "lib/escritorio/catalogo.js" (dois níveis) não é achado no Windows.
+  const doAsar = asar.extractFile(asarPath, a.split('/').join(path.sep));
   const doRepo = fs.readFileSync(path.join(RAIZ, a));
+  // O electron-builder reescreve o package.json dentro do asar (tira scripts e
+  // devDependencies): compara o que importa, versão e dependências.
+  if (a === 'package.json') {
+    const pa = JSON.parse(doAsar.toString('utf-8'));
+    const pr = JSON.parse(doRepo.toString('utf-8'));
+    const depsIguais = JSON.stringify(pa.dependencies || {}) === JSON.stringify(pr.dependencies || {});
+    if (pa.version === pr.version && depsIguais) ok(`${a}: versão ${pa.version} e dependências iguais às do repositório`);
+    else falha(`${a} no asar (versão ${pa.version}) difere do repositório (versão ${pr.version}${depsIguais ? '' : ', dependências diferentes'})`);
+    continue;
+  }
   if (Buffer.compare(doAsar, doRepo) === 0) ok(`${a} igual ao do repositório`);
   else falha(`${a} no asar é DIFERENTE do repositório — a instalação não é a do commit`);
 }
