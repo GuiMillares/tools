@@ -109,6 +109,7 @@
         <button class="cfg-tab" data-cfg-tab="salesforce">Salesforce &amp; Servidores</button>
         <button class="cfg-tab" data-cfg-tab="paineis">Painéis &amp; /Doutor</button>
         <button class="cfg-tab" data-cfg-tab="acesso">Conceder acesso</button>
+        <button class="cfg-tab" data-cfg-tab="ia">IA &amp; Escritório</button>
       </div>
 
       <div class="cfg-pane active" data-cfg-pane="geral">
@@ -362,6 +363,51 @@
         <div id="cfgGrant"></div>
       </div>
 
+      <!-- Escritório (ADR-149): o modelo que o orquestrador e os agentes usam. -->
+      <div class="cfg-pane" data-cfg-pane="ia">
+        <div class="sec">
+          <div class="sec-head"><span class="sec-title">Gemini (o modelo do Escritório)</span><span class="sec-meta">Google AI Studio</span></div>
+          <p class="hint">O orquestrador só chama o modelo para o que a triagem do Hub e as regras aprendidas não resolvem; os agentes, só onde há texto livre para ler ou falha para explicar. Toda ação passa pela validação em código antes. A chave fica criptografada nesta máquina (DPAPI) e nunca volta para a tela: em branco, não altera a que já está gravada.</p>
+          <div class="grid-2">
+            <label class="field">
+              <span>Chave da API do Gemini</span>
+              <input id="iaKeyInput" type="password" placeholder="AIza…" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Teto diário de chamadas ao modelo (0 = sem teto)</span>
+              <input id="iaTetoInput" type="number" min="0" step="1" placeholder="200" autocomplete="off" />
+            </label>
+          </div>
+          <div class="grid-3">
+            <label class="field">
+              <span>Modelo do orquestrador (o Pro)</span>
+              <input id="iaModeloOrqInput" type="text" list="iaModelosLista" placeholder="gemini-3.1-pro-preview" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Modelo dos agentes (o Flash)</span>
+              <input id="iaModeloAgInput" type="text" list="iaModelosLista" placeholder="gemini-3.8-flash" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Nível de pensamento</span>
+              <select id="iaNivelSelect">
+                <option value="">padrão do modelo</option>
+                <option value="MINIMAL">mínimo</option>
+                <option value="LOW">baixo</option>
+                <option value="MEDIUM">médio</option>
+                <option value="HIGH">alto</option>
+              </select>
+            </label>
+          </div>
+          <datalist id="iaModelosLista"></datalist>
+          <div class="esc-pend-acoes">
+            <button class="btn compact ghost" id="iaListarBtn" type="button">Listar os modelos desta chave</button>
+            <button class="btn compact danger" id="iaRemoverBtn" type="button">Remover a chave</button>
+            <span id="iaStatus" class="hint" style="margin:0"></span>
+          </div>
+          <p class="hint">Os nomes dos modelos vêm da própria API (o botão acima preenche a lista); nenhum fica fixo no código, porque o Pro está em preview e muda de nome. <strong>Faturamento:</strong> no plano gratuito do Gemini o Google pode usar o conteúdo enviado para melhorar os produtos, e as tarefas levam dados de cliente; vincule uma conta de faturamento ao projeto da chave (US$ 5 de pré-pagamento) para o conteúdo ficar fora disso. O Pro não tem cota gratuita: sem faturamento, o orquestrador cai para o modelo dos agentes.</p>
+        </div>
+      </div>
+
       <div class="cfg-note">
         <strong>Segurança e armazenamento local:</strong> o token do Bitbucket e as senhas ficam armazenados apenas nesta máquina, criptografados pelo Windows (DPAPI). Os caminhos e as credenciais do Google ficam em arquivos de configuração na pasta do app.
       </div>
@@ -384,5 +430,6 @@
   <script src="app.js"></script>
   <script src="terminais.js"></script>
   <script src="automacao-ui.js"></script>
+  <script src="escritorio-ui.js"></script>
 </body>
 </html>

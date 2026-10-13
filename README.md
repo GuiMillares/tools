@@ -368,3 +368,23 @@ Se a chave for recusada (`401`) ou os créditos acabarem (`403`), o lote para no
 A chave fica criptografada nesta máquina, como a do Bitbucket, e nunca volta para a tela, o campo mostra apenas "já configurada". Para removê-la, use **Remover credenciais**.
 
 > **Por que não o SecurityTrails.** Era o plano inicial, mas o serviço não tem mais plano gratuito público, o preço hoje começa na casa dos US$ 500/mês. A WhoisXML entrega a mesma resposta com 500 créditos grátis.
+
+## 12. Configurando a IA do Escritório (Gemini)
+
+O Escritório (a tela de abertura do Hub, ADR-149) usa o Gemini para o que a
+triagem do Hub e as regras aprendidas não resolvem. Sem chave ele funciona
+igual, só que toda tarefa desconhecida vira pendência.
+
+1. Crie uma chave em [Google AI Studio](https://aistudio.google.com/api-keys).
+2. **Vincule uma conta de faturamento ao projeto da chave** e pré-pague
+   US$ 5. No plano gratuito o Google usa o conteúdo enviado para melhorar
+   os produtos, e as tarefas levam razão social e e-mail de cliente; no
+   pago, não usa. O modelo Pro (`gemini-3.1-pro-preview`, o do
+   orquestrador) só responde com faturamento.
+3. No Hub, Configurações › **IA & Escritório**: cole a chave (fica
+   criptografada nesta máquina e nunca volta para a tela), clique em
+   "Listar os modelos desta chave" e escolha o modelo do orquestrador (o
+   Pro) e o dos agentes (o Flash). Os nomes vêm da API; nada é fixo no
+   código. Ajuste o teto diário de chamadas se quiser (200 por padrão).
+4. Salve (Ctrl+S). O chip "ESCRITÓRIO" no topo e a tela mostram o modelo e
+   os contadores do dia.

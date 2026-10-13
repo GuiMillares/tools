@@ -8,6 +8,24 @@ const crypto = require('crypto');
 // 335 do googleapis na abertura (ADR-107). Mesma cara e mesmo google.options().
 const { google } = require(path.join(__dirname, 'lib', 'google'));
 
+// Registro dos handlers (ADR-149): cada canal do IPC vira também uma função
+// chamável de dentro do processo principal (`invocarLocal`), para o
+// Escritório usar as rotinas que já existem como ferramentas dos agentes,
+// sem reescrever nada. O renderer continua chamando pelo preload como sempre.
+const handlersLocais = new Map();
+const ipcHandleOriginal = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (canal, fn) => { handlersLocais.set(canal, fn); return ipcHandleOriginal(canal, fn); };
+function janelaPrincipal() {
+  const janelas = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+  return janelas.find((w) => w.isVisible()) || janelas[0] || null;
+}
+async function invocarLocal(canal, payload) {
+  const fn = handlersLocais.get(canal);
+  if (!fn) throw new Error(`canal desconhecido: ${canal}`);
+  const win = janelaPrincipal();
+  return fn({ sender: win ? win.webContents : null }, payload);
+}
+
 const credsPath = () => path.join(app.getPath('userData'), 'credentials.enc');
 const hubStatePath = () => path.join(app.getPath('userData'), 'hub-state.json');
 const googleConfigPath = () => path.join(app.getPath('userData'), 'google-config.json');
@@ -104,6 +122,10 @@ if (!instanciaUnica) {
 
   app.whenReady().then(() => {
     createWindow();
+    // O orquestrador do Escritório (ADR-149) nasce com a janela: lê o que
+    // ficou gravado, abre a pendência das tarefas interrompidas e, se o modo
+    // automático ficou ligado, volta a ler a fila a cada 5 min.
+    iniciarEscritorio();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
@@ -6368,15 +6390,19 @@ function arquivoLogDoDia(d = new Date()) {
   return path.join(pastaLogs(), `hub-${d.getFullYear()}-${n(d.getMonth() + 1)}-${n(d.getDate())}.txt`);
 }
 
+async function gravarLinhasDeLog(linhas) {
+  if (!Array.isArray(linhas) || !linhas.length) return { ok: true };
+  fs.mkdirSync(pastaLogs(), { recursive: true });
+  const texto = linhas
+    .map((l) => `${String(l.ts || '')} ${String(l.type || 'info').padEnd(7)} ${String(l.message || '').replace(/\r?\n/g, ' ')}`)
+    .join('\n') + '\n';
+  await fs.promises.appendFile(arquivoLogDoDia(), texto, 'utf-8');
+  return { ok: true };
+}
+
 ipcMain.handle('log:gravar', async (event, { linhas } = {}) => {
   try {
-    if (!Array.isArray(linhas) || !linhas.length) return { ok: true };
-    fs.mkdirSync(pastaLogs(), { recursive: true });
-    const texto = linhas
-      .map((l) => `${String(l.ts || '')} ${String(l.type || 'info').padEnd(7)} ${String(l.message || '').replace(/\r?\n/g, ' ')}`)
-      .join('\n') + '\n';
-    await fs.promises.appendFile(arquivoLogDoDia(), texto, 'utf-8');
-    return { ok: true };
+    return await gravarLinhasDeLog(linhas);
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -9393,6 +9419,7 @@ ipcMain.handle('sistema:credenciais', () => {
       item('painel', 'Painel MPI+', painel && painel.email && painel.senha, painel && painel.email ? painel.email : 'sem login'),
       item('doutor', 'Painel /doutor', doutor && doutor.senha, doutor && doutor.emailMpi ? doutor.emailMpi : 'sem senha'),
       item('dnshist', 'Histórico de DNS (WhoisXML)', dnsHist, dnsHist ? 'chave gravada' : 'opcional'),
+      item('gemini', 'Gemini (IA do Escritório)', tenta(() => readIaKey(), ''), tenta(() => readIaKey(), '') ? 'chave gravada (DPAPI)' : 'sem chave'),
     ],
     hestia: {
       ip: pub.hestiaIpPublico || '',
@@ -9400,4 +9427,214 @@ ipcMain.handle('sistema:credenciais', () => {
       servidor: 'o de produção que o painel lista',
     },
   };
+});
+
+// ---------- Escritório (ADR-149): o orquestrador mora aqui, no processo principal ----------
+//
+// Por quê aqui e não no renderer, como o painel da automação (ADR-120): o
+// estado sobrevive ao Ctrl+R (hoje a lista de processadas zera e já repetiu
+// publicação, ADR-124), o SDK do Gemini e a chave ficam onde os outros
+// segredos ficam, e cada handler existente é chamado por `invocarLocal` como
+// ferramenta, sem reescrever rotina nenhuma. O renderer só mostra e responde
+// (renderer/escritorio-ui.js), e manda para cá a lista de espera do DNS, que
+// mora no localStorage dele.
+const EscritorioLoja = require(path.join(__dirname, 'lib', 'escritorio', 'loja'));
+const EscritorioOrquestrador = require(path.join(__dirname, 'lib', 'escritorio', 'orquestrador'));
+const EscritorioIa = require(path.join(__dirname, 'lib', 'escritorio', 'ia'));
+
+const iaConfigPath = () => path.join(app.getPath('userData'), 'ia-config.json');
+const iaKeyPath = () => path.join(app.getPath('userData'), 'gemini-key.enc');
+function readIaConfig() {
+  try {
+    return fs.existsSync(iaConfigPath()) ? EscritorioIa.normalizarConfig(JSON.parse(fs.readFileSync(iaConfigPath(), 'utf-8'))) : EscritorioIa.configPadrao();
+  } catch (e) {
+    return EscritorioIa.configPadrao();
+  }
+}
+// A chave do Gemini cifrada pelo safeStorage, como as outras credenciais
+// (ADR-004). Nunca volta inteira para o renderer: a tela só sabe se existe.
+function readIaKey() {
+  try {
+    if (!fs.existsSync(iaKeyPath())) return '';
+    return safeStorage.decryptString(fs.readFileSync(iaKeyPath())) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+const ESCRITORIO_INTERVALO_MS = 5 * 60 * 1000;
+const escritorio = { loja: null, orq: null, timer: null, esperas: null, credenciais: null };
+
+function escritorioEnviar(canal, dados) {
+  const win = janelaPrincipal();
+  if (!win) return false;
+  try { win.webContents.send(canal, dados); return true; } catch (e) { return false; }
+}
+
+// O log do orquestrador vai para o arquivo do dia daqui (o renderer pode nem
+// ter carregado ainda) e para o terminal pelo renderer, que o mostra sem
+// gravar de novo.
+function logEscritorio(message, type = 'info') {
+  const agora = new Date();
+  gravarLinhasDeLog([{ ts: `${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR', { hour12: false })}`, type, message }]).catch(() => {});
+  escritorioEnviar('escritorio:log', { message, type });
+}
+
+function montarIa() {
+  return EscritorioIa.criarIa({
+    chave: readIaKey(),
+    config: readIaConfig(),
+    log: logEscritorio,
+    contador: {
+      podeChamar: () => {
+        if (!escritorio.loja) return { ok: true };
+        const teto = readIaConfig().tetoChamadasDia;
+        const c = escritorio.loja.contadores();
+        return teto && c.chamadas >= teto ? { ok: false, motivo: `teto diário de ${teto} chamadas ao modelo atingido (${c.chamadas} hoje; muda em Configurações › IA & Escritório)` } : { ok: true };
+      },
+      registrar: (uso) => { if (escritorio.loja) escritorio.loja.registrarChamada(uso); },
+    },
+  });
+}
+
+// As credenciais gravadas, lidas uma vez por varredura (as regras de execução
+// conferem de forma síncrona).
+async function atualizarCredenciaisDoEscritorio() {
+  try {
+    const r = await invocarLocal('sistema:credenciais');
+    const itens = {};
+    for (const i of (r && r.itens) || []) itens[i.id] = !!i.ok;
+    escritorio.credenciais = itens;
+  } catch (e) {
+    escritorio.credenciais = null;
+  }
+}
+
+// O contexto das regras de execução. O que não dá para conferir fica
+// `undefined`, e a regra barra com "verificação indisponível" em vez de
+// aprovar no escuro: a lista de espera só existe depois que o renderer a
+// manda; as credenciais, depois da primeira leitura.
+const ctxExecucaoEscritorio = {
+  get configurado() {
+    const itens = escritorio.credenciais;
+    return itens ? (id) => !!itens[id] : undefined;
+  },
+  get emEspera() {
+    const lista = escritorio.esperas;
+    if (!Array.isArray(lista)) return undefined;
+    return (dominio) => {
+      const d = String(dominio || '').toLowerCase();
+      const e = lista.find((x) => x && String(x.dominio || '').toLowerCase() === d && x.status !== 'concluido');
+      return e ? { motivo: e.cliente ? 'aguardando o cliente apontar' : e.status === 'falhou' ? 'na lista de espera com pendência' : 'aguardando a propagação do Registro.br', cliente: !!e.cliente } : null;
+    };
+  },
+  marcaDoDominio: async (dominio) => {
+    const r = await invocarLocal('dns:marca', { dominio });
+    return { marca: r && r.ok ? r.marca || null : null, ips: (r && r.ips) || [] };
+  },
+};
+
+function iniciarEscritorio() {
+  try {
+    const loja = EscritorioLoja.criarLoja({ pasta: app.getPath('userData') });
+    const carga = loja.carregar();
+    escritorio.loja = loja;
+    escritorio.orq = EscritorioOrquestrador.criarOrquestrador({
+      loja,
+      ia: montarIa(),
+      log: logEscritorio,
+      emitir: (evento) => escritorioEnviar('escritorio:evento', evento),
+      lerFila: () => invocarLocal('salesforce:tarefas'),
+      contexto: async (t) => {
+        const r = await invocarLocal('salesforce:contexto', { tarefa: t.link });
+        return r && r.ok ? { razao: r.razao || '', empresa: r.empresa || '', via: r.via || '' } : null;
+      },
+      ctxExecucao: ctxExecucaoEscritorio,
+      // deps.executar entra na fase 2, com os agentes; sem ele o plano fica
+      // guardado e o log avisa.
+    });
+    for (const a of carga.avisos || []) logEscritorio(`Escritório: ${a}`, 'warn');
+    escritorio.orq.tratarInterrompidas(carga.interrompidas || []);
+    revisarTimerEscritorio();
+    const l = loja.ligado;
+    const abertas = loja.tarefasAbertas().length;
+    const pend = loja.pendenciasAbertas().length;
+    logEscritorio(`Escritório pronto: modo ${!l.geral ? 'manual' : l.observacao ? 'automático em observação (só anota)' : 'automático'}, ${abertas} tarefa(s) em aberto, ${pend} pendência(s), ${loja.listarRegras().length} regra(s) aprendida(s), modelo ${readIaKey() ? readIaConfig().modeloOrquestrador : 'não configurado'}.`, 'info');
+  } catch (e) {
+    logEscritorio(`Escritório não iniciou: ${e.message}`, 'error');
+  }
+}
+
+function revisarTimerEscritorio() {
+  const ligado = !!(escritorio.loja && escritorio.loja.ligado.geral);
+  if (ligado && !escritorio.timer) {
+    escritorio.timer = setInterval(() => { escritorioVarrer(false); }, ESCRITORIO_INTERVALO_MS);
+    // A primeira leitura espera a janela mandar a lista de espera e a sessão
+    // do Salesforce acordar.
+    setTimeout(() => { escritorioVarrer(false); }, 15000);
+  }
+  if (!ligado && escritorio.timer) { clearInterval(escritorio.timer); escritorio.timer = null; }
+  // Ligado, a janela não desacelera em segundo plano (ADR-126).
+  invocarLocal('energia:manterAcordado', { ligar: ligado, motivo: 'escritorio' }).catch(() => {});
+}
+
+async function escritorioVarrer(manual) {
+  if (!escritorio.orq) return { ok: false, error: 'Escritório não iniciado' };
+  await atualizarCredenciaisDoEscritorio();
+  return escritorio.orq.varrer({ manual: !!manual });
+}
+
+const comOrquestrador = (fn) => async (event, payload) => {
+  if (!escritorio.orq) return { ok: false, error: 'Escritório não iniciado' };
+  try { return await fn(payload || {}); } catch (e) { return { ok: false, error: e && e.message ? e.message : String(e) }; }
+};
+
+ipcMain.handle('ia:getConfig', () => ({ ok: true, config: readIaConfig(), temChave: !!readIaKey(), sugeridos: EscritorioIa.MODELOS_SUGERIDOS, niveis: EscritorioIa.NIVEIS_PENSAMENTO }));
+
+ipcMain.handle('ia:setConfig', (event, { config, apiKey } = {}) => {
+  try {
+    fs.writeFileSync(iaConfigPath(), JSON.stringify(EscritorioIa.normalizarConfig(config), null, 2));
+    const chave = String(apiKey || '').trim();
+    if (chave) {
+      if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: 'Criptografia do sistema indisponível; não vou gravar a chave em texto puro.' };
+      fs.writeFileSync(iaKeyPath(), safeStorage.encryptString(chave));
+    }
+    if (escritorio.orq) escritorio.orq.trocarIa(montarIa());
+    return { ok: true, temChave: !!readIaKey(), config: readIaConfig() };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('ia:removerChave', () => {
+  try {
+    if (fs.existsSync(iaKeyPath())) fs.unlinkSync(iaKeyPath());
+    if (escritorio.orq) escritorio.orq.trocarIa(montarIa());
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Os modelos que a chave gravada enxerga (para o seletor e o "Testar").
+ipcMain.handle('ia:modelos', async () => {
+  try { return await montarIa().listarModelos(); } catch (e) { return { ok: false, codigo: 'erro', erro: e.message }; }
+});
+
+ipcMain.handle('escritorio:estado', comOrquestrador(() => ({ ok: true, ...escritorio.orq.snapshot() })));
+ipcMain.handle('escritorio:ligar', comOrquestrador((p) => { const r = escritorio.orq.ligar(p); revisarTimerEscritorio(); return r; }));
+ipcMain.handle('escritorio:rodar', comOrquestrador(() => escritorioVarrer(true)));
+ipcMain.handle('escritorio:responder', comOrquestrador(({ id, resposta }) => escritorio.orq.responder(id, resposta || {})));
+ipcMain.handle('escritorio:aprovarRegra', comOrquestrador(({ id, regra }) => escritorio.orq.aprovarRegra(id, regra)));
+ipcMain.handle('escritorio:aplicarSemRegra', comOrquestrador(({ id, agente, parametros }) => escritorio.orq.aplicarSemRegra(id, { agente, parametros })));
+ipcMain.handle('escritorio:regraSalvar', comOrquestrador(({ regra }) => escritorio.orq.salvarRegra(regra)));
+ipcMain.handle('escritorio:regraApagar', comOrquestrador(({ id }) => escritorio.orq.apagarRegra(id)));
+ipcMain.handle('escritorio:reanalisar', comOrquestrador(({ id }) => escritorio.orq.reanalisar(id)));
+ipcMain.handle('escritorio:confirmar', comOrquestrador(async ({ id }) => { await atualizarCredenciaisDoEscritorio(); return escritorio.orq.confirmar(id); }));
+ipcMain.handle('escritorio:tarefa', comOrquestrador(({ id }) => escritorio.orq.historico(id)));
+// A lista de espera do Publicar MPI+ (localStorage do renderer): vem para cá
+// ao abrir e a cada mudança, para a regra "fora da lista de espera".
+ipcMain.handle('escritorio:esperas', (event, { lista } = {}) => {
+  escritorio.esperas = Array.isArray(lista) ? lista.map((e) => ({ dominio: String((e && e.dominio) || ''), status: String((e && e.status) || ''), cliente: !!(e && e.cliente) })) : [];
+  return { ok: true, total: escritorio.esperas.length };
 });

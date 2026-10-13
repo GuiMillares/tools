@@ -50,7 +50,13 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
   page.on('pageerror', (e) => erros.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') erros.push('console: ' + m.text()); });
   // A home pronta é a dos indicadores (ADR-138); o cartão de WHOIS saiu.
-  const pronto = () => page.waitForFunction(() => typeof render === 'function' && !!document.getElementById('homeMetricas'), null, { timeout: 15000 });
+  // O Hub abre no Escritório (ADR-149); este roteiro é o da tela inicial, então
+  // toda carga vai para o Início antes de esperar os indicadores.
+  const pronto = async () => {
+    await page.waitForFunction(() => typeof goHome === 'function' && typeof render === 'function', null, { timeout: 15000 });
+    await page.evaluate(() => { if (state.view !== 'home') goHome(); });
+    await page.waitForFunction(() => !!document.getElementById('homeMetricas'), null, { timeout: 15000 });
+  };
   const colunas = () => page.evaluate(() => getComputedStyle(document.querySelector('.app-body')).gridTemplateColumns.split(' ').length);
   try {
     await page.addInitScript(STUB);

@@ -167,4 +167,31 @@ contextBridge.exposeInMainWorld('api', {
   salesforceMoverTarefa: (payload) => ipcRenderer.invoke('salesforce:moverTarefa', payload),
   statusCredenciais: () => ipcRenderer.invoke('sistema:credenciais'),
   abrirLink: (payload) => ipcRenderer.invoke('sistema:abrirLink', payload),
+  // Escritório (ADR-149): o orquestrador no processo principal e o modelo (Gemini).
+  iaGetConfig: () => ipcRenderer.invoke('ia:getConfig'),
+  iaSetConfig: (payload) => ipcRenderer.invoke('ia:setConfig', payload),
+  iaRemoverChave: () => ipcRenderer.invoke('ia:removerChave'),
+  iaModelos: () => ipcRenderer.invoke('ia:modelos'),
+  escritorioEstado: () => ipcRenderer.invoke('escritorio:estado'),
+  escritorioLigar: (payload) => ipcRenderer.invoke('escritorio:ligar', payload),
+  escritorioRodar: () => ipcRenderer.invoke('escritorio:rodar'),
+  escritorioResponder: (payload) => ipcRenderer.invoke('escritorio:responder', payload),
+  escritorioAprovarRegra: (payload) => ipcRenderer.invoke('escritorio:aprovarRegra', payload),
+  escritorioAplicarSemRegra: (payload) => ipcRenderer.invoke('escritorio:aplicarSemRegra', payload),
+  escritorioRegraSalvar: (payload) => ipcRenderer.invoke('escritorio:regraSalvar', payload),
+  escritorioRegraApagar: (payload) => ipcRenderer.invoke('escritorio:regraApagar', payload),
+  escritorioReanalisar: (payload) => ipcRenderer.invoke('escritorio:reanalisar', payload),
+  escritorioConfirmar: (payload) => ipcRenderer.invoke('escritorio:confirmar', payload),
+  escritorioTarefa: (payload) => ipcRenderer.invoke('escritorio:tarefa', payload),
+  escritorioEsperas: (payload) => ipcRenderer.invoke('escritorio:esperas', payload),
+  onEscritorioEvento: (callback) => {
+    const handler = (_event, dados) => callback(dados);
+    ipcRenderer.on('escritorio:evento', handler);
+    return () => ipcRenderer.removeListener('escritorio:evento', handler);
+  },
+  onEscritorioLog: (callback) => {
+    const handler = (_event, dados) => callback(dados);
+    ipcRenderer.on('escritorio:log', handler);
+    return () => ipcRenderer.removeListener('escritorio:log', handler);
+  },
 });

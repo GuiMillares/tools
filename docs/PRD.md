@@ -440,7 +440,9 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
 ### 4.10 Automação da fila — painel flutuante
 
 Um monitor que lê a fila de deploy do Salesforce a cada 5 minutos e executa
-sozinho o que já sabe fazer, uma tarefa por vez (ADR-119, ADR-120). Mora num
+sozinho o que já sabe fazer, uma tarefa por vez (ADR-119, ADR-120). Na
+fase 2 do Escritório (4.15, ADR-149) este painel é absorvido pelo orquestrador;
+nesta versão continua como está. Mora num
 painel flutuante no canto da tela, com **três interruptores que começam sempre
 desligados** — um automatizador não religa sozinho ao abrir o app —, "Rodar
 agora" e o freio de emergência, que desliga tudo. Antes de agir, cada
@@ -623,6 +625,64 @@ Relatório do painel idealplus) preenchida pelo Hub, linha a linha, só leitura
 `tools/relatorio-amostra.js` roda a mesma rodada fora da tela (Electron, com
 as sessões do Hub) para conferir alguns clientes antes da planilha inteira.
 
+### 4.15 Escritório — `escritorio`
+
+A tela principal do Hub (a primeira da barra lateral e a de abertura): o
+**orquestrador** e os **agentes** que fazem sozinhos o que hoje é feito
+módulo a módulo (ADR-149). O orquestrador lê a fila de deploy do Salesforce
+a cada 5 minutos, decide o que cada tarefa precisa e para qual agente vai,
+valida em código e executa ou pergunta. Fase 1 (esta versão): tudo isso
+menos a execução, que fica guardada como plano enquanto os agentes não
+existem.
+
+- **Como ele decide, sempre nesta ordem:** uma regra aprendida que case com
+  a tarefa; a triagem do próprio Hub (publicação MPI+, Busca One e bloqueio
+  de contatos nascem planejadas sem modelo nenhum); o modelo (Gemini), só
+  para o que sobrou, que responde plano, pergunta ou ignorar; e, sem modelo
+  configurado, pergunta. **Ele nunca chuta**: parâmetro que não está na
+  tarefa vira pergunta. Tarefas do mesmo tipo entram na mesma pergunta.
+- **Agentes** (um cartão cada, com a sala): Publicador MPI+ (Publicar MPI+ e
+  Publicação em Massa), Publicador Busca One (propriedades, geral.php, vhost),
+  Bloqueador de Contatos, Hospedagem & E-mails (SSL e suspensão), Integrador
+  (merge de PRs), Auditor (Ouvidoria & Auditoria, Quando publicou),
+  Conferente de Vínculos e Relator (Planilha do Relatório). Os quatro
+  últimos ficam em **standby**: só rodam quando você aciona pelo módulo; o
+  orquestrador no máximo sugere. Cada agente automático tem o seu
+  interruptor.
+- **Modo automático** (interruptor geral): liga a leitura da fila e a
+  execução. **Modo observação**: lê, planeja, valida a seco e anota
+  "executaria", sem executar; é como a fase 1 roda. Com o geral desligado
+  (modo manual), o plano espera o seu "Executar". Os interruptores lembram a
+  escolha ao reabrir.
+- **Validação em código antes de agir:** cada agente tem regras com nome
+  (domínio válido, temporário MPI+, fora da lista de espera do DNS, sem
+  duplicidade, marca pelo apontamento, credenciais gravadas…); o que não
+  passa barra e vira pendência com o motivo; o que não dá para conferir
+  também barra, nunca aprova no escuro.
+- **Pendências:** a pergunta, as tarefas que ela cobre e as respostas:
+  texto livre (o modelo propõe uma regra), "Ignorar estas", "Ignorar
+  sempre", "Encaminhar sempre para…", "Só desta vez", "Marcar como tratada",
+  "Retomar" / "Descartar" para tarefa interrompida. **Regra só entra depois
+  que você aprova** o texto proposto, num formulário editável; aprovada, as
+  tarefas são reanalisadas na hora.
+- **Regras aprendidas:** lista com descrição, ativa/inativa, usos e origem;
+  editar, criar e apagar na própria tela.
+- **Fila de tarefas e histórico:** cada tarefa com estado (na fila, em
+  análise, planejada, pendente, aguardando confirmação, executando,
+  concluída, falhou, aguardando externo, escalada, ignorada, interrompida),
+  agente, origem do plano e último evento; "histórico" abre tudo que foi
+  decidido e por quê, qual regra validou, entradas, saídas e erros. Tarefa
+  que estava executando quando o Hub fechou vira "retomar?" em vez de
+  retomar sozinha. Falha comum tenta até 3 vezes e então escala para você.
+- **Modelo:** Gemini, pela chave em Configurações › IA & Escritório, com os
+  modelos escolhidos num seletor que lista o que a chave enxerga (o Pro para
+  o orquestrador, o Flash para os agentes), nível de pensamento e teto
+  diário de chamadas; os contadores do dia ficam na tela. Sem chave, o
+  Escritório funciona só com a triagem e as regras.
+
+O painel flutuante da automação (4.10) continua nesta fase; na fase 2 ele é
+absorvido pelo Escritório.
+
 ## 5. Fora de escopo
 
 Explicitamente **não** é objetivo do Hub, e um pedido nessa direção deve virar
@@ -701,6 +761,11 @@ Sem isso o app abre mas não faz nada útil:
 6. **Git for Windows**, para o Git Bash dentro do Hub. A instalação por usuário
    (`AppData\Local\Programs\Git`) serve; sem ela, o resto do Hub funciona e o
    Git Bash diz o que instalar (ADR-128).
+7. **Chave da API do Gemini** (Google AI Studio), para o Escritório perguntar
+   ao modelo o que a triagem e as regras não resolvem. Opcional: sem ela, as
+   tarefas desconhecidas viram pendência. Vincule faturamento ao projeto da
+   chave (US$ 5): no plano gratuito o Google usa o conteúdo enviado para
+   melhorar produtos, e o modelo Pro não tem cota gratuita (ADR-149).
 
 ## 8. Como o produto cresce
 
@@ -709,7 +774,9 @@ função `renderNomeDaFerramenta()` que desenha o painel esquerdo, e — se prec
 de rede — um handler no `main.js` mais uma linha no `preload.js`.
 
 A ferramenta nova herda de graça o terminal, as configurações, a busca e os
-recentes. O que ela precisa respeitar são os princípios da seção 3, em especial
+recentes. Um agente novo do Escritório é uma entrada no catálogo
+(`lib/escritorio/catalogo.js`): sala, modo, módulos, parâmetros, canais que
+pode chamar e regras de execução com nome (ADR-149). O que ela precisa respeitar são os princípios da seção 3, em especial
 o primeiro.
 
 ## 9. Glossário

@@ -20,6 +20,7 @@
     "playwright": "^1.62.1"
   },
   "dependencies": {
+    "@google/genai": "^2.29.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "googleapis": "^176.0.0",

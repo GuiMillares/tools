@@ -6902,6 +6902,158 @@ cidade). Decisões:
 
 ---
 
+## ADR-149 — Escritório, fase 1: orquestrador no processo principal, decisão em código antes do modelo, regras aprendidas com aprovação e validação de execução determinística
+
+**Status:** aceita — fase 1 de 5 (núcleo). Nenhum agente executa ainda: o
+plano fica guardado e o log diz "executaria". A automação da fila da ADR-120
+(painel flutuante) continua como está até a fase 2, quando os agentes
+Bloqueador, Publicador MPI+ e Publicador Busca One passam a executar pelo
+Escritório e o painel é absorvido.
+
+**Contexto.** Pedido de 13/10/2026: transformar o Hub num sistema com um
+orquestrador e vários agentes, partindo da leitura da fila do Salesforce que
+já existe (ADR-119, ADR-120, ADR-122, ADR-132). Decisões fechadas pelo
+Guilherme: as tarefas vêm da fila do Salesforce; o orquestrador pergunta e
+avisa dentro do Hub; **Gemini para tudo** (o plano Pro do Claude não inclui
+créditos de API; ele tem chave do Gemini); etapa determinística é código
+puro, e o Hub diz onde; os agentes pontuais (Quando publicou, Conferir
+Vínculos, Planilha do Relatório) ficam em standby e só rodam quando ele
+aciona; o orquestrador **nunca chuta**: dúvida vira pendência, a resposta
+vira regra numa base de conhecimento que ele vê, edita e apaga; a validação
+antes de executar é **em código**, não pelo julgamento do modelo; modo
+automático geral e por agente; modo manual pede confirmação; estados claros,
+histórico auditável, nada executa duas vezes, nova tentativa com teto e
+depois pendência; uma tela "Escritório" acima do Início, primeiro em 2D; o
+3D fica para o fim. Respostas às perguntas da proposta (13/10): primeira
+semana em modo observação; Integrador, Ouvidoria & Auditoria e Publicação em
+Massa em standby; o modelo só onde há julgamento; os interruptores lembram a
+escolha, mas tarefa interrompida vira pendência "retomar?"; regra só entra
+depois de aprovada; confirmação manual por tarefa; nenhuma escrita nova no
+Salesforce além das que os fluxos de hoje já fazem; fila a cada 5 min.
+
+**Decisão.**
+
+1. **O orquestrador mora no processo principal** (`lib/escritorio/`,
+   instanciado pelo `main.js`), não no renderer como o painel da ADR-120.
+   Três motivos: o estado sobrevive ao Ctrl+R (a lista de processadas do
+   painel zera a cada recarga e já republicou site, ADR-124); o SDK e a
+   chave ficam onde os outros segredos ficam (ADR-002, ADR-004); e cada
+   handler do IPC vira ferramenta sem reescrever nada. Para isso o `main.js`
+   embrulha `ipcMain.handle` num registro (`handlersLocais`) e oferece
+   `invocarLocal(canal, payload)`, que chama a mesma função que o renderer
+   chama pelo preload, com o `webContents` da janela principal como
+   `event.sender`. O catálogo lista, por agente, os canais que ele pode usar.
+   As duas máquinas que moram no renderer (a de etapas do Publicar MPI+ e a
+   cola da Busca One) entram na fase 2 por uma ponte main → renderer; nada do
+   `app.js` é reescrito.
+2. **Módulos puros, testados sem Electron** (`tools/test-escritorio.js`,
+   `tools/test-escritorio-orquestrador.js`): `estados.js` (estados de tarefa
+   e etapa, transições permitidas, rótulos; transição fora da tabela é
+   recusada e registrada); `catalogo.js` (os 8 agentes com sala, modo
+   `auto`/`standby`, módulos, descrição para o modelo, parâmetros
+   obrigatórios, canais permitidos e **regras de execução**); `regras.js`
+   (regras aprendidas, validação da forma do plano e validação de execução);
+   `loja.js` (persistência atômica, como a rodada em massa da ADR-096);
+   `ia.js` (adaptador do Gemini); `triagem-ia.js` (o pedido ao modelo e a
+   leitura da resposta); `orquestrador.js` (a varredura e as decisões).
+3. **A ordem de decisão por tarefa é sempre a mesma:** (a) regra aprendida
+   que case com o fato da tarefa; (b) triagem determinística de
+   `lib/triagem.js` — publicação MPI+, Busca One e bloqueio nascem planejadas
+   **sem nenhuma chamada ao modelo**; (c) modelo, só para o que sobrou, com
+   saída estruturada (`plano` | `pergunta` | `ignorar`, parâmetros tirados da
+   tarefa, sugestão de agente em standby); (d) sem modelo configurado,
+   pendência. Tipo conhecido com parâmetro faltando (ex.: MPI+ sem
+   temporário) vira pergunta específica. Plano para agente em standby vira
+   pendência de **sugestão**, nunca execução. Plano com parâmetro obrigatório
+   faltando (do modelo ou de regra) vira pendência dizendo o que falta.
+   **Pendências agrupam por padrão do assunto** (domínios viram `{dominio}`,
+   números viram `#`): uma pergunta por tipo de tarefa, não por tarefa.
+4. **Validação de execução em código.** Cada agente tem regras com nome
+   legível (`Domínio válido`, `Temporário MPI+`, `Fora da lista de espera`,
+   `Sem duplicidade`, `Marca pelo apontamento`, `Credencial do painel da
+   marca`, `Google Service Account`, …), conferidas uma a uma antes de agir,
+   com o resultado de cada uma no histórico da tarefa. O contexto que elas
+   enxergam é o que o processo principal oferece (credenciais gravadas,
+   resolução de DNS pelo `dns:marca`, a lista de espera do DNS que o renderer
+   manda por `escritorio:esperas`, as outras tarefas do Escritório). **O que
+   não dá para conferir barra** ("verificação indisponível"), nunca aprova no
+   escuro. Em **modo observação** a validação roda a seco, uma vez por plano,
+   e o log diz "executaria" ou "executaria, mas tal regra barraria".
+5. **Base de conhecimento** em `escritorio-regras.json` (pasta de dados):
+   `quando` = lista de condições `{ campo, op, valor }` sobre o fato da
+   tarefa (assunto, descrição, fila, tipo, plataforma, domínio, temporário,
+   marca, elegível, dono, prioridade, tipo do relacionado) com os operadores
+   igual/diferente/contém/não contém/começa/termina/regex/vazio/não vazio,
+   todas verdadeiras; `entao` = encaminhar para um agente com parâmetros
+   fixos, ou ignorar. O casamento é só código; regra sem condição não casa
+   com nada; prioridade maior ganha, depois a mais antiga; `usos` conta. **A
+   regra só entra depois que o Guilherme aprova**: a resposta em texto a uma
+   pendência vai ao modelo, que propõe a regra (schema próprio) e a tela
+   mostra num formulário editável; "Ignorar sempre" e "Encaminhar sempre"
+   montam a proposta sem modelo, pelo prefixo do assunto; "Só desta vez"
+   encaminha sem gravar regra; "Ignorar estas", "Marcar como tratada" e
+   "Descartar" fecham sem regra. Aprovada, as tarefas da pendência são
+   reanalisadas na hora.
+6. **Estados, histórico e duplicidade.** Tarefa: na fila → em análise →
+   planejada | pendente | ignorada; planejada → aguardando confirmação (modo
+   manual) | executando → concluída | falhou | aguardando externo |
+   escalada; mais interrompida (o Hub fechou com ela executando). A loja
+   guarda por tarefa (Id do Salesforce) o histórico com teto de 200 eventos:
+   decisão e motivo, regra que casou, cada regra de execução com o
+   resultado, estados, erros, uso de tokens. Tarefa que some da fila ou é
+   fechada no Salesforce vira concluída com o motivo; tarefa que muda lá
+   (comentário novo) é reanalisada. A regra `Sem duplicidade` barra domínio
+   que outra tarefa do mesmo agente está executando ou já concluiu. Falha
+   comum tenta de novo até `MAX_TENTATIVAS` (3, da ADR-120) e vira escalada
+   com pendência; `desistir` escala de primeira. Ao abrir o Hub, tarefa que
+   estava executando vira interrompida e abre a pendência "retomar?"; nunca
+   retoma sozinha (ADR-096). Concluídas e ignoradas somem do arquivo depois
+   de 30 dias.
+7. **O modelo.** `@google/genai` no processo principal, cliente criado no
+   primeiro uso e injetável nos testes. A chave fica em `gemini-key.enc`
+   (safeStorage) e nunca volta para a tela; `ia-config.json` guarda os dois
+   modelos (orquestrador = o Pro, agentes = o Flash), o nível de pensamento,
+   o teto diário de chamadas (200) e a temperatura. **Nenhum nome de modelo é
+   fixo no código**: os sugeridos são só o padrão do seletor, e a lista vem
+   da API (`ia:modelos`), porque o Pro está em preview e muda de nome. Nível
+   de pensamento recusado pelo modelo é repetido sem ele, uma vez. Saída
+   sempre por `responseSchema` em JSON; resposta cortada, bloqueada ou que
+   não é JSON vira erro classificado (cota, modelo, chave, pedido, rede), e
+   o orquestrador trata: erro passageiro volta a tarefa para a fila (até 3
+   vezes), chave ou teto abre pendência de primeira. Contadores do dia
+   (chamadas e tokens) ficam na loja e aparecem na tela. Aviso que fica na
+   tela e no PRD: no plano gratuito do Gemini o Google usa o conteúdo
+   enviado para melhorar produtos, e as tarefas levam dados de cliente;
+   faturamento vinculado ao projeto da chave (US$ 5) tira o conteúdo disso e
+   libera o Pro, que não tem cota gratuita.
+8. **A tela Escritório** (`renderer/escritorio-ui.js`, carregado depois do
+   `app.js` como o `automacao-ui.js`): primeira da barra lateral e tela de
+   abertura; chip no topo com o modo e as pendências; comando (modo
+   automático, observação, contadores), cartões dos agentes com sala, função,
+   estado e interruptor (só nos automáticos), abas Pendências / Fila de
+   tarefas / Regras aprendidas / Concluídas e ignoradas, histórico de cada
+   tarefa num painel lateral. Tudo vem do snapshot (`escritorio:estado`); a
+   tela não decide nada. O log do orquestrador é gravado no arquivo do dia
+   pelo processo principal e mostrado no terminal sem gravar de novo
+   (`log(..., { arquivo: false })`). Configurações ganharam a aba **IA &
+   Escritório**. Os interruptores lembram a escolha entre reinícios (modo
+   automático e observação persistem na loja; o geral nasce desligado e a
+   observação ligada na primeira vez).
+9. **Fora desta fase:** `deps.executar` (os agentes) é a fase 2; as
+   verificações de Hospedagem (domínios na faixa da M3, e-mail não repetido)
+   e do Integrador (PR aprovado, build verde) estão declaradas e barram com
+   "verificação ainda não implementada (fase 3)"; a tela 3D é a fase 5.
+
+**Consequências.** O Hub abre no Escritório, em modo manual com observação
+ligada: nada muda no que a automação da fila faz hoje. Ligando o modo
+automático, a cada 5 min o orquestrador lê a fila, planeja o que reconhece,
+pergunta o que não reconhece e anota o que faria, sem executar. As perguntas
+respondidas viram regras aprovadas, e a semana de observação diz quais tipos
+de tarefa existem na fila além de publicação e bloqueio. Toda decisão tem
+dono e motivo no histórico. `npm test` ganhou três arquivos (puro,
+orquestrador e navegador) e segue inteiro. Custo: cada tarefa desconhecida é
+uma chamada ao Pro; as conhecidas não chamam modelo nenhum.
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30

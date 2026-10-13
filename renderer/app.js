@@ -163,7 +163,8 @@ function wireBrandSelect(selectId, onChange) {
 // ---------- Estado ----------
 
 const state = {
-  view: 'home', // 'home' | 'merge' | 'deploy' | 'newproject'
+  // A tela de abertura é o Escritório (ADR-149); 'home' é o Início.
+  view: 'escritorio',
   recents: [],
   creds: null,
   strategy: 'merge_commit',
@@ -357,7 +358,9 @@ function apararTerminal() {
   }
 }
 
-function log(message, type = 'info') {
+// `arquivo: false` mostra sem gravar no arquivo do dia: é o que o Escritório
+// usa para as linhas que o processo principal já gravou (ADR-149).
+function log(message, type = 'info', { arquivo = true } = {}) {
   const entry = {
     seq: ++logSeq,
     ts: new Date().toLocaleTimeString('pt-BR', { hour12: false }),
@@ -366,7 +369,7 @@ function log(message, type = 'info') {
   };
   logBuffer.push(entry);
   if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
-  logParaArquivo(entry);
+  if (arquivo) logParaArquivo(entry);
 
   el.terminal.appendChild(logLineElement(entry));
   apararTerminal();
@@ -596,11 +599,14 @@ function render() {
   // As configurações moram num nó fixo (ids e listeners não se perdem);
   // antes de qualquer tela sobrescrever o painel, ele volta para o esconderijo.
   guardarSettingsBox();
-  el.leftPanel.classList.toggle('wide', state.view === 'home' || state.view === 'kanban' || state.view === 'config');
+  el.leftPanel.classList.toggle('wide', state.view === 'home' || state.view === 'kanban' || state.view === 'config' || state.view === 'escritorio');
   document.querySelector('.app-body')?.classList.toggle('home', state.view === 'home');
   renderChrome();
   // Os atalhos leem os campos da tela nova, então esperam ela existir.
   queueMicrotask(renderAtalhosTerminal);
+  // O Escritório desenha a si mesmo (renderer/escritorio-ui.js, ADR-149); sem
+  // ele carregado, o Início cobre.
+  if (state.view === 'escritorio') { if (typeof window.renderEscritorioTool === 'function') window.renderEscritorioTool(); else renderHome(); return; }
   if (state.view === 'home') { renderHome(); return; }
   if (state.view === 'kanban') { renderKanbanTool(); return; }
   if (state.view === 'config') { renderConfigTool(); return; }
@@ -639,6 +645,8 @@ const NAV_ICON = {
 };
 
 NAV_ICON.merge = ICONS.merge;
+// O Escritório (ADR-149): a planta com as salas.
+NAV_ICON.escritorio = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v9M12 12v9M7.5 16.5h.01M16.5 16.5h.01M7.5 7.5h.01M16.5 7.5h.01"/></svg>';
 // A bandeja: as filas de deploy na home (o foguete do "deploy" vira um borrão
 // em 14px).
 NAV_ICON.filas = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 13h4l2 3h4l2-3h4"/></svg>';
@@ -647,6 +655,8 @@ NAV_ICON.config = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 // A sidebar espelha os mockups (ADR-115): só módulo que existe. As
 // configurações ficam no pé da sidebar, fora desta lista.
 const MODULES = [
+  // O Escritório (ADR-149) fica acima do Início: é o painel principal.
+  { id: 'escritorio', nome: 'Escritório', icon: 'escritorio', tag: 'MOD_ESCRITORIO' },
   { id: 'home', nome: 'Início', icon: 'home', tag: 'HOME' },
   { id: 'merge', nome: 'Mergear PRs', icon: 'merge', tag: 'MOD_GIT_MERGE' },
   { id: 'kanban', nome: 'Salesforce Kanban', icon: 'kanban', tag: 'MOD_SF_KANBAN' },
@@ -1280,7 +1290,7 @@ function guardarSettingsBox() {
   if (el.settingsModal && el.settingsHost && el.settingsModal.parentElement !== el.settingsHost) el.settingsHost.appendChild(el.settingsModal);
 }
 
-const CFG_TABS = ['geral', 'google', 'cloudflare', 'salesforce', 'paineis', 'acesso'];
+const CFG_TABS = ['geral', 'google', 'cloudflare', 'salesforce', 'paineis', 'acesso', 'ia'];
 
 function renderConfigTool() {
   const m = MODULES.find((x) => x.id === 'config');
@@ -8562,6 +8572,7 @@ function openSettings(tab) {
   });
 
   renderSalesforce();
+  preencherConfigIa();
 
   el.dnsHistKeyInput.value = '';
   window.api.dnsHistStatus().then((r) => {
@@ -8582,6 +8593,61 @@ function closeSettings() {
 
 el.settingsBtn.addEventListener('click', () => openSettings());
 el.cancelSettingsBtn.addEventListener('click', closeSettings);
+
+// ---------- IA & Escritório (ADR-149): a chave do Gemini e os modelos ----------
+//
+// A chave nunca volta do processo principal: o campo só diz se existe uma
+// gravada, e em branco não altera. Os modelos vêm da API pela própria chave.
+const iaEl = () => ({
+  key: document.getElementById('iaKeyInput'), teto: document.getElementById('iaTetoInput'),
+  orq: document.getElementById('iaModeloOrqInput'), ag: document.getElementById('iaModeloAgInput'),
+  nivel: document.getElementById('iaNivelSelect'), lista: document.getElementById('iaModelosLista'),
+  status: document.getElementById('iaStatus'), listar: document.getElementById('iaListarBtn'), remover: document.getElementById('iaRemoverBtn'),
+});
+let iaConfigLida = null;
+function preencherConfigIa() {
+  const f = iaEl();
+  if (!f.key || !window.api.iaGetConfig) return;
+  f.key.value = '';
+  window.api.iaGetConfig().then((r) => {
+    if (!r || !r.ok) return;
+    iaConfigLida = r;
+    f.key.placeholder = r.temChave ? 'Já configurada, digite para trocar' : 'AIza…';
+    f.teto.value = r.config.tetoChamadasDia;
+    f.orq.value = r.config.modeloOrquestrador || '';
+    f.ag.value = r.config.modeloAgentes || '';
+    f.nivel.value = r.config.nivelPensamento || '';
+    if (f.status) f.status.textContent = r.temChave ? 'chave gravada nesta máquina' : 'sem chave: o Escritório abre pendência para o que a triagem não reconhece';
+  }).catch(() => {});
+}
+async function listarModelosIa() {
+  const f = iaEl();
+  if (!f.listar) return;
+  f.listar.disabled = true;
+  if (f.status) f.status.textContent = 'consultando a API…';
+  log('Gemini: listando os modelos que a chave gravada enxerga…', 'cmd');
+  try {
+    const r = await window.api.iaModelos();
+    if (!r || !r.ok) { log(`Gemini: ${(r && r.erro) || 'não respondeu'}`, 'error'); if (f.status) f.status.textContent = (r && r.erro) || 'falhou'; return; }
+    f.lista.innerHTML = r.modelos.map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.nome || m.id)}</option>`).join('');
+    for (const m of r.modelos) log(`  ${m.id}${m.nome && m.nome !== m.id ? ' — ' + m.nome : ''}${m.entrada ? ` (entrada ${m.entrada} tokens)` : ''}`, 'info');
+    log(`Gemini: ${r.modelos.length} modelo(s) disponíveis; a lista dos campos foi preenchida.`, 'success');
+    if (f.status) f.status.textContent = `${r.modelos.length} modelo(s) na lista`;
+    const avisa = (campo, papel) => { if (campo.value && !r.modelos.some((m) => m.id === campo.value)) log(`Gemini: o modelo ${papel} "${campo.value}" não está na lista desta chave; escolha outro ou confira o faturamento do projeto.`, 'warn'); };
+    avisa(f.orq, 'do orquestrador'); avisa(f.ag, 'dos agentes');
+  } catch (e) {
+    log(`Gemini: ${e.message}`, 'error');
+  } finally {
+    f.listar.disabled = false;
+  }
+}
+document.getElementById('iaListarBtn')?.addEventListener('click', listarModelosIa);
+document.getElementById('iaRemoverBtn')?.addEventListener('click', async () => {
+  if (!window.api.iaRemoverChave) return;
+  const r = await window.api.iaRemoverChave();
+  log(r && r.ok ? 'Chave do Gemini removida desta máquina.' : `Não consegui remover a chave: ${(r && r.error) || '?'}`, r && r.ok ? 'warn' : 'error');
+  preencherConfigIa();
+});
 
 el.saveSettingsBtn.addEventListener('click', async () => {
   const email = el.emailInput.value.trim();
@@ -8708,6 +8774,23 @@ el.saveSettingsBtn.addEventListener('click', async () => {
     if (!resSf.ok) {
       log(`Erro ao salvar a configuração do Salesforce: ${resSf.error}`, 'error');
       return;
+    }
+  }
+
+  {
+    // IA & Escritório (ADR-149): config em arquivo, chave no safeStorage.
+    const f = iaEl();
+    if (f.key && window.api.iaSetConfig) {
+      const config = { modeloOrquestrador: f.orq.value.trim(), modeloAgentes: f.ag.value.trim(), nivelPensamento: f.nivel.value, tetoChamadasDia: Number(f.teto.value) };
+      const apiKey = f.key.value.trim();
+      const mudou = !iaConfigLida || apiKey || JSON.stringify({ ...iaConfigLida.config, ...config, temperatura: undefined }) !== JSON.stringify({ ...iaConfigLida.config, temperatura: undefined });
+      if (mudou) {
+        const resIa = await window.api.iaSetConfig({ config, apiKey });
+        if (!resIa || !resIa.ok) { log(`Erro ao salvar a configuração da IA: ${(resIa && resIa.error) || '?'}`, 'error'); return; }
+        log(apiKey ? 'Chave do Gemini salva, criptografada nesta máquina; modelos e teto gravados.' : 'Configuração da IA gravada.', 'success');
+        f.key.value = '';
+        iaConfigLida = null;
+      }
     }
   }
 
