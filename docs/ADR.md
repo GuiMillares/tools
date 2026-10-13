@@ -6875,6 +6875,31 @@ Decisões:
   conferir o certificado e anota a observação; só HTML público é lido.
 - Os sites WordPress e avulsos seguem sem palavras (não há regra para eles).
 
+**Atualização (13/10/2026, à tarde): os temas antigos em subpasta e o
+limite do Excel.** Parte dos "avulsos" (bbbfestas, fkrevestimentos,
+artfitacademia) são **temas antigos** (Automotivos, "buscamax 2.x"): o site
+institucional do cliente na raiz e o tema da Busca numa **subpasta**
+(`/locacoes-de-barracas/`, `/pinturas-industriais/`, `/aulas-de-tenis/`),
+com menu, `/categorias`, sitemap próprio e as tags do Google ali dentro, não
+na home do cliente. Pelo pedido do dia, valem a regra do híbrido: só
+categoria e palavra-chave, **sem as "big"** (as milhares de páginas de
+cidade). Decisões:
+
+- os leitores do `lib/relatorio.js` aceitam host com subpasta
+  (`partesDoHost`, `reHost`), e o `Site` do contrato pode trazê-la
+  (`caminhoDoSite`: "artfitacademia.com.br/aulas-de-tenis/"); o
+  `site()` das fontes procura a subpasta quando a raiz não tem cara de tema:
+  a do contrato, senão os links da home a uma pasta de 1º nível que tenha
+  `sitemap.xml` próprio (até 8 candidatos). Visto ao vivo: bbbfestas 12
+  categorias + 151 palavras, fkrevestimentos 20 + 239, e o GA4/Search
+  Console passam a ser achados pelas tags do tema;
+- a célula do Excel aguenta 32.767 caracteres: a coluna `palavras` é
+  cortada em 32.000 (numa barra), com o aviso "(lista inteira na aba
+  Palavras)", e a aba **Palavras** recebe, só para essas linhas, uma linha
+  por categoria/palavra (aba, linha, razão, domínio, tipo, texto, categoria).
+  Com as "big" de fora, as contagens ficam nas centenas e a aba quase não
+  é usada.
+
 ---
 
 ## Pendências conhecidas (não são decisões — são dívidas)
