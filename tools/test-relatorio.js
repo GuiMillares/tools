@@ -162,6 +162,13 @@ const SITEMAP_1 = `<?xml version="1.0"?><urlset><url><loc>https://www.jrplastico
   const tipoPlat = R.decidirTipo({ tipoFluxo: 'Busca One', achado: achadoPlat });
   check('plataforma: tipo pela estrutura ganha da planilha de fluxo; palavras = categorias + palavras', tipoPlat.tipo === 'plataforma' && achadoPlat.categorias.length === 2 && achadoPlat.palavras.length === 3 && achadoPlat.palavras.find((p) => p.slug === 'casa-de-reabilitacao').caminho === 'clinica/casa-de-reabilitacao' && R.montarPalavras(tipoPlat.tipo, achadoPlat).split('|').length === 5);
   check('o campo oculto do site ainda ganha da estrutura', R.decidirTipo({ tipoProjeto: 'Busca One (BuscaMax 3.0)', achado: achadoPlat }).tipo === 'one');
+  // Tema antigo numa subpasta (bbbfestas: /locacoes-de-barracas/): o host com
+  // a subpasta manda em todos os leitores, e o Site do contrato pode trazê-la.
+  check('host com subpasta: domínio e base separados; caminho do Site do contrato', JSON.stringify(R.partesDoHost('www.bbbfestas.com.br/locacoes-de-barracas/')) === '{"dominio":"bbbfestas.com.br","base":"locacoes-de-barracas"}' && R.caminhoDoSite('artfitacademia.com.br/aulas-de-tenis/') === 'aulas-de-tenis' && R.caminhoDoSite('https://www.x.com.br/') === '' && R.caminhoDoSite('x.com.br/index.php') === '');
+  const subMenu = R.menuDoHtml('<a href="https://www.bbbfestas.com.br/locacoes-de-barracas/servicos">Serviços</a><ul class="sub-menu"><li><a href="https://www.bbbfestas.com.br/locacoes-de-barracas/barracas">Barracas</a></li></ul>', 'www.bbbfestas.com.br/locacoes-de-barracas');
+  const subSm = R.paresDoSitemap(['https://www.bbbfestas.com.br/locacoes-de-barracas/barracas/barraca-de-pipoca/barraca-de-pipoca-osasco', 'barracas/barraca-de-crepe/barraca-de-crepe-sp'], 'www.bbbfestas.com.br/locacoes-de-barracas');
+  check('leitores com subpasta: menu, sitemap absoluto e relativo', subMenu.categorias.length === 1 && subMenu.categorias[0].slug === 'barracas' && subSm.pares.length === 2 && subSm.pares.every((p) => p.categoria === 'barracas'));
+  check('célula acima do limite do Excel é cortada e a aba Palavras recebe a lista', (() => { const pal = Array.from({ length: 3000 }, (_, i) => `palavra chave numero ${i}`); const achado = { categorias: [{ slug: 'c', titulo: 'Cat' }], palavras: pal.map((t, i) => ({ slug: 'p' + i, titulo: t, categoria: 'c' })) }; const r = { empresa: 'Busca', aba: 'Busca', linha: 2, razao: 'X', situacao: 'completo', pendencias: [], observacoes: [], dados: { tipo: 'plataforma', site: 'x.com.br', achado, palavras: R.montarPalavras('plataforma', achado) } }; const abas = R.montarAbasXlsx([r]); const cel = abas[0].linhas[0][18]; return cel.length <= R.LIMITE_CELULA + 60 && /aba Palavras\)$/.test(cel) && abas[4].aba === 'Palavras' && abas[4].linhas.length === 3001 && abas[4].linhas[0][5] === 'categoria'; })());
   check('título da página pelo breadcrumb, senão pelo <title> sem a empresa', R.tituloDaPagina(CAT_CADEIRAS) === 'Cadeiras de Plástico' && R.tituloDaPagina('<title>Comodato de Impressora - 3R informática</title>') === 'Comodato de Impressora');
   check('host com ou sem www e http', R.cardsDoHtml('<a href="http://jrplasticos.com.br/x-y"><h2 class="card__title">X</h2></a>', HOST_HIB).length === 1);
 
@@ -182,7 +189,7 @@ const SITEMAP_1 = `<?xml version="1.0"?><urlset><url><loc>https://www.jrplastico
     { empresa: 'Busca', aba: 'Busca', linha: 2, razao: 'A', situacao: 'completo', pendencias: [], observacoes: [], dados, saida: linha },
     { empresa: 'MPI', aba: 'MPI', linha: 2, razao: 'B', situacao: 'parcial', pendencias: ['ga'], observacoes: ['x'], dados: { ...dados, ga: {} } },
   ]);
-  check('abas Busca, MPI, Diagnóstico e Pendências', abas.map((a) => a.aba).join(',') === 'Busca,MPI,Diagnóstico,Pendências' && abas[0].linhas.length === 1 && abas[1].linhas.length === 1 && abas[2].linhas.length === 2 && abas[3].linhas.length === 1 && abas[3].linhas[0][4] === 'sem propriedade do GA4');
+  check('abas Busca, MPI, Diagnóstico e Pendências', abas.map((a) => a.aba).join(',') === 'Busca,MPI,Diagnóstico,Pendências,Palavras' && abas[0].linhas.length === 1 && abas[1].linhas.length === 1 && abas[2].linhas.length === 2 && abas[3].linhas.length === 1 && abas[3].linhas[0][4] === 'sem propriedade do GA4');
   check('resumo e linha de texto', /1 completa\(s\), 1 parcial/.test(R.textoResumo([{ situacao: 'completo' }, { situacao: 'parcial' }])) && /completo \(2 palavras\)/.test(R.textoLinha({ razao: 'A', situacao: 'completo', dados })));
 
   console.log('\n=== A rodada de uma linha, com fontes falsas ===');
