@@ -140,6 +140,28 @@ const SITEMAP_1 = `<?xml version="1.0"?><urlset><url><loc>https://www.jrplastico
   const antigoCom = R.juntarFontes({ menu: { categorias: [], palavras: [] }, dataMpi: [], sitemap: { pares: [{ categoria: 'farois', slug: 'polimento-de-farol' }], nivel1: [] }, titulos: { farois: 'Faróis', 'polimento-de-farol': 'Polimento de Farol' } });
   check('o título da página substitui o do slug também na categoria', antigoCom.categorias[0].titulo === 'Faróis' && !antigoCom.categorias[0].tituloPeloSlug && R.montarPalavras('hibrido', antigoCom) === 'Faróis|Polimento de Farol');
   check('com links data-mpi (site One), categoria só do sitemap continua fora', R.juntarFontes({ menu: { categorias: [], palavras: [] }, dataMpi: [{ slug: 'a', titulo: 'A' }], sitemap: { pares: [{ categoria: 'sumida', slug: 'x' }], nivel1: [] } }).categorias.length === 1);
+  // "Plataforma" (ctaltovale, 13/10/2026): não é Busca One nem híbrido, mas
+  // segue a regra do híbrido. O menu lista as categorias embaixo de "Serviços",
+  // as palavras vivem em /prefixo/palavra (só no sitemap) e as páginas de
+  // cidade em /prefixo/categoria/palavra/palavra-cidade dizem a categoria.
+  const HOME_PLAT = `<nav id="menu"><ul><li><a href="https://www.ctaltovale.com.br/" title="Home">Home</a></li>
+<li class="dropdown"><a href="https://www.ctaltovale.com.br/servicos" title="Serviços">Serviços</a>
+<ul class="sub-menu"><li><a href="https://www.ctaltovale.com.br/casas-de-reabilitacao" title="Casas de reabilitação">Casas de reabilitação</a></li>
+<li><a href="https://www.ctaltovale.com.br/clinicas-para-alcoolatras" title="Clínicas para alcoólatras">Clínicas para alcoólatras</a></li></ul></li></ul></nav>`;
+  const menuPlat = R.menuDoHtml(HOME_PLAT, 'www.ctaltovale.com.br');
+  check('menu com pai institucional (Serviços): os filhos são categorias, não palavras', menuPlat.categorias.length === 2 && menuPlat.palavras.length === 0 && menuPlat.categorias[0].titulo === 'Casas de reabilitação');
+  const smPlat = R.paresDoSitemap([
+    'https://www.ctaltovale.com.br/casas-de-reabilitacao', 'https://www.ctaltovale.com.br/clinica/casa-de-reabilitacao', 'https://www.ctaltovale.com.br/clinica/casa-sem-cidade',
+    'https://www.ctaltovale.com.br/clinica/casas-de-reabilitacao/casa-de-reabilitacao/casa-de-reabilitacao-blumenau',
+    'https://www.ctaltovale.com.br/clinica/casas-de-reabilitacao/casa-de-reabilitacao/casa-de-reabilitacao-itajai',
+    'https://www.ctaltovale.com.br/clinica/clinicas-para-alcoolatras/clinica-para-alcoolatras-24h/clinica-para-alcoolatras-24h-rio-do-sul',
+    'https://www.ctaltovale.com.br/produtos/x/y/z',
+  ], 'www.ctaltovale.com.br');
+  check('sitemap de 4 níveis: prefixo aprendido, par categoria/palavra, caminho /prefixo/palavra', smPlat.prefixo === 'clinica' && smPlat.pares.length === 3 && smPlat.pares.some((p) => p.categoria === 'casas-de-reabilitacao' && p.slug === 'casa-de-reabilitacao' && p.caminho === 'clinica/casa-de-reabilitacao') && smPlat.pares.some((p) => p.slug === 'casa-sem-cidade' && p.categoria === '' && p.caminho === 'clinica/casa-sem-cidade') && !smPlat.pares.some((p) => p.categoria === 'x'));
+  const achadoPlat = R.juntarFontes({ menu: menuPlat, cardsCategorias: [], cardsPorCategoria: {}, dataMpi: [], sitemap: smPlat });
+  const tipoPlat = R.decidirTipo({ tipoFluxo: 'Busca One', achado: achadoPlat });
+  check('plataforma: tipo pela estrutura ganha da planilha de fluxo; palavras = categorias + palavras', tipoPlat.tipo === 'plataforma' && achadoPlat.categorias.length === 2 && achadoPlat.palavras.length === 3 && achadoPlat.palavras.find((p) => p.slug === 'casa-de-reabilitacao').caminho === 'clinica/casa-de-reabilitacao' && R.montarPalavras(tipoPlat.tipo, achadoPlat).split('|').length === 5);
+  check('o campo oculto do site ainda ganha da estrutura', R.decidirTipo({ tipoProjeto: 'Busca One (BuscaMax 3.0)', achado: achadoPlat }).tipo === 'one');
   check('título da página pelo breadcrumb, senão pelo <title> sem a empresa', R.tituloDaPagina(CAT_CADEIRAS) === 'Cadeiras de Plástico' && R.tituloDaPagina('<title>Comodato de Impressora - 3R informática</title>') === 'Comodato de Impressora');
   check('host com ou sem www e http', R.cardsDoHtml('<a href="http://jrplasticos.com.br/x-y"><h2 class="card__title">X</h2></a>', HOST_HIB).length === 1);
 

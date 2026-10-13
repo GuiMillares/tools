@@ -6850,6 +6850,31 @@ linhas em 2 min, uma completa; o que ela ensinou:
   **relativo**: o filho é resolvido contra o endereço do índice, e, sem
   outra fonte, as categorias são as que o sitemap cita (título pela página).
 
+**Atualização (13/10/2026): a rodada completa e a "plataforma".** A planilha
+inteira (1.201 linhas) rodou em 163 min pelo script: 834 com palavras, 938
+com GA4, 1.055 com Search Console, 526 com ID. Das 361 sem palavras: 101
+MPI+, 44 sites que não responderam e 214 **no ar, sem cara de Busca One**.
+Olhando 14 deles: sites de um terceiro template, que a equipe chama de
+**"plataforma"** (não é Busca One nem híbrido; pelo pedido do dia, segue a
+regra do híbrido), sites WordPress e sites avulsos. A plataforma (ctaltovale,
+guardanaposnobile, escolamagnus…): o menu lista as **categorias** embaixo de
+"Serviços" (pai institucional, que o leitor descartava), as **palavras**
+vivem em `/<prefixo>/<palavra>` (só o sitemap as lista: 278 no ctaltovale) e
+as páginas de cidade em `/<prefixo>/<categoria>/<palavra>/<palavra-cidade>`
+dizem a categoria de cada palavra; o sitemap é um arquivo só, de 8,3 MB.
+Decisões:
+
+- `paresDoSitemap` lê também as URLs de 4 níveis, aprende o prefixo (o mais
+  frequente) e dá a cada palavra o `caminho` da própria página (para o
+  título); `menuDoHtml` trata os filhos de um pai institucional como
+  categorias; o tipo **plataforma** vem da estrutura (palavras sob prefixo)
+  e ganha da planilha de fluxo, que não o distingue do Busca One; o campo
+  oculto do site continua mandando. Sitemap até 16 MB, títulos até 400.
+- Dos 44 "fora do ar", 17 eram **certificado SSL inválido** (vencido, de
+  outro host, autoassinado): o site está no ar. A leitura repete sem
+  conferir o certificado e anota a observação; só HTML público é lido.
+- Os sites WordPress e avulsos seguem sem palavras (não há regra para eles).
+
 ---
 
 ## Pendências conhecidas (não são decisões — são dívidas)
