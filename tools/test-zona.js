@@ -37,6 +37,51 @@ console.log('\n=== O exemplo combinado com o Everton ===');
   check('sem avisos num caso limpo', z.avisos.length === 0, JSON.stringify(z.avisos));
 }
 
+console.log('\n=== Site em subdomínio: a zona é a do raiz, só o host muda (ADR-151) ===');
+{
+  const z = montarZonaProposta({
+    dominio: 'cliente.com.br', host: 'loja.cliente.com.br', ipNovo: NOVO,
+    snapshot: { registros: [
+      { type: 'A', name: 'cliente.com.br', content: ANTIGO },
+      { type: 'CNAME', name: 'www.cliente.com.br', content: 'cliente.com.br' },
+      { type: 'MX', name: 'cliente.com.br', content: 'cliente.com.br', priority: 10 },
+      { type: 'CNAME', name: 'webmail.cliente.com.br', content: 'cliente.com.br' },
+      { type: 'A', name: 'loja.cliente.com.br', content: '10.0.0.1' },
+      { type: 'AAAA', name: 'loja.cliente.com.br', content: '2001::1' },
+      { type: 'CNAME', name: 'www.loja.cliente.com.br', content: 'outro.com' },
+      { type: 'NS', name: 'cliente.com.br', content: 'ns1.antigo.com' },
+      { type: 'A', name: 'cdn.cliente.com.br', content: '104.16.1.1' },
+      { type: 'TXT', name: 'cliente.com.br', content: 'v=spf1 a mx ~all' },
+    ] },
+  });
+  check('marcada como subdomínio, com o host', z.subdominio === true && z.host === 'loja.cliente.com.br' && z.dominio === 'cliente.com.br');
+  check('o host vai para o servidor novo', acha(z, 'A', 'loja.cliente.com.br')[0]?.content === NOVO && acha(z, 'A', 'loja.cliente.com.br').length === 1);
+  check('www do host é CNAME para o host', acha(z, 'CNAME', 'www.loja.cliente.com.br')[0]?.content === 'loja.cliente.com.br');
+  check('a raiz NÃO muda: A continua no IP antigo', acha(z, 'A', 'cliente.com.br')[0]?.content === ANTIGO);
+  check('www da raiz continua CNAME para a raiz', acha(z, 'CNAME', 'www.cliente.com.br')[0]?.content === 'cliente.com.br');
+  check('MX fica na raiz, sem virar mail.', acha(z, 'MX', 'cliente.com.br')[0]?.content === 'cliente.com.br' && acha(z, 'A', 'mail.cliente.com.br').length === 0);
+  check('CNAME de terceiros para a raiz continua CNAME (a raiz não mudou de lugar)', acha(z, 'CNAME', 'webmail.cliente.com.br')[0]?.content === 'cliente.com.br');
+  check('NS da raiz não é copiado; TXT é', acha(z, 'NS', 'cliente.com.br').length === 0 && acha(z, 'TXT', 'cliente.com.br').length === 1);
+  check('IP antigo é o que o host tinha (informativo)', z.ipAntigo === '10.0.0.1');
+  check('o A antigo, o AAAA e o CNAME errado do host saem', z.remover.length === 3 && z.remover.some((r) => r.type === 'A' && r.content === '10.0.0.1') && z.remover.some((r) => r.type === 'AAAA') && z.remover.some((r) => r.type === 'CNAME' && r.name === 'www.loja.cliente.com.br'), JSON.stringify(z.remover));
+  check('AAAA do host descartado com aviso; proxy da Cloudflare em outro host não é copiado (ADR-091)', z.avisos.some((a) => /AAAA de loja/.test(a)) && z.avisos.some((a) => /cdn\.cliente\.com\.br aponta para o proxy/.test(a)) && acha(z, 'A', 'cdn.cliente.com.br').length === 0, JSON.stringify(z.avisos));
+  check('nada com proxy', z.registros.every((r) => r.proxied === false));
+  // Aplicar: o A antigo do host vira PUT, o CNAME errado do www vira PUT, o AAAA sai antes.
+  const existentes = [
+    { id: '1', type: 'A', name: 'loja.cliente.com.br', content: '10.0.0.1', proxied: false },
+    { id: '2', type: 'AAAA', name: 'loja.cliente.com.br', content: '2001::1', proxied: false },
+    { id: '3', type: 'CNAME', name: 'www.loja.cliente.com.br', content: 'outro.com', proxied: false },
+    { id: '4', type: 'A', name: 'cliente.com.br', content: ANTIGO, proxied: false },
+  ];
+  const p = planejarAplicacao(existentes, z.registros, { remover: z.remover });
+  check('aplicar: o A do host é atualizado, não criado ao lado', p.atualizar.some((r) => r.id === '1' && r.content === NOVO) && !p.criar.some((r) => r.name === 'loja.cliente.com.br'));
+  check('aplicar: o www do host é reescrito; o AAAA sai; a raiz é mantida', p.atualizar.some((r) => r.id === '3' && r.content === 'loja.cliente.com.br') && p.remover.some((r) => r.id === '2') && p.manter.some((r) => r.id === '4'), JSON.stringify({ a: p.atualizar.map((r) => r.id), r: p.remover.map((r) => r.id), m: p.manter.map((r) => r.id) }));
+  check('host = zona é a regra da raiz de sempre', montarZonaProposta({ dominio: 'cliente.com.br', host: 'cliente.com.br', ipNovo: NOVO, snapshot: { registros: [{ type: 'A', name: 'cliente.com.br', content: ANTIGO }] } }).subdominio === false);
+  let erro = '';
+  try { montarZonaProposta({ dominio: 'cliente.com.br', host: 'loja.outro.com.br', ipNovo: NOVO, snapshot: { registros: [] } }); } catch (e) { erro = e.message; }
+  check('host fora da zona é recusado', /não está dentro da zona/.test(erro), erro);
+}
+
 console.log('\n=== MX de terceiros e host próprio ===');
 {
   const z = montarZonaProposta({

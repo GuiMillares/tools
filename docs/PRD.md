@@ -347,6 +347,14 @@ de um servidor de produção.
 Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto, e
 pergunta a empresa no terminal antes da planilha (ADR-064).
 
+**Site em subdomínio** (`loja.cliente.com.br`, ADR-151): o campo recebe o
+subdomínio mesmo. A zona da Cloudflare, a consulta e a troca de nameservers
+no Registro.br são do domínio raiz (`cliente.com.br`); na zona só o host e o
+`www` dele vão para o servidor novo, e a raiz, o `www` da raiz e o e-mail do
+cliente ficam como estão. A propagação, o SSL, as propriedades e a planilha
+são do subdomínio. O Publicar em massa (4.6) usa os mesmos canais e faz o
+mesmo.
+
 A lista **"Aguardando a propagação"** (ADR-103) guarda o site publicado que só
 espera o DNS, com o que falta (SSL, Search Console e relatório, fechar a
 tarefa), e o vigia termina cada um quando o domínio aponta. Ela tem dois tipos

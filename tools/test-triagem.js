@@ -21,6 +21,11 @@ check('marcaPorIps pega o primeiro conhecido', T.marcaPorIps(['1.2.3.4', '149.18
 console.log('\n=== Normalização de domínio ===');
 check('tira https/www/barra', T.limparDominio('https://www.cuidarecia.com.br/') === 'cuidarecia.com.br');
 check('já limpo continua', T.limparDominio('embratecbombas.com.br') === 'embratecbombas.com.br');
+// O domínio raiz (zona) de um host (ADR-151).
+check('dominioRaiz: subdomínio .com.br', T.dominioRaiz('loja.cliente.com.br') === 'cliente.com.br');
+check('dominioRaiz: raiz fica igual; www sai', T.dominioRaiz('cliente.com.br') === 'cliente.com.br' && T.dominioRaiz('https://www.loja.cliente.com.br/x') === 'cliente.com.br');
+check('dominioRaiz: .com, .net.br, .eco.br, cidade .br, co.uk, com.ar', T.dominioRaiz('sub.cliente.com') === 'cliente.com' && T.dominioRaiz('a.b.cliente.net.br') === 'cliente.net.br' && T.dominioRaiz('x.cliente.eco.br') === 'cliente.eco.br' && T.dominioRaiz('x.empresa.rio.br') === 'empresa.rio.br' && T.dominioRaiz('x.y.co.uk') === 'y.co.uk' && T.dominioRaiz('x.y.com.ar') === 'y.com.ar');
+check('dominioRaiz: vazio → vazio', T.dominioRaiz('') === '');
 
 console.log('\n=== Publicação MPI+ (tarefas reais) ===');
 {

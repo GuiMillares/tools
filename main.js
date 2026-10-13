@@ -2634,18 +2634,38 @@ async function fotografarDns(dominio, hostsExtras = [], push = () => {}) {
   return { dominio, ns: nsNomes, registros, erros };
 }
 
+// Site em subdomínio (ADR-151): a zona da Cloudflare, a consulta e a troca
+// de nameservers no Registro.br e a conferência de NS são sempre do domínio
+// RAIZ (cliente.com.br de loja.cliente.com.br); o que muda na zona é só o
+// host e o www dele. A fotografia do DNS consulta o host e o www dele além
+// dos nomes de sempre (relativos à zona).
+function zonaDeHost(host) {
+  const { dominioRaiz } = require(path.join(__dirname, 'lib', 'triagem'));
+  return dominioRaiz(host) || host;
+}
+function hostsDaFoto(hostsExtras, host, zona) {
+  const lista = Array.isArray(hostsExtras) ? hostsExtras.slice() : [];
+  if (host && zona && host !== zona && host.endsWith(`.${zona}`)) {
+    const rel = host.slice(0, -(zona.length + 1));
+    lista.push(rel, `www.${rel}`);
+  }
+  return lista;
+}
+
 ipcMain.handle('dns:fotografar', async (event, { dominio: bruto, hostsExtras, ipNovo }) => {
   const log = [];
   const push = (message, type = 'info') => log.push({ message, type });
   try {
-    const dominio = normalizeDomain(bruto);
-    if (!dominio) throw new Error('Domínio vazio.');
+    const host = normalizeDomain(bruto);
+    if (!host) throw new Error('Domínio vazio.');
+    const dominio = zonaDeHost(host);
+    if (dominio !== host) push(`${host} é subdomínio: a zona é ${dominio}; só ${host} e www.${host} mudam.`, 'info');
     push(`Fotografando o DNS atual de ${dominio}`, 'cmd');
-    const foto = await fotografarDns(dominio, Array.isArray(hostsExtras) ? hostsExtras : [], push);
+    const foto = await fotografarDns(dominio, hostsDaFoto(hostsExtras, host, dominio), push);
     push(`${foto.registros.length} registro(s) encontrados` + (foto.erros.length ? `, ${foto.erros.length} consulta(s) com erro` : ''), foto.erros.length ? 'warn' : 'success');
     for (const e of foto.erros) push(`DNS: ${e}`, 'warn');
     const cfg = readPublicacaoConfig();
-    const zona = montarZonaProposta({ dominio, snapshot: foto, ipNovo: ipNovo || cfg.hestiaIpPublico });
+    const zona = montarZonaProposta({ dominio, host, snapshot: foto, ipNovo: ipNovo || cfg.hestiaIpPublico });
     for (const a of zona.avisos) push(`Zona: ${a}`, 'warn');
     push(`Zona proposta: ${zona.registros.length} registro(s). IP antigo ${zona.ipAntigo || 'desconhecido'}, IP novo ${zona.ipNovo}.`, 'info');
     return { ok: true, log, foto, zona };
@@ -2714,8 +2734,10 @@ ipcMain.handle('cloudflare:montarZona', async (event, { empresa, dominio: bruto,
   const log = [];
   const push = (message, type = 'info') => log.push({ message, type });
   try {
-    const dominio = normalizeDomain(bruto);
-    if (!dominio) throw new Error('Domínio vazio.');
+    const host = normalizeDomain(bruto);
+    if (!host) throw new Error('Domínio vazio.');
+    const dominio = zonaDeHost(host);
+    if (dominio !== host) push(`${host} é subdomínio: a zona é ${dominio}; só ${host} e www.${host} mudam, o resto da zona fica como está.`, 'info');
     const { cf, accountId } = cloudflareDaEmpresa(empresa);
     const cfg = readPublicacaoConfig();
 
@@ -2745,7 +2767,7 @@ ipcMain.handle('cloudflare:montarZona', async (event, { empresa, dominio: bruto,
     let foto = { registros: [], erros: [], ns: [] };
     try {
       push(`Fotografando o DNS atual de ${dominio}`, 'cmd');
-      foto = await fotografarDns(dominio, Array.isArray(hostsExtras) ? hostsExtras : [], push);
+      foto = await fotografarDns(dominio, hostsDaFoto(hostsExtras, host, dominio), push);
       push(`Fotografia: ${foto.registros.length} registro(s)` + (foto.erros.length ? `, ${foto.erros.length} consulta(s) com erro` : ''), foto.erros.length ? 'warn' : 'success');
       for (const e of foto.erros) push(`DNS: ${e}`, 'warn');
     } catch (e) {
@@ -2757,7 +2779,7 @@ ipcMain.handle('cloudflare:montarZona', async (event, { empresa, dominio: bruto,
     const nsAtuais = (foto.ns || []).map((x) => String(x).toLowerCase());
     const jaNaCloudflare = nsAtuais.length > 0 && nsAtuais.every((n) => /\.ns\.cloudflare\.com$/.test(n));
     const snapshot = { registros: unirRegistros(semNs(existentes), foto.registros) };
-    const proposta = montarZonaProposta({ dominio, snapshot, ipNovo: ipNovo || cfg.hestiaIpPublico });
+    const proposta = montarZonaProposta({ dominio, host, snapshot, ipNovo: ipNovo || cfg.hestiaIpPublico });
     for (const a of proposta.avisos) push(`Zona: ${a}`, 'warn');
     const plano = planejarAplicacao(existentes, proposta.registros, { remover: proposta.remover });
     push(
@@ -2787,8 +2809,10 @@ ipcMain.handle('cloudflare:aplicar', async (event, { empresa, dominio: bruto, re
   const log = [];
   const push = (message, type = 'info') => log.push({ message, type });
   try {
-    const dominio = normalizeDomain(bruto);
-    if (!dominio) throw new Error('Domínio vazio.');
+    const host = normalizeDomain(bruto);
+    if (!host) throw new Error('Domínio vazio.');
+    const dominio = zonaDeHost(host);
+    if (dominio !== host) push(`${host} é subdomínio: aplicando na zona ${dominio}.`, 'info');
     if (!Array.isArray(registros) || !registros.length) throw new Error('Sem registros para aplicar. Fotografe o DNS antes.');
     const { cf, accountId } = cloudflareDaEmpresa(empresa);
 
@@ -2907,7 +2931,8 @@ async function nsNoPai(dominio) {
 ipcMain.handle('dns:conferirNs', async (event, { dominio: bruto, esperados }) => {
   const dnsp = require('dns').promises;
   try {
-    const dominio = normalizeDomain(bruto);
+    // Os nameservers são do domínio raiz (ADR-151): de um subdomínio, confere a zona.
+    const dominio = zonaDeHost(normalizeDomain(bruto));
     const pai = await nsNoPai(dominio);
     const atuais = (pai ? pai.ns : await dnsp.resolveNs(dominio).catch(() => [])).map((x) => x.toLowerCase().replace(/\.$/, ''));
     const alvo = (esperados || []).map((x) => String(x).toLowerCase().replace(/\.$/, ''));
@@ -4965,8 +4990,11 @@ ipcMain.handle('registrobr:consultar', async (event, { empresa, dominio: bruto }
   const push = (message, type = 'info') => log.push({ message, type });
   let win = null;
   try {
-    const dominio = normalizeDomain(bruto);
-    if (!dominio) throw new Error('Domínio vazio.');
+    const host = normalizeDomain(bruto);
+    if (!host) throw new Error('Domínio vazio.');
+    // O Registro.br só conhece o domínio raiz (ADR-151).
+    const dominio = zonaDeHost(host);
+    if (dominio !== host) push(`${host} é subdomínio: a consulta no Registro.br é de ${dominio}.`, 'info');
     if (!empresaOk(empresa)) throw new Error('Empresa desconhecida.');
     const cfg = readPublicacaoConfig();
     const handle = String((cfg.registrobrHandles || {})[empresa] || PUBLICACAO_PADRAO.registrobrHandles[empresa] || '').toUpperCase();
@@ -5036,8 +5064,11 @@ ipcMain.handle('registrobr:trocarNs', async (event, { empresa, dominio: bruto, n
   const push = (message, type = 'info') => log.push({ message, type });
   let win = null;
   try {
-    const dominio = normalizeDomain(bruto);
-    if (!dominio) throw new Error('Domínio vazio.');
+    const host = normalizeDomain(bruto);
+    if (!host) throw new Error('Domínio vazio.');
+    // A troca de nameservers é do domínio raiz (ADR-151).
+    const dominio = zonaDeHost(host);
+    if (dominio !== host) push(`${host} é subdomínio: os nameservers são de ${dominio}.`, 'info');
     if (!empresaOk(empresa)) throw new Error('Empresa desconhecida.');
     const ns = (nameservers || []).map((n) => String(n || '').trim().toLowerCase().replace(/\.$/, '')).filter(Boolean);
     if (ns.length < 2) throw new Error('Preciso de dois nameservers da Cloudflare.');

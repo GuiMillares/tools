@@ -7169,6 +7169,62 @@ configuração) moram no `test-escritorio-executores.js`, sem Chromium. O
 `test-automacao-browser.js` passou a provar o contrário do que provava: que o
 painel não existe mais e que o driver do MPI+ segue exposto.
 
+## ADR-151 — Site em subdomínio: a zona da Cloudflare, o Registro.br e os nameservers são do domínio raiz; só o host e o www dele mudam
+
+**Status:** aceita
+
+**Contexto.** Em 13/10/2026 o Guilherme publicou pelo Publicar MPI+ um site
+que vai no ar num subdomínio (`loja.cliente.com.br`, por exemplo) e pôs o
+subdomínio no campo do domínio. A etapa "Criar a zona na Cloudflare" morreu
+com `POST /zones 400: 1116: Please ensure you are providing the root domain
+and not any subdomains`. A Cloudflare só aceita zona para o domínio
+registrável; o Registro.br só conhece o domínio registrável; e os
+nameservers são do registrável. Até aqui todo o fluxo tratava o campo como
+raiz: a regra da zona (ADR-058, ADR-071) mandava a raiz e o `www` para o
+servidor novo, movia o MX e convertia CNAME, o que num subdomínio tiraria do
+ar o site principal do cliente.
+
+**Decisão.**
+
+1. **`dominioRaiz(host)`** em `lib/triagem.js` (dual, testado): o domínio
+   registrável de um host, com os sufixos de segundo nível do `.br`
+   (com, net, org, art, eco, adv… e as cidades: rio, sampa, bsb…) e os
+   comuns de outros países (co.uk, com.ar) como parte do sufixo.
+   `loja.cliente.com.br` → `cliente.com.br`; `cliente.com.br` fica.
+2. **A zona proposta ganha um modo de subdomínio** (`montarZonaProposta({
+   dominio: zona, host })`, `lib/zona.js`): quando o host é diferente da
+   zona, só `host` (A → servidor novo) e `www.host` (CNAME → host) mudam; o
+   resto da zona é replicado como está, raiz, `www` da raiz, MX e CNAMEs
+   inclusive, porque a raiz não muda de lugar. O A antigo do host, o AAAA e
+   um CNAME de `www.host` que não aponte para o host saem (`remover`). O IP
+   antigo é só informação (o que o host tinha). A regra de não copiar
+   registro que aponta para o proxy da Cloudflare (ADR-091) continua. Host
+   fora da zona é recusado.
+3. **Os handlers derivam a zona do host**, então o renderer continua mandando
+   o domínio do site como sempre e o Publicar em massa (que usa os mesmos
+   canais) ganha o comportamento de graça: `cloudflare:montarZona` e
+   `cloudflare:aplicar` acham ou criam a zona do raiz e fotografam o DNS do
+   raiz consultando também o host e o `www` dele; `dns:fotografar` idem;
+   `registrobr:consultar` e `registrobr:trocarNs` consultam e trocam no raiz;
+   `dns:conferirNs` confere o NS do raiz. Cada um escreve no log "X é
+   subdomínio: a zona é Y". A propagação e o SSL continuam olhando o host
+   (`dns:apontando`, `checkDnsBatch` e o certificado são do host), as
+   propriedades do Google, a planilha e a tarefa também.
+4. No Publicar MPI+, o detalhe da etapa do DNS diz "subdomínio: só host e
+   www.host vão para o IP novo, a raiz fica como está", e a instrução
+   manual do Registro.br aponta o raiz.
+
+**Consequências.** Um site em subdomínio publica pelo mesmo botão, com a
+mesma parada do DNS (o antes e depois mostra a zona do raiz com só o host
+mudando). O contato técnico do raiz decide se o DNS é nosso, como sempre.
+Replicar a zona do raiz para a nossa Cloudflare e trocar os nameservers é o
+mesmo que a publicação de um raiz já fazia; a diferença é que a raiz e o
+e-mail não são tocados. `test-zona.js` cobre o modo de subdomínio (host e
+www, raiz intacta, MX no lugar, remoções, aplicação) e `test-triagem.js` o
+`dominioRaiz`. Uma publicação que já tinha parado na etapa do DNS com o
+1116 é descartada e começada de novo, para a etapa do contato consultar o
+raiz.
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30

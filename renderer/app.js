@@ -6976,8 +6976,9 @@ async function pubEtapaDns() {
   const p = res.plano || { atualizar: [], criar: [], remover: [], manter: [] };
   pubAvancar(
     'dns', true,
-    `zona ${res.criada ? 'criada' : 'reaproveitada'}${res.escaneados ? `, scan trouxe ${res.escaneados}` : ''}; ${res.zona.registros.length} registro(s) na zona final, ` +
-      `muda ${p.atualizar.length}, cria ${p.criar.length}, remove ${p.remover.length}, mantém ${p.manter.length}; IP antigo ${res.zona.ipAntigo || '?'} → novo ${res.zona.ipNovo} (${alvo.origem})`
+    `zona ${res.zona.subdominio ? res.zona.dominio + ' ' : ''}${res.criada ? 'criada' : 'reaproveitada'}${res.escaneados ? `, scan trouxe ${res.escaneados}` : ''}; ${res.zona.registros.length} registro(s) na zona final, ` +
+      `muda ${p.atualizar.length}, cria ${p.criar.length}, remove ${p.remover.length}, mantém ${p.manter.length}; ` +
+      (res.zona.subdominio ? `subdomínio: só ${res.zona.host} e www.${res.zona.host} vão para ${res.zona.ipNovo} (${alvo.origem}), a raiz fica como está` : `IP antigo ${res.zona.ipAntigo || '?'} → novo ${res.zona.ipNovo} (${alvo.origem})`)
   );
 }
 
@@ -7021,7 +7022,9 @@ async function pubEtapaRegistro() {
   if (res && !res.manual) logTudo(res);
   // Ainda sem automação do Registro.br: o passo fica manual, com o que colar.
   await window.api.copyToClipboard(ns.join('\n'));
-  log(`Registro.br: entre na conta de ${PUB_EMPRESAS.find((e) => e.id === pub.empresa)?.nome}, abra ${pub.dominio} e troque os servidores DNS para:`, 'warn');
+  // Os nameservers são do domínio raiz: de um subdomínio, o que se abre no Registro.br é a zona (ADR-151).
+  const zonaRaiz = (window.Triagem && typeof window.Triagem.dominioRaiz === 'function') ? (window.Triagem.dominioRaiz(pub.dominio) || pub.dominio) : pub.dominio;
+  log(`Registro.br: entre na conta de ${PUB_EMPRESAS.find((e) => e.id === pub.empresa)?.nome}, abra ${zonaRaiz} e troque os servidores DNS para:`, 'warn');
   log(`  ns1: ${ns[0]}`, 'info');
   log(`  ns2: ${ns[1]}`, 'info');
   log('Os dois já estão na sua área de transferência.', 'warn');
