@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
-<title>Hub</title>
+<title>Asgard</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>
-        <span>Hub</span><span class="brand-ver">v2.4</span>
+      <div class="brand" title="Asgard (ᚬᛋᚴᛅᚱᚦᛦ)">
+        <span class="brand-runa" aria-hidden="true">ᛟ</span>
+        <span>Asgard</span><span class="brand-runico" aria-hidden="true">ᚬᛋᚴᛅᚱᚦᛦ</span><span class="brand-ver">v2.4</span>
       </div>
       <div class="tb-search">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -26,7 +26,7 @@
 
     <div class="app-body">
       <nav class="app-nav">
-        <div class="nav-label"><span>Módulos Hub</span><span class="nav-online" id="navOnline">ONLINE</span></div>
+        <div class="nav-label"><span>Módulos Asgard</span><span class="nav-online" id="navOnline">ONLINE</span></div>
         <div id="navList" class="nav-list"></div>
         <div class="nav-bottom">
           <!-- Os dois terminais (ADR-128): mostram, escondem e dizem o que chegou enquanto estavam fechados. -->
@@ -88,7 +88,7 @@
         <div class="terminal-footer">
           <div class="term-atalhos"><span class="term-atalhos-label">Atalhos:</span><span id="termAtalhos"></span></div>
           <div class="term-cmd">
-            <span class="term-prompt" id="termPrompt">hub$</span>
+            <span class="term-prompt" id="termPrompt">asgard$</span>
             <input id="termInput" type="text" placeholder="digite um comando ou atalho (#) … ex: nslookup cliente.com.br" autocomplete="off" spellcheck="false" />
             <button id="termRun" class="term-enter">ENTER ↵</button>
           </div>
@@ -190,7 +190,7 @@
         </div>
         <div class="sec">
           <div class="sec-head"><span class="sec-title">Sessão do Google de cada marca</span></div>
-          <p class="hint">Registrar a propriedade no Search Console só a coloca na lista de <strong>quem chama</strong>. Feito pela service account, ela nasce fora do Search Console da marca. Com a sessão da marca conectada aqui, o Hub registra pela própria conta e a propriedade nasce lá. Precisa do Client ID e do Secret abaixo.</p>
+          <p class="hint">Registrar a propriedade no Search Console só a coloca na lista de <strong>quem chama</strong>. Feito pela service account, ela nasce fora do Search Console da marca. Com a sessão da marca conectada aqui, o Asgard registra pela própria conta e a propriedade nasce lá. Precisa do Client ID e do Secret abaixo.</p>
           <div id="brandOauthList" class="brand-oauth"></div>
           <label class="field" style="margin-top:10px">
             <span>Logins de relatório, um e-mail por linha (bcrelatorios2@gmail.com…): a Planilha do Relatório diz qual deles enxerga cada propriedade e cada site do Search Console</span>
@@ -228,7 +228,7 @@
       </div>
 
       <div class="cfg-pane" data-cfg-pane="cloudflare">
-        <p class="hint">Cada empresa tem a sua conta na Cloudflare e no Registro.br. O Hub usa a da empresa escolhida na tela de publicação. Tokens e senhas ficam criptografados nesta máquina; campo em branco não altera o que já está salvo.</p>
+        <p class="hint">Cada empresa tem a sua conta na Cloudflare e no Registro.br. O Asgard usa a da empresa escolhida na tela de publicação. Tokens e senhas ficam criptografados nesta máquina; campo em branco não altera o que já está salvo.</p>
         <div class="sec">
           <div class="sec-head"><span class="sec-title">Busca Cliente</span></div>
           <div class="grid-2">
@@ -307,18 +307,18 @@
               <input id="sfTextoFeedInput" type="text" placeholder="Site publicado" autocomplete="off" />
             </label>
           </div>
-          <p class="hint">O Hub entra com a sua conta pelo aplicativo conectado que a própria Salesforce distribui, então o histórico de login de lá vai registrar "Salesforce CLI". Tudo que ele fizer sai no seu nome. Use <code>{dominio}</code> nos modelos.</p>
+          <p class="hint">O Asgard entra com a sua conta pelo aplicativo conectado que a própria Salesforce distribui, então o histórico de login de lá vai registrar "Salesforce CLI". Tudo que ele fizer sai no seu nome. Use <code>{dominio}</code> nos modelos.</p>
         </div>
         <div class="sec">
           <div class="sec-head"><span class="sec-title">Servidores (Hestia)</span><span class="sec-meta">Produção MPI+</span></div>
           <div class="grid-2">
             <label class="field">
-              <span>IP de produção de reserva (registro A da raiz). O Hub usa o IP do servidor de produção que o painel MPI+ lista; este só entra se o painel não informar</span>
+              <span>IP de produção de reserva (registro A da raiz). O Asgard usa o IP do servidor de produção que o painel MPI+ lista; este só entra se o painel não informar</span>
               <input id="pubIpInput" type="text" placeholder="149.18.102.60" autocomplete="off" />
             </label>
             <label class="field">
               <span>Servidor de produção</span>
-              <p class="hint" style="margin:0">É o que o painel MPI+ lista na hora de publicar. Um só, o Hub usa; dois ou mais, ele pergunta qual (ADR-140).</p>
+              <p class="hint" style="margin:0">É o que o painel MPI+ lista na hora de publicar. Um só, o Asgard usa; dois ou mais, ele pergunta qual (ADR-140).</p>
             </label>
           </div>
         </div>
@@ -383,7 +383,7 @@
         </div>
         <div class="sec">
           <div class="sec-head"><span class="sec-title">Gemini (o modelo do Escritório)</span><span class="sec-meta">Google AI Studio</span></div>
-          <p class="hint">O orquestrador só chama o modelo para o que a triagem do Hub e as regras aprendidas não resolvem; os agentes, só onde há texto livre para ler ou falha para explicar. Toda ação passa pela validação em código antes. A chave fica criptografada nesta máquina (DPAPI) e nunca volta para a tela: em branco, não altera a que já está gravada.</p>
+          <p class="hint">O orquestrador só chama o modelo para o que a triagem do Asgard e as regras aprendidas não resolvem; os agentes, só onde há texto livre para ler ou falha para explicar. Toda ação passa pela validação em código antes. A chave fica criptografada nesta máquina (DPAPI) e nunca volta para a tela: em branco, não altera a que já está gravada.</p>
           <div class="grid-2">
             <label class="field">
               <span>Chave da API do Gemini</span>

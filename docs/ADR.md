@@ -7463,6 +7463,43 @@ o headless do Playwright tem WebGL por SwiftShader, então o motor 3D é
 exercitado de verdade. Quando o vídeo de referência chegar, o que muda é o
 `dirigir` e a simulação, não a planta nem a tela.
 
+## ADR-154 — O Hub vira Asgard: nome, grafia rúnica na marca e a runa Othala como ícone
+
+**Contexto.** Pedido do Guilherme (14/10): "muda o nome de hub para Asgard
+(ᚬᛋᚴᛅᚱᚦᛦ), use a escrita nórdica como ícone", e depois "use a runa nórdica
+Othala como favicon". Fecha com os agentes nórdicos do Escritório (ADR-150):
+Odin, Tyr, Thor e os outros trabalham em Asgard.
+
+**Decisão.**
+
+1. **Nome.** "Asgard" em tudo que a pessoa lê: título da janela, marca no
+   topo, "Módulos Asgard", prompt do terminal (`nome@asgard:~/módulo$`),
+   mensagens do terminal e dos avisos, README e o `productName` do
+   instalador (atalho, Gerenciador de Tarefas, Painel de Controle).
+   Ficam como estavam, de propósito: `name` (`pr-merge-tool`) e `appId`,
+   porque mudar qualquer um dos dois faz o instalador criar uma segunda
+   instalação em vez de atualizar a que existe; a pasta `Documentos\Hub\logs`
+   e o nome do arquivo de log (`hub-AAAA-MM-DD.txt`), que os testes e os
+   scripts de medição procuram; o registro "Hub" no Entra, que é o nome do
+   aplicativo lá; a chave `hub.terminais` do localStorage; os identificadores
+   do código (`hubUsuario`, `fecharHubAberto`…). As ADRs anteriores continuam
+   dizendo "Hub": são história.
+2. **Marca.** No topo, a runa Othala (ᛟ, U+16DF) em verde de destaque faz
+   as vezes de logotipo, seguida de "Asgard" e da grafia rúnica ᚬᛋᚴᛅᚱᚦᛦ
+   apagada. A fonte é a Segoe UI Historic, que vem com o Windows e cobre o
+   bloco rúnico; sem ela, o CSS cai na Noto Sans Runic ou na fonte do sistema.
+   O raio SVG saiu.
+3. **Ícone.** `assets/icon.png` (256) e `assets/icon.ico` (16 a 256) gerados
+   por `PIL` a partir da mesma fonte: Othala em `--accent` com um halo
+   discreto, sobre `--bg-2` num quadrado de cantos arredondados com borda
+   `--border-hi`. É o ícone da janela, da barra de tarefas e do instalador.
+   Othala, não Dagaz: ele trocou no meio do pedido.
+
+**Consequências.** O primeiro `npm run atualizar` depois desta ADR não acha
+a versão instalada pelo nome novo (procura "Asgard" no registro de programas)
+e instala por cima do mesmo jeito, pelo `appId`; a partir daí volta ao normal.
+A limpeza do user agent (`uaSemElectron`) tira "Hub" e "Asgard".
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30

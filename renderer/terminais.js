@@ -1,6 +1,6 @@
-// Os dois terminais do Hub (ADR-128): a Atividade, à direita (o log de tudo
-// que o Hub faz, com a linha de comando), e o Git Bash, embaixo do painel do
-// meio (um bash de verdade, com a moldura do terminal do Antigravity e as cores do Hub). Os dois
+// Os dois terminais do Asgard (ADR-128): a Atividade, à direita (o log de tudo
+// que o Asgard faz, com a linha de comando), e o Git Bash, embaixo do painel do
+// meio (um bash de verdade, com a moldura do terminal do Antigravity e as cores do Asgard). Os dois
 // minimizam e fecham. O estado da Atividade e a altura do Git Bash ficam
 // guardados nesta máquina; o bash em si só abre quando você pede.
 //
@@ -139,12 +139,12 @@ function avisarTamanhoDoBash() {
   Promise.resolve(window.api.bashTamanho({ cols: bashTerm.cols, rows: bashTerm.rows })).catch(() => {});
 }
 
-// As 16 cores ANSI na paleta do Hub (docs/design.md, "Git Bash"): o fundo é o
+// As 16 cores ANSI na paleta do Asgard (docs/design.md, "Git Bash"): o fundo é o
 // recuado do app, o texto é o texto do app, e cada cor ANSI cai no papel mais
 // próximo (vermelho = falhou, verde = resultado bom, amarelo = ressalva, ciano
 // = luz secundária). Roxo e azul não existem na paleta: o magenta vira o
 // cinza-verde secundário e o azul, um ciano mais fechado. O prompt do Git
-// Bash (verde, magenta, amarelo, ciano) continua legível, só na cor do Hub.
+// Bash (verde, magenta, amarelo, ciano) continua legível, só na cor do Asgard.
 const TEMA_BASH = {
   background: '#061210',
   foreground: '#e8f3ee',
@@ -160,7 +160,7 @@ const TEMA_BASH = {
 
 // O xterm.js (o mesmo terminal do VS Code e do Antigravity) só carrega na
 // primeira vez que o Git Bash abre: quem não usa não paga os 290 KB na
-// abertura do Hub.
+// abertura do Asgard.
 function carregarXterm() {
   if (xtermCarregando) return xtermCarregando;
   const script = (src) => new Promise((ok, falha) => {
@@ -233,8 +233,8 @@ function criarTerminalBash() {
 
 // Copiar e colar como no terminal do VS Code: Ctrl+C copia quando há texto
 // selecionado (sem seleção, o ^C vai para o bash e interrompe o comando);
-// Ctrl+V cola (o navegador cola e o xterm manda o texto). Os atalhos do Hub
-// (Ctrl+` e Ctrl+Shift+') passam para o Hub.
+// Ctrl+V cola (o navegador cola e o xterm manda o texto). Os atalhos do Asgard
+// (Ctrl+` e Ctrl+Shift+') passam para o Asgard.
 function teclaNoBash(e) {
   if (e.type !== 'keydown' || !e.ctrlKey) return true;
   const tecla = String(e.key || '').toLowerCase();

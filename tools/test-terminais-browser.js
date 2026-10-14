@@ -86,7 +86,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     await page.evaluate(() => goHome());
     const n0 = await page.evaluate(() => logBuffer.length);
     await busca('zzqqxx');
-    check('nada batendo: avisa no terminal, sem sair da tela', await page.evaluate((n) => logBuffer.slice(n).some((e) => e.type === 'warn' && /Nada no Hub/.test(e.message)) && state.view === 'home', n0));
+    check('nada batendo: avisa no terminal, sem sair da tela', await page.evaluate((n) => logBuffer.slice(n).some((e) => e.type === 'warn' && /Nada no Asgard/.test(e.message)) && state.view === 'home', n0));
 
     console.log('\n=== Atividade: minimizar, fechar, voltar ===');
     check('começa aberta, à direita (3 colunas)', (await colunas()) === 3 && (await page.isVisible('.terminal-header')));

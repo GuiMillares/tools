@@ -1,6 +1,6 @@
-# PRD — Hub
+# PRD — Asgard
 
-Documento de produto do Hub. Serve para responder, sem precisar ler o código,
+Documento de produto do Asgard (o Hub, até a ADR-154). Serve para responder, sem precisar ler o código,
 três perguntas: **para que o app existe**, **o que cada ferramenta promete** e
 **o que está deliberadamente fora**.
 

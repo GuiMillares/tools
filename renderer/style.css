@@ -1646,3 +1646,10 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
   .esc-hud-topo .home-hi__sub { display: none; }
   .esc-gaveta { width: min(560px, 60vw); }
 }
+
+/* ---- Marca: Asgard (ADR-154). A runa Othala é o logotipo; a grafia rúnica
+   fica ao lado do nome, apagada. Segoe UI Historic vem com o Windows e tem o
+   bloco rúnico; sem ela, cai na fonte do sistema que tiver as runas. ---- */
+.brand-runa { font-family: "Segoe UI Historic", "Noto Sans Runic", var(--sans); font-size: 19px; line-height: 1; color: var(--accent); text-shadow: 0 0 8px var(--accent-soft); }
+.brand-runico { font-family: "Segoe UI Historic", "Noto Sans Runic", var(--sans); font-size: 11.5px; letter-spacing: 0.12em; color: var(--text-faint); margin-left: 2px; }
+.brand > svg { display: none; }

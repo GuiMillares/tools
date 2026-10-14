@@ -1,7 +1,7 @@
 // npm run atualizar — sobe a versão, gera o instalador e instala por cima do
-// Hub já instalado.
+// Asgard já instalado.
 //
-// O Hub instalado é uma cópia congelada em %LOCALAPPDATA%\Programs\pr-merge-tool:
+// O Asgard instalado é uma cópia congelada em %LOCALAPPDATA%\Programs\pr-merge-tool:
 // mudança no código só chega nele com build + reinstalação. Este script junta os
 // passos e contorna dois tropeços conhecidos:
 //  - o editor (Electron) segura dist\win-unpacked\resources\app.asar e o
@@ -75,7 +75,7 @@ function versaoInstalada(productName) {
   );
 }
 
-// Pede ao Hub aberto que feche sozinho, como clicar no X, pra não cortar uma
+// Pede ao Asgard aberto que feche sozinho, como clicar no X, pra não cortar uma
 // operação no meio. Quem não sair é encerrado à força AQUI, antes de chamar o
 // instalador: no modo --updated ele troca a pasta de forma atômica e, com um
 // arquivo em uso, desfaz tudo e sai com código 2 — um número, sem explicação.
@@ -91,14 +91,14 @@ function fecharHubAberto(pastaInstalada) {
   const quantos = contar();
   if (!quantos) return;
 
-  etapa(`Fechando o Hub aberto (${quantos} processo(s))`);
+  etapa(`Fechando o Asgard aberto (${quantos} processo(s))`);
   powershell(`${filtro} | ForEach-Object { [void]$_.CloseMainWindow() }`);
   for (let i = 0; i < 20; i++) {
     if (!contar()) return;
     esperar(1000);
   }
 
-  aviso('O Hub não fechou em 20 s. Encerrando à força para o instalador poder trocar a pasta.');
+  aviso('O Asgard não fechou em 20 s. Encerrando à força para o instalador poder trocar a pasta.');
   powershell(`${filtro} | Stop-Process -Force -ErrorAction SilentlyContinue`);
   for (let i = 0; i < 10; i++) {
     if (!contar()) return;
@@ -106,8 +106,8 @@ function fecharHubAberto(pastaInstalada) {
   }
 
   throw new Falha(
-    `Ainda há ${contar()} processo(s) do Hub rodando em ${pastaInstalada}, e não consegui encerrá-los. ` +
-      'Feche o Hub pelo Gerenciador de Tarefas ("PR Merge Tool") e rode de novo — com a pasta em uso, ' +
+    `Ainda há ${contar()} processo(s) do Asgard rodando em ${pastaInstalada}, e não consegui encerrá-los. ` +
+      'Feche o Asgard pelo Gerenciador de Tarefas ("Asgard") e rode de novo — com a pasta em uso, ' +
       'o instalador desfaz tudo e sai com código 2.'
   );
 }
@@ -118,7 +118,7 @@ function explicarSaidaDoInstalador(codigo) {
   if (codigo === 2) {
     return (
       'código 2 é o instalador desistindo e desfazendo o que tinha feito — quase sempre porque algum ' +
-      'arquivo da pasta instalada estava em uso (Hub aberto, antivírus varrendo, Explorer com a pasta aberta). ' +
+      'arquivo da pasta instalada estava em uso (Asgard aberto, antivírus varrendo, Explorer com a pasta aberta). ' +
       'A instalação anterior continua intacta.'
     );
   }
@@ -130,7 +130,7 @@ function explicarSaidaDoInstalador(codigo) {
 
 function main() {
   if (process.platform !== 'win32') {
-    throw new Falha('Este script instala o Hub no Windows — rode no Windows.');
+    throw new Falha('Este script instala o Asgard no Windows — rode no Windows.');
   }
   if (!fs.existsSync(CLI_BUILDER)) {
     throw new Falha('electron-builder não encontrado. Rode "npm install" antes.');
@@ -146,7 +146,7 @@ function main() {
   const instaladaAntes = versaoInstalada(productName);
 
   console.log(
-    `Hub ${versaoAntiga} → ${versaoNova}` +
+    `Asgard ${versaoAntiga} → ${versaoNova}` +
       (instaladaAntes ? ` (instalado agora: ${instaladaAntes})` : ' (nenhuma instalação encontrada — vai instalar do zero)')
   );
 
@@ -169,7 +169,7 @@ function main() {
   try {
     const env = { ...process.env };
     // Herdada de terminal aberto dentro de um editor Electron, essa variável
-    // faria o Hub reaberto pelo instalador subir como Node puro, sem janela.
+    // faria o Asgard reaberto pelo instalador subir como Node puro, sem janela.
     delete env.ELECTRON_RUN_AS_NODE;
 
     // 2. Build, fora do projeto.
@@ -206,17 +206,17 @@ function main() {
     // 4. Instala por cima.
     fecharHubAberto(pastaInstalada);
 
-    etapa('Instalando por cima do Hub atual');
+    etapa('Instalando por cima do Asgard atual');
     // /S: sem telas.
     // --updated: modo atualização — mantém os atalhos, troca a pasta antiga de
     //   forma atômica (se algo estiver em uso, restaura e aborta) e nunca apaga
     //   os dados do app.
-    // --force-run: em modo silencioso o instalador não reabre o Hub sozinho.
+    // --force-run: em modo silencioso o instalador não reabre o Asgard sozinho.
     const instalacao = spawnSync(instalador, ['/S', '--updated', '--force-run'], { stdio: 'ignore', env });
     if (instalacao.status !== 0) {
       throw new Falha(
         `A instalação não foi: ${explicarSaidaDoInstalador(instalacao.status)}\n` +
-          `  O instalador está pronto em dist\\${nomeInstalador}. Feche o Hub e dê um duplo clique nele ` +
+          `  O instalador está pronto em dist\\${nomeInstalador}. Feche o Asgard e dê um duplo clique nele ` +
           '(clique normal, NÃO "executar como administrador": instalado no seu usuário, ele não precisa de elevação, ' +
           'e elevado ele grava atalho e registro no perfil do administrador).'
       );
@@ -231,7 +231,7 @@ function main() {
       );
     }
 
-    console.log(`\nPronto: Hub ${versaoNova} instalado e reaberto. Instalador guardado em dist\\${nomeInstalador}.`);
+    console.log(`\nPronto: Asgard ${versaoNova} instalado e reaberto. Instalador guardado em dist\\${nomeInstalador}.`);
   } finally {
     try {
       fs.rmSync(saida, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });

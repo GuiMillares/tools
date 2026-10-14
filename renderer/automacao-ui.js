@@ -39,7 +39,7 @@
     return e ? { motivo: textoEspera(e), cliente: !!e.cliente, pendencia: e.status === 'falhou' } : null;
   }
 
-  // Log: o terminal do Hub quando existir; senão, console.
+  // Log: o terminal do Asgard quando existir; senão, console.
   function log(msg, tipo) {
     try { if (typeof window.log === 'function') { window.log(msg, tipo); return; } } catch (e) {}
     console.log('[automação] ' + msg);
@@ -89,7 +89,7 @@
     if (typeof normalizeDomain !== 'function') faltam.push('normalizeDomain');
     if (typeof normalizarTemporario !== 'function') faltam.push('normalizarTemporario');
     if (faltam.length) return { ok: false, pulou: true, motivo: 'ferramenta Publicar MPI+ não carregada (' + faltam.join(', ') + ')' };
-    if (typeof pub !== 'undefined' && pub && (pub.emAndamento || pub.rodando)) return { ok: false, pulou: true, motivo: 'já há uma publicação em andamento no Hub; tento na próxima varredura' };
+    if (typeof pub !== 'undefined' && pub && (pub.emAndamento || pub.rodando)) return { ok: false, pulou: true, motivo: 'já há uma publicação em andamento no Asgard; tento na próxima varredura' };
     if (typeof bulkRodando !== 'undefined' && bulkRodando) return { ok: false, pulou: true, motivo: 'o Publicar em massa está rodando; tento na próxima varredura' };
     if (typeof state !== 'undefined' && !state.googleSaPath) return { ok: false, desistir: true, motivo: 'service account do Google não configurada (as tags precisam dela)' };
     const dom = normalizeDomain(p.dominio);
@@ -142,7 +142,7 @@
     pub.emAndamento = true;
     try {
       while (pub.etapa) {
-        if (typeof paradaAgora !== 'undefined' && paradaAgora) return { ok: false, motivo: 'parado pelo freio do Hub' };
+        if (typeof paradaAgora !== 'undefined' && paradaAgora) return { ok: false, motivo: 'parado pelo freio do Asgard' };
         const etapa = PUB_ETAPAS.find((e) => e.id === pub.etapa);
         if (!etapa) break;
 
@@ -174,7 +174,7 @@
         }
         const f = pub.feitas[antes];
         // Tudo feito menos o SSL (e, com ele, o Search Console e a tarefa), e
-        // o que falta é o DNS apontar — isso não depende do Hub (ADR-142):
+        // o que falta é o DNS apontar — isso não depende do Asgard (ADR-142):
         //   - DNS do cliente (ou fora do .br): o site vai para a lista de
         //     espera como "aguardando o cliente", sem prazo; o vigia confere
         //     a cada 30 min e termina quando apontar. A tarefa fica anotada e
@@ -218,8 +218,8 @@
   // Exposto para a tela e para os testes: a consulta à lista de espera.
   window.hubAutomacao = { emEspera, listaDeEspera };
   // Atalho para validar o bloqueio no painel MPI+ ao vivo (ex.: no console do
-  // Hub): hubBloquearPainel({ dominio, url|cnpj, acao:'bloquear'|'desbloquear' }).
-  // Loga o passo a passo no terminal do Hub.
+  // Asgard): hubBloquearPainel({ dominio, url|cnpj, acao:'bloquear'|'desbloquear' }).
+  // Loga o passo a passo no terminal do Asgard.
   window.hubBloquearPainel = async (p) => {
     try {
       const r = await window.api.bloquearPainel(p || {});

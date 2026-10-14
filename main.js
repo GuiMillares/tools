@@ -4,7 +4,7 @@ const fs = require('fs');
 const https = require('https');
 const tls = require('tls');
 const crypto = require('crypto');
-// Só as 6 APIs do Google que o Hub usa, cada uma no primeiro uso, em vez das
+// Só as 6 APIs do Google que o Asgard usa, cada uma no primeiro uso, em vez das
 // 335 do googleapis na abertura (ADR-107). Mesma cara e mesmo google.options().
 const { google } = require(path.join(__dirname, 'lib', 'google'));
 
@@ -95,7 +95,7 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
-// Uma instância por pasta de dados (ADR-088). Duas cópias do Hub no mesmo
+// Uma instância por pasta de dados (ADR-088). Duas cópias do Asgard no mesmo
 // perfil escrevem no mesmo hub-state.json, nos mesmos tokens criptografados e
 // na mesma sessão de navegador em disco (o painel MPI+ e o Registro.br), e
 // disputam a porta 1717 do login do Salesforce. A segunda abertura traz a
@@ -798,7 +798,7 @@ async function grantOwnerContainerAccess({ tagmanager, accountPath, containerId,
   // Ser admin DA CONTA não dá acesso ao container: no Tag Manager a permissão
   // de container (leitura / edição / aprovação / publicação) é por container,
   // e um admin sem ela abre o container novo em somente leitura. Era o que
-  // acontecia com bcrelatoriotags e ferramentasmpisolutions (ADR-139): o Hub
+  // acontecia com bcrelatoriotags e ferramentasmpisolutions (ADR-139): o Asgard
   // pulava este passo para admins. Agora a conta da marca sempre recebe
   // publicação no container, admin ou não.
   if (!atual) {
@@ -1180,7 +1180,7 @@ ipcMain.handle('google:createProject', async (event, { domain: dominioBruto, saP
             displayName: summary.displayName,
             properties: (summary.propertySummaries || []).length,
           });
-          // O Hub batiza a propriedade com o domínio, então reaproveitar sai de
+          // O Asgard batiza a propriedade com o domínio, então reaproveitar sai de
           // graça aqui, sem uma chamada a mais por propriedade (ADR-041).
           for (const ps of summary.propertySummaries || []) {
             gaTodasAsProps.push({
@@ -2200,7 +2200,7 @@ ipcMain.handle('searchconsole:prepare', async (event, payload) => {
       clearOauthToken(brand);
       const motivo = e?.response?.data?.error_description || 'Token has been expired or revoked';
       push(
-        `O Google não aceita mais a sessão de ${contaMarca} (invalid_grant: ${motivo}). Não é a API: é o login dessa conta no Hub, ` +
+        `O Google não aceita mais a sessão de ${contaMarca} (invalid_grant: ${motivo}). Não é a API: é o login dessa conta no Asgard, ` +
           `que foi revogado ou expirou. Reconecte ${contaMarca} em Configurações. Se isso volta a cada 7 dias, o app OAuth está em modo ` +
           '"Teste" no Google Cloud (Tela de consentimento OAuth): publicado ("Em produção"), o login para de expirar. ' +
           'Desta vez sigo pela service account.',
@@ -2352,7 +2352,7 @@ ipcMain.handle('planilha:ler', async (event, { nome, base64, texto }) => {
 });
 
 // Gera um .xlsx com cabeçalho e linhas e pergunta onde salvar (ADR-072). É o
-// caminho para o que sai do Hub e vai para outra equipe: a lista dos domínios
+// caminho para o que sai do Asgard e vai para outra equipe: a lista dos domínios
 // cujo DNS não é nosso, por exemplo, que o atendimento leva ao cliente.
 function anexarAba(wb, colunas, linhas, aba) {
   const XLSX = require('xlsx');
@@ -3367,7 +3367,7 @@ handleNoPainel('doutor:bloquear', async (event, { dominio: bruto, marca, acao = 
       const bkp = readDoutorContatos()[dominio];
       const campos = bkp && (bkp.campos || bkp.fones);
       if (!campos || !Object.values(campos).some((v) => String(v || '').trim())) {
-        throw new Error('não tenho os contatos guardados desta empresa para restaurar (foi bloqueada fora do Hub ou antes desta versão). Reponha os telefones/e-mail à mão no /doutor.');
+        throw new Error('não tenho os contatos guardados desta empresa para restaurar (foi bloqueada fora do Asgard ou antes desta versão). Reponha os telefones/e-mail à mão no /doutor.');
       }
       push(`Restaurando os contatos de "${alvo.nome}".`, 'cmd');
       const r = await rodarNoPainel(win, jsDoutorRestaurarSalvar(campos));
@@ -3380,7 +3380,7 @@ handleNoPainel('doutor:bloquear', async (event, { dominio: bruto, marca, acao = 
       if (r.erro) throw new Error(r.erro);
       // Guarda telefones e e-mails originais (criptografado) para o desbloquear reverter.
       if (r.antes && Object.values(r.antes).some((v) => String(v || '').trim())) {
-        if (!salvarDoutorContatos(dominio, r.antes)) push('Aviso: não consegui guardar os contatos (criptografia indisponível); o desbloquear pelo Hub não terá o que restaurar.', 'warn');
+        if (!salvarDoutorContatos(dominio, r.antes)) push('Aviso: não consegui guardar os contatos (criptografia indisponível); o desbloquear pelo Asgard não terá o que restaurar.', 'warn');
       }
       await salvarEsperar();
     }
@@ -3631,7 +3631,7 @@ async function painelConferirVinculo(win, push) {
     if (botaoGa) {
       const dr = window.Alpine.$data(botaoGa.closest('[x-data]'));
       // O contrato chega depois e troca o config inteiro (ADR-050). Ler antes
-      // dele é ler o vazio da partição do Hub e acusar "incompleto" à toa:
+      // dele é ler o vazio da partição do Asgard e acusar "incompleto" à toa:
       // connectionOptions cheio prova que o init() rodou; o remotePayload é o
       // contrato que chegou (applyRemoteData guarda ele); sem ele, vale o
       // loadingRemoteContract === false como antes.
@@ -3879,7 +3879,7 @@ async function painelSincronizarRelatorio(win, { contaEmail, gaAccountKey, gaPro
         return {
           erro: 'este projeto está marcado como cliente legado e o painel exige o "External ID (sistema legado)", ' +
             'que normalmente vem preenchido do servidor, aqui veio vazio. Confira o terceiro cartão da aba ' +
-            'Relatório no painel; se ele estiver vazio lá também, preencha o External ID no Hub',
+            'Relatório no painel; se ele estiver vazio lá também, preencha o External ID no Asgard',
           estadoDepois: JSON.parse(JSON.stringify(d.config || {})),
           legado: true,
           faltaExternalId: true,
@@ -4025,7 +4025,7 @@ handleNoPainel('painel:sync', async (event, payload) => {
         }
         if (e.detalhe?.faltaExternalId) {
           push(
-            'Painel: esse projeto é cliente legado. Preencha "External ID (sistema legado)" no Hub, ' +
+            'Painel: esse projeto é cliente legado. Preencha "External ID (sistema legado)" no Asgard, ' +
               'é o mesmo valor que você digitaria no terceiro cartão da aba Relatório.',
             'warn'
           );
@@ -4335,7 +4335,7 @@ const executarPainelBloqueio = async (event, { dominio: bruto, cnpj, url, razao:
     if (desbloquear) {
       const bkp = readPainelContatos()[dominio];
       if (!bkp || !bkp.dados || !((bkp.dados.addresses || []).length)) {
-        throw new Error('não tenho o backup dos contatos deste cliente para restaurar (foi bloqueado fora do Hub?). Reponha à mão no painel.');
+        throw new Error('não tenho o backup dos contatos deste cliente para restaurar (foi bloqueado fora do Asgard?). Reponha à mão no painel.');
       }
       push('Restaurando os contatos originais no painel…', 'cmd');
       const r = await rodarNoPainel(win, jsPainelEscreverSalvar(bkp.dados));
@@ -4355,7 +4355,7 @@ const executarPainelBloqueio = async (event, { dominio: bruto, cnpj, url, razao:
       } else if (jaTemBackup) {
         push(`Endereços já censurados; mantendo o backup original guardado e completando o WhatsApp${whatsCensurado ? '' : ' (Integrações)'}.`, 'info');
       } else {
-        push('Atenção: os endereços já estão censurados e não tenho backup deles (bloqueado fora do Hub?). Vou completar o bloqueio, mas o desbloqueio não terá os endereços originais.', 'warn');
+        push('Atenção: os endereços já estão censurados e não tenho backup deles (bloqueado fora do Asgard?). Vou completar o bloqueio, mas o desbloqueio não terá os endereços originais.', 'warn');
       }
 
       const tentar = async (modo) => {
@@ -4459,7 +4459,7 @@ async function painelAprovar(win, push) {
 
 // O servidor de produção é o que o PAINEL lista na hora (ADR-140): com `tipo`,
 // só os de produção; sem (painel antigo), todos. Um só: é ele. Dois ou mais e
-// ninguém escolheu (`servidorId` vazio): devolve a lista para o Hub perguntar.
+// ninguém escolheu (`servidorId` vazio): devolve a lista para o Asgard perguntar.
 // A configuração não decide mais — em 05/10/2026 o servidor 11 configurado
 // tinha sumido do painel e toda publicação falhava.
 async function painelPublicarProducao(win, { dominio, servidorId }, push) {
@@ -4861,7 +4861,7 @@ async function registrobrAbrir(empresa, dominio, push) {
     // /v2/ajax/checklogin, e foi esse piscar que o código antigo leu como
     // "saiu da tela de login". Daqui em diante a prova é GET /v2/ajax/domains
     // responder 200. CAPTCHA (Turnstile) ou segundo fator: a janela é mostrada
-    // para a pessoa resolver; o Hub não contorna nenhum dos dois.
+    // para a pessoa resolver; o Asgard não contorna nenhum dos dois.
     const inicio = Date.now();
     let mostrada = false;
     let estado = null;
@@ -6087,7 +6087,7 @@ ipcMain.handle('ms:login', async (event) => {
           return;
         }
 
-        res.end('Login concluído! Pode fechar esta aba e voltar pro Hub.');
+        res.end('Login concluído! Pode fechar esta aba e voltar pro Asgard.');
 
         const tokenRes = await msRequest('POST', `${msAuthority(cfg.tenant)}/oauth2/v2.0/token`, {
           form: {
@@ -6194,7 +6194,7 @@ const SF_PADRAO = {
 };
 
 // Assuntos padrão antigos que podem ter ficado gravados no config de quem já
-// usou o Hub (o valor padrão vazava para o arquivo ao salvar). Se o que está
+// usou o Asgard (o valor padrão vazava para o arquivo ao salvar). Se o que está
 // salvo é um deles, é porque ninguém personalizou de verdade — troco pelo novo
 // padrão sozinho, para o título mudar sem o Guilherme ter que mexer nas
 // configurações (ADR-090).
@@ -6410,7 +6410,7 @@ async function sfStatusConcluida(sf) {
 // ---------- Log em arquivo e rodada em massa que sobrevive a um reinício (ADR-096) ----------
 //
 // O Windows reinicia ou encerra a sessão de madrugada (atualização, política da
-// TI) e fecha tudo, o Hub junto. O log e o progresso da rodada moravam só na
+// TI) e fecha tudo, o Asgard junto. O log e o progresso da rodada moravam só na
 // memória: sumiam, e as tarefas do Salesforce, que saem no fim, nunca saíam.
 // Agora o log vai para um arquivo por dia, e o estado da rodada é salvo a cada
 // site, para retomar de onde parou.
@@ -6486,7 +6486,7 @@ ipcMain.handle('rodada:apagar', () => {
   }
 });
 
-// A conferência dos vínculos (ADR-145) também sobrevive a fechar o Hub: a
+// A conferência dos vínculos (ADR-145) também sobrevive a fechar o Asgard: a
 // lista e os resultados ficam num arquivo próprio, gravados a cada cliente,
 // para a segunda passada e o vínculo dos incompletos não dependerem de a
 // janela ter ficado aberta. Mesma escrita atômica da rodada em massa.
@@ -6525,10 +6525,10 @@ ipcMain.handle('vinculos:apagar', () => {
 // ---------- Planilha do Relatório (ADR-148) ----------
 //
 // A planilha "Domínios e Analytics" (abas Busca e MPI, as 19 colunas do
-// Relatório do painel) preenchida pelo Hub: Salesforce, o site do cliente,
+// Relatório do painel) preenchida pelo Asgard: Salesforce, o site do cliente,
 // o geral.php e o Google. A rodada é da tela (lib/relatorio-rodada.js, um
 // item por vez, salva em arquivo); aqui ficam as fontes (lib/relatorio-fontes.js)
-// montadas com as sessões do Hub, e o estado salvo.
+// montadas com as sessões do Asgard, e o estado salvo.
 const relatorioPath = () => path.join(app.getPath('userData'), 'relatorio-planilha.json');
 
 ipcMain.handle('relatorio:salvar', (event, estado) => {
@@ -6620,7 +6620,7 @@ function criarFontesDoHub() {
   const mpisolutions = String(contas.mpisolutions || '').toLowerCase();
   return criarFontes({
     sf, google, authSa, authDoSlot, slots, bitbucket, painel: null,
-    // A sessão principal (quem usa o Hub) lê os acessos das contas do GA4 em
+    // A sessão principal (quem usa o Asgard) lê os acessos das contas do GA4 em
     // que a service account não administra.
     authPrincipal: async () => { try { return loadUserOauthClient(oauthCfg.clientId, oauthCfg.clientSecret, null, { global: false }); } catch (e) { return null; } },
     cache: { ler: readAnalyticsStreamsCache, gravar: saveAnalyticsStreamsCache },
@@ -6760,7 +6760,7 @@ ipcMain.handle('salesforce:conectar', async (event) => {
           finish({ ok: false, error: 'O retorno do login não bateu com o pedido (state diferente). Tente de novo.' });
           return;
         }
-        res.end('Salesforce conectado! Pode fechar esta aba e voltar pro Hub.');
+        res.end('Salesforce conectado! Pode fechar esta aba e voltar pro Asgard.');
 
         const tokenRes = await sfRequest('POST', `${loginUrl}/services/oauth2/token`, {
           form: {
@@ -7058,7 +7058,7 @@ ipcMain.handle('salesforce:criarTarefaNoCaso', async (event, opcoes = {}) => {
     push('Sem domínio para essa linha.', 'error');
     return { ok: false, error: 'Sem domínio.', linkInvalido: true, log };
   }
-  // Com "Link do caso" na planilha, ele manda. Sem, o Hub procura o caso
+  // Com "Link do caso" na planilha, ele manda. Sem, o Asgard procura o caso
   // sozinho pelo padrão (ADR-097).
   let casoDoLink = null;
   if (String(casoLink || '').trim()) {
@@ -7278,7 +7278,7 @@ ipcMain.handle('salesforce:ouvidoria', async (event, { dominio, razao } = {}) =>
 // ---------- AppSheet "Backup Informações Busca Cliente" (ADR-147) ----------
 //
 // Quando o Salesforce não acha a conta pelo domínio, a razão social pode
-// estar no app do AppSheet (view "Informações Cliente"). Não há API: o Hub
+// estar no app do AppSheet (view "Informações Cliente"). Não há API: o Asgard
 // abre a view numa janela própria (sessão persistente; o login é com o
 // Google, feito pela pessoa uma vez, na janela), digita o domínio na busca e
 // lê o que a página mostra; quem decide a razão social é lib/appsheet.js
@@ -7291,7 +7291,7 @@ let appsheetJanela = null; // { win, timer }
 
 // O Google recusa login num navegador que se apresenta como Electron: a
 // janela se apresenta como o Chrome que ela é.
-const uaSemElectron = (ua) => String(ua || '').replace(/\s*(Electron|pr-merge-tool|PR Merge Tool|Hub)\/[\d.]+/gi, '').replace(/\s{2,}/g, ' ').trim();
+const uaSemElectron = (ua) => String(ua || '').replace(/\s*(Electron|pr-merge-tool|PR Merge Tool|Hub|Asgard)\/[\d.]+/gi, '').replace(/\s{2,}/g, ' ').trim();
 const appsheetEhLogin = (url) => /appsheet\.com\/Account\/Login|accounts\.google\.com/i.test(String(url || ''));
 
 function appsheetDescartarJanela() {
@@ -7751,7 +7751,7 @@ ipcMain.handle('dns:backup', async (event, { dominio: bruto, conteudo } = {}) =>
     fs.mkdirSync(dir, { recursive: true });
     const seguro = dominio.replace(/[^a-z0-9.\-]/gi, '_');
     const destino = path.join(dir, `${seguro}.txt`);
-    const cabecalho = `Backup DNS de ${dominio}\nGerado pelo Hub em ${new Date().toLocaleString('pt-BR')}\n\n`;
+    const cabecalho = `Backup DNS de ${dominio}\nGerado pelo Asgard em ${new Date().toLocaleString('pt-BR')}\n\n`;
     fs.writeFileSync(destino, cabecalho + String(conteudo || ''), 'utf-8');
     return { ok: true, caminho: destino };
   } catch (e) {
@@ -8097,7 +8097,7 @@ const PLANILHA_COLUNAS = [
   'Exclusão arquivos .htaccess e robots.txt', 'Apontamento de Domínio no Cloudflare.com', 'Apontamento de Domínio no Registro.BR',
   'Site publicado e 100% funcional?', 'Existem correções pendentes pela equipe de Produção?',
 ];
-// A aba da Busca Cliente se chama "Busca Cliente" na planilha — e o Hub
+// A aba da Busca Cliente se chama "Busca Cliente" na planilha — e o Asgard
 // gravava "BUSCA", que era o nome antigo. O Graph responde 404 para aba que
 // não existe, e a publicação terminava sem linha. Em vez de fixar um nome, ele
 // pergunta à planilha quais abas existem e casa por aproximação (ADR-069).
@@ -8300,7 +8300,7 @@ ipcMain.handle('planilha:registrar', async (event, { aba, linha, pularSeExistir 
     push(`Planilha: ${item.body.name}`, 'info');
 
     // O nome da aba vem da planilha, não do código: quem renomeia uma aba não
-    // tem como saber que o Hub tinha o nome antigo escrito dentro dele.
+    // tem como saber que o Asgard tinha o nome antigo escrito dentro dele.
     push('GET as abas da planilha', 'cmd');
     const abas = await graph('GET', `/drives/${driveId}/items/${itemId}/workbook/worksheets?$select=name`);
     if (abas.status !== 200) throw new Error(`Não consegui listar as abas da planilha (${abas.status}): ${msError(abas)}`);
@@ -8681,7 +8681,7 @@ ipcMain.handle('oauth:login', async (event, { clientId, clientSecret, slot }) =>
           return;
         }
 
-        res.end('Login concluído! Pode fechar essa aba e voltar pro Hub.');
+        res.end('Login concluído! Pode fechar essa aba e voltar pro Asgard.');
 
         const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
         const { tokens } = await oauth2Client.getToken(code);
@@ -8994,7 +8994,7 @@ ipcMain.handle('sistema:telemetria', () => {
   }
 });
 
-// Comando manual no terminal do Hub. Roda no shell do Windows, um por vez,
+// Comando manual no terminal do Asgard. Roda no shell do Windows, um por vez,
 // e a saída vai chegando por evento, linha a linha, como num terminal de
 // verdade. É para teste rápido (nslookup, ping, curl, git) sem sair do app.
 let comandoAtual = null;
@@ -9035,7 +9035,7 @@ ipcMain.handle('terminal:executar', (event, { comando, id } = {}) => {
   return { ok: true, pid: filho.pid };
 });
 
-// Abre um link no navegador padrão. Só http(s), e só para o que o Hub
+// Abre um link no navegador padrão. Só http(s), e só para o que o Asgard
 // mesmo montou (o link da tarefa do Salesforce).
 ipcMain.handle('sistema:abrirLink', (event, { url } = {}) => {
   try {
@@ -9057,13 +9057,13 @@ ipcMain.handle('terminal:parar', () => {
   return { ok: true, parou: true };
 });
 
-// ---------- Git Bash dentro do Hub (ADR-128) ----------
+// ---------- Git Bash dentro do Asgard (ADR-128) ----------
 // Um bash de verdade, o do Git for Windows, num pseudoterminal do próprio
 // Windows (ConPTY, pelo node-pty): prompt colorido, setas, Tab, histórico e
 // programas interativos, como o terminal do Antigravity. É outro terminal, ao
 // lado do de atividade: aquele roda um comando por vez e mostra a saída como
 // linhas do log; este é o shell inteiro. Um por janela, que morre com ela e
-// com o Hub. O node-pty só carrega quando o bash abre.
+// com o Asgard. O node-pty só carrega quando o bash abre.
 
 // Onde está o bash.exe: nas pastas de instalação do Git (a do usuário, em
 // AppData\Local\Programs, é a desta máquina) e, se não, ao lado do git do PATH.
@@ -9112,7 +9112,7 @@ ipcMain.handle('bash:abrir', (event, { cols, rows } = {}) => {
     rows: tam(rows, 24),
     cwd,
     // CHERE_INVOKING: o /etc/profile do Git fica na pasta em que abriu.
-    env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', CHERE_INVOKING: '1', TERM_PROGRAM: 'hub' },
+    env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', CHERE_INVOKING: '1', TERM_PROGRAM: 'asgard' },
   };
   // O ConPTY que vem com o node-pty (o conpty.dll do Windows Terminal), não o
   // do Windows: com o do Windows, cada passo de redimensionar redesenhava a
@@ -9150,7 +9150,7 @@ ipcMain.handle('bash:abrir', (event, { cols, rows } = {}) => {
     if (!sessao.timer) sessao.timer = setTimeout(despejar, 8);
   });
   p.onExit(({ exitCode }) => {
-    if (bashes.get(wc.id) !== sessao) return; // fechado pelo Hub: ninguém espera o aviso
+    if (bashes.get(wc.id) !== sessao) return; // fechado pelo Asgard: ninguém espera o aviso
     if (sessao.timer) { clearTimeout(sessao.timer); despejar(); }
     bashes.delete(wc.id);
     if (sessao.soltar) sessao.soltar();
@@ -9210,7 +9210,7 @@ ipcMain.handle('salesforce:tarefas', async () => {
       const colunas = await sfColunasDeStatus(sf);
       push("SOQL filas de Deploy (Group WHERE Type = 'Queue')", 'cmd');
       const grupos = await sf.consultar("SELECT Id, Name, DeveloperName FROM Group WHERE Type = 'Queue' AND (Name LIKE '%Deploy%' OR Name LIKE '%Publica%')");
-      // Só as filas das marcas que o Hub atende (Busca Cliente e MPI
+      // Só as filas das marcas que o Asgard atende (Busca Cliente e MPI
       // Solutions). As outras (Ideal Marketing…) existem na org, mas não são
       // do Guilherme, então não entram na home nem no Kanban.
       const filas = grupos.map((g) => ({
@@ -9218,7 +9218,7 @@ ipcMain.handle('salesforce:tarefas', async () => {
         nome: g.Name,
         marca: /busca/i.test(g.Name) ? 'bc' : /mpi/i.test(g.Name) ? 'mpisolutions' : null,
       })).filter((f) => f.marca);
-      for (const g of grupos) if (!filas.some((f) => f.id === g.Id)) push(`Fila ignorada (não é de uma marca do Hub): ${g.Name}`, 'info');
+      for (const g of grupos) if (!filas.some((f) => f.id === g.Id)) push(`Fila ignorada (não é de uma marca do Asgard): ${g.Name}`, 'info');
       const donos = [eu.id, ...filas.map((f) => f.id)].map((id) => `'${escaparSoql(id)}'`).join(', ');
       push(`SOQL tarefas abertas de ${filas.length} fila(s) e suas`, 'cmd');
       const abertas = await sf.consultar(`SELECT ${SF_CAMPOS_TAREFA_KANBAN} FROM Task WHERE IsClosed = false AND OwnerId IN (${donos}) ORDER BY ActivityDate ASC NULLS LAST, CreatedDate DESC LIMIT 400`);
@@ -9322,7 +9322,7 @@ ipcMain.handle('salesforce:metricas', async (event, { dias } = {}) => {
   }
 });
 
-// Comparação antes/depois do Hub nas publicações MPI+ (ADR-146). SÓ LEITURA:
+// Comparação antes/depois do Asgard nas publicações MPI+ (ADR-146). SÓ LEITURA:
 // uma SOQL das tarefas de publicação (qualquer dono, para a fila inteira servir
 // de contexto) desde o começo do histórico, as mesmas regras do
 // salesforce:metricas (Concluído, CompletedDateTime, cancelada fora) e a conta
@@ -9333,7 +9333,7 @@ ipcMain.handle('salesforce:comparativoMpiPlus', async (event, { corte, serieDesd
   const log = [];
   const push = (message, type = 'info') => log.push({ message, type });
   const dataCorte = String(corte || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataCorte)) return { ok: false, error: 'Informe o corte como AAAA-MM-DD (o dia em que o Hub passou a publicar MPI+).', log };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataCorte)) return { ok: false, error: 'Informe o corte como AAAA-MM-DD (o dia em que o Asgard passou a publicar MPI+).', log };
   const desde = /^\d{4}-\d{2}-\d{2}$/.test(String(historicoDesde || '')) ? historicoDesde : '2025-09-01';
   if (salvarEm !== undefined && (typeof salvarEm !== 'string' || !path.isAbsolute(salvarEm))) return { ok: false, error: 'salvarEm precisa ser uma pasta com caminho completo (ex.: C:\\Users\\eu\\Documentos).', log };
   try {
@@ -9366,8 +9366,8 @@ ipcMain.handle('salesforce:comparativoMpiPlus', async (event, { corte, serieDesd
       const r = Comparativo.comparar(tarefas, { corte: dataCorte, agora: new Date(), euId: eu.id, serieDesde: serieDesde || undefined });
       const resultado = { geradoEm: new Date().toISOString(), eu: { id: eu.id, nome: eu.nome }, corte: dataCorte, historicoDesde: desde, comConclusao, filtros: { soql: `SELECT ${campos(comConclusao)} FROM Task WHERE ${where} ORDER BY CreatedDate ASC`, concluida: "IsClosed = true AND Status <> Cancelada, pela CompletedDateTime", mpiplus: "assunto 'Publicação (Troca de DNS)…' e (MPI+ no assunto ou *.mpitemporario.com.br no comentário, exceto producao.)", sla: 'dias úteis criação→conclusão, fórmula do relatório "Done -- Deploy - BC / MPI" (ADR-143)', minhas: `OwnerId = ${eu.id}` }, ...r };
       // Onde gravar: a pasta pedida (salvarEm), senão docs/metricas do
-      // repositório (quando o Hub roda do código), senão a pasta de dados do
-      // app: o Hub instalado roda de dentro do app.asar, que é só leitura.
+      // repositório (quando o Asgard roda do código), senão a pasta de dados do
+      // app: o Asgard instalado roda de dentro do app.asar, que é só leitura.
       const candidatos = [salvarEm, path.join(__dirname, 'docs', 'metricas'), path.join(app.getPath('userData'), 'metricas')].filter(Boolean);
       const nomeArquivo = `comparativo-mpiplus-${dataCorte}.json`;
       const texto = JSON.stringify(resultado, null, 2);
@@ -9603,7 +9603,7 @@ let ponteSeq = 0;
 function executarNoRenderer(driver, payload) {
   return new Promise((resolve) => {
     const win = janelaPrincipal();
-    if (!win) { resolve({ ok: false, pulou: true, motivo: 'a janela do Hub não está aberta' }); return; }
+    if (!win) { resolve({ ok: false, pulou: true, motivo: 'a janela do Asgard não está aberta' }); return; }
     const id = `ponte-${++ponteSeq}`;
     pontePendentes.set(id, { resolve, driver, quando: Date.now() });
     try { win.webContents.send('escritorio:executar', { id, driver, payload }); } catch (e) {
@@ -9622,7 +9622,7 @@ ipcMain.handle('escritorio:resultado', (event, { id, resultado } = {}) => {
 ipcMain.handle('escritorio:rendererPronto', () => {
   for (const [id, p] of pontePendentes) {
     pontePendentes.delete(id);
-    p.resolve({ ok: false, motivo: `o Hub recarregou no meio da ${p.driver}; o estado da publicação ficou na tela` });
+    p.resolve({ ok: false, motivo: `o Asgard recarregou no meio da ${p.driver}; o estado da publicação ficou na tela` });
   }
   return { ok: true };
 });

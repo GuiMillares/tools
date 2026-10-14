@@ -1,7 +1,7 @@
 {
   "name": "pr-merge-tool",
   "version": "1.0.82",
-  "description": "Ferramenta local para revisar e mergear PRs do Bitbucket Cloud sem passar pela interface web",
+  "description": "Asgard: o hub de automações da agência (Bitbucket, Google, Salesforce, Cloudflare, Registro.br, painéis MPI+)",
   "main": "main.js",
   "author": "Guilherme",
   "license": "UNLICENSED",
@@ -29,7 +29,7 @@
   },
   "build": {
     "appId": "com.castrotech.prmergetool",
-    "productName": "PR Merge Tool",
+    "productName": "Asgard",
     "npmRebuild": false,
     "asarUnpack": [
       "node_modules/node-pty/**"

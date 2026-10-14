@@ -308,8 +308,8 @@ let logSeq = 0;
 
 // A tela guarda só as últimas linhas (ADR-109). Com tudo, a janela crescia
 // ~13 MB por mil linhas e cada log() ficava um pouco mais lento a cada linha,
-// por quantos dias o Hub ficasse aberto. O arquivo do dia em
-// Documentos\Hub\logs guarda tudo (ADR-096), e o buffer acima já parava aqui.
+// por quantos dias o Asgard ficasse aberto. O arquivo do dia em
+// Documentos\Asgard\logs guarda tudo (ADR-096), e o buffer acima já parava aqui.
 // O corte é em lote: a tela vai até LOG_TELA_MAX + LOG_TELA_FOLGA e volta a
 // LOG_TELA_MAX de uma vez. Tirar uma linha do topo a cada log() obriga o
 // Chromium a reposicionar todas as de baixo e triplicava o custo de cada
@@ -384,8 +384,8 @@ function log(message, type = 'info', { arquivo = true } = {}) {
   if (typeof avisarLinhaNova === 'function') avisarLinhaNova(type);
 }
 
-// Tudo que aparece no terminal vai também para Documentos\Hub\logs, um arquivo
-// por dia. Se o Windows fechar o Hub de madrugada, o que aconteceu até ali
+// Tudo que aparece no terminal vai também para Documentos\Asgard\logs, um arquivo
+// por dia. Se o Windows fechar o Asgard de madrugada, o que aconteceu até ali
 // fica gravado (ADR-096). Junta as linhas por meio segundo para não abrir o
 // arquivo a cada linha.
 const logFilaArquivo = [];
@@ -472,7 +472,7 @@ function perguntarNoTerminal(mensagem, opcoes) {
   });
 }
 
-// Pergunta com resposta escrita, no terminal (o link do painel quando o Hub
+// Pergunta com resposta escrita, no terminal (o link do painel quando o Asgard
 // não acha o cliente, ADR-098). validar(texto) devolve '' quando serve, ou o
 // motivo, que aparece embaixo do campo sem fechar a pergunta. Devolve o texto,
 // ou null quando a pessoa cancela.
@@ -740,7 +740,7 @@ function buscarNoTopo(texto) {
     executarNoTerminal(`whois ${dominio}`);
     return;
   }
-  log(`Nada no Hub com "${String(texto).trim()}". Digite o nome de um módulo (publicar, kanban, ouvidoria…) ou um domínio.`, 'warn');
+  log(`Nada no Asgard com "${String(texto).trim()}". Digite o nome de um módulo (publicar, kanban, ouvidoria…) ou um domínio.`, 'warn');
 }
 
 // Telemetria de verdade (ADR-115): memória e CPU somando os processos do
@@ -774,7 +774,7 @@ function iniciarTopbarLive() {
   window.addEventListener('offline', atualizarTopbar);
   // Sem foco, os indicadores de "ocupado" param de piscar (ADR-126): mesmo em
   // degraus, cada piscada redesenha a janela, e com o foco em outro programa
-  // ninguém está olhando para o Hub.
+  // ninguém está olhando para o Asgard.
   const marcarFoco = () => document.documentElement.classList.toggle('sem-foco', !document.hasFocus());
   window.addEventListener('focus', marcarFoco);
   window.addEventListener('blur', marcarFoco);
@@ -785,14 +785,14 @@ function iniciarTopbarLive() {
 
 // O terminal aceita comando digitado, para testar direto dali: nslookup,
 // ping, curl, git… rodam no shell do Windows e a saída chega linha a linha.
-// Alguns são do próprio Hub (dns, whois, limpar, ajuda), porque o Windows não
-// tem whois e o Hub já sabe consultar.
+// Alguns são do próprio Asgard (dns, whois, limpar, ajuda), porque o Windows não
+// tem whois e o Asgard já sabe consultar.
 let comandoRodando = null;
 let cancelarEscutaComando = null;
 const SHELL_MAX_LINHAS = 400;
 
 const AJUDA_TERMINAL = [
-  'Comandos do Hub: dns <domínio> · whois <domínio> · limpar · parar · ajuda',
+  'Comandos do Asgard: dns <domínio> · whois <domínio> · limpar · parar · ajuda',
   'Qualquer outra coisa roda no shell do Windows: nslookup, ping, tracert, curl, git…',
   'Os atalhos (#) preenchem o comando com o domínio da tela e já executam.',
 ];
@@ -898,7 +898,7 @@ async function executarNoTerminal(entrada) {
   }
 }
 
-// dns/whois pelo próprio Hub (mesma consulta da tela inicial), impressos no
+// dns/whois pelo próprio Asgard (mesma consulta da tela inicial), impressos no
 // terminal em vez do cartão.
 async function consultarDnsNoTerminal(dominio, comWhois) {
   log(`${comWhois ? 'whois' : 'dns'} ${dominio}`, 'cmd');
@@ -978,9 +978,9 @@ function renderAtalhosTerminal() {
   el.termAtalhos.innerHTML = atalhosDaTela().map((a) => `<button class="term-chip" data-atalho="${escapeHtml(a.rotulo)}">${escapeHtml(a.rotulo)}</button>`).join('');
   el.termAtalhos.querySelectorAll('[data-atalho]').forEach((b) => b.addEventListener('click', () => executarNoTerminal(b.dataset.atalho)));
   if (el.termPrompt) {
-    const nome = primeiroNome(hubUsuario || nomeDoEmailLocal(state.creds?.email) || 'hub').toLowerCase();
+    const nome = primeiroNome(hubUsuario || nomeDoEmailLocal(state.creds?.email) || 'asgard').toLowerCase();
     const m = MODULES.find((x) => x.id === state.view);
-    el.termPrompt.textContent = `${nome}@hub:~/${m && m.id !== 'home' ? m.id : ''}$`;
+    el.termPrompt.textContent = `${nome}@asgard:~/${m && m.id !== 'home' ? m.id : ''}$`;
   }
 }
 
@@ -1359,7 +1359,7 @@ async function carregarCredenciaisDaAuditoria() {
   }
 }
 
-// "Testar todas": o que o Hub sabe conferir de verdade, cada um no terminal.
+// "Testar todas": o que o Asgard sabe conferir de verdade, cada um no terminal.
 async function testarCredenciais() {
   log('Conferindo as credenciais desta máquina…', 'cmd');
   try { const r = await window.api.statusCredenciais(); if (r && r.ok) { hubCredenciais = r; renderCfgAudit(); for (const i of r.itens) log(`${i.nome}: ${i.ok ? 'ok' : 'não configurado'}${i.detalhe ? ` (${i.detalhe})` : ''}`, i.ok ? 'info' : 'warn'); } } catch (e) {}
@@ -1424,7 +1424,7 @@ function renderDoutorTool() {
     <div class="btn-meta"><span>timeout: 45s</span><span>idempotente (já no estado pedido = nada a fazer)</span></div>
     <div id="doutorResultado"></div>
     </div>
-    ${infoBoxHtml('<p>O Hub abre <strong>https://&lt;domínio&gt;/doutor/</strong>, entra com a credencial da marca (uma senha só, configurada em Configurações), acha a empresa do cliente e <strong>esvazia os telefones/WhatsApp no cadastro e salva</strong> — é isso que tira o contato do site. Ao bloquear, guarda os números (criptografados) para o desbloquear repor. O painel costuma responder <strong>504</strong> e concluir mesmo assim; o Hub confere relendo o cadastro, não pelo 504.</p><p>Com o link da tarefa preenchido, ao terminar ele conclui a tarefa no Salesforce e comenta <strong>"Contatos removidos"</strong> ao autor. Se já estiver no estado pedido, não faz nada.</p>')}
+    ${infoBoxHtml('<p>O Asgard abre <strong>https://&lt;domínio&gt;/doutor/</strong>, entra com a credencial da marca (uma senha só, configurada em Configurações), acha a empresa do cliente e <strong>esvazia os telefones/WhatsApp no cadastro e salva</strong> — é isso que tira o contato do site. Ao bloquear, guarda os números (criptografados) para o desbloquear repor. O painel costuma responder <strong>504</strong> e concluir mesmo assim; o Asgard confere relendo o cadastro, não pelo 504.</p><p>Com o link da tarefa preenchido, ao terminar ele conclui a tarefa no Salesforce e comenta <strong>"Contatos removidos"</strong> ao autor. Se já estiver no estado pedido, não faz nada.</p>')}
     <div class="stat-grid" id="doutorStats"></div>
   `;
   document.getElementById('backToHub').addEventListener('click', goHome);
@@ -1445,7 +1445,7 @@ function renderDoutorStats() {
   const u = doutorEstado.ultimo;
   const ultimo = !u
     ? statCardHtml({ rotulo: 'Último estado', titulo: 'Nenhuma ação nesta sessão', dot: 'off', sub: 'o resultado aparece aqui e no terminal', subCls: 'dim' })
-    : statCardHtml({ rotulo: 'Último estado', titulo: u.titulo, dot: u.ok ? '' : u.incerto ? 'warn' : 'err', sub: u.sub || '', subCls: u.ok ? '' : 'warn', foot: `há pouco via Hub` });
+    : statCardHtml({ rotulo: 'Último estado', titulo: u.titulo, dot: u.ok ? '' : u.incerto ? 'warn' : 'err', sub: u.sub || '', subCls: u.ok ? '' : 'warn', foot: `há pouco via Asgard` });
   const cred = (r) => statCardHtml({ rotulo: 'Credencial ativa', titulo: marca, dot: r && r.temSenha ? '' : 'off', sub: r && r.temSenha ? 'chave criptografada OK' : 'sem senha do /doutor nas configurações', subCls: r && r.temSenha ? '' : 'warn', foot: (r && (doutorEstado.marca === 'bc' ? r.emailBusca : r.emailMpi)) || 'e-mail não configurado' });
   wrap.innerHTML = cred(null) + ultimo;
   if (window.api.doutorStatus) window.api.doutorStatus().then((r) => { if (document.getElementById('doutorStats')) wrap.innerHTML = cred(r) + ultimo; }).catch(() => {});
@@ -1521,7 +1521,7 @@ function renderOuvidoriaTool() {
     </label>
     </div>
     <div class="sec anim-in">
-      <div class="sec-head"><span class="sec-title">O que o Hub faz com cada domínio</span></div>
+      <div class="sec-head"><span class="sec-title">O que o Asgard faz com cada domínio</span></div>
       <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Procura a conta no <strong>Salesforce</strong> pelo domínio (Website, caso, contato, tarefa de publicação)</span></label>
       <label class="checkbox-field"><input type="checkbox" id="ouvAppSheet" ${ouvEstado.usarAppSheet ? 'checked' : ''} /><span>Não achando, procura o domínio no <strong>AppSheet</strong> (Backup Informações), pega a <strong>razão social</strong> e procura a conta por ela</span></label>
       <label class="checkbox-field"><input type="checkbox" checked disabled /><span>Na conta, lê a aba <strong>Contratos</strong>: <strong>Ativo</strong> (com o link da conta) ou <strong>Desativado</strong></span></label>
@@ -1901,7 +1901,7 @@ async function exportarQuando() {
 // nada é gravado no painel. O veredito é do lib/vinculos (puro, testado); o
 // resultado sai em .xlsx (Resumo + Clientes + Pendências) para apresentar.
 //
-// Sem link do painel na linha, o Hub acha o contrato pela razão social
+// Sem link do painel na linha, o Asgard acha o contrato pela razão social
 // (ADR-098) e, com mais de um contrato, fica com o publicado no domínio da
 // planilha (a URL de produção que o painel informa, ADR-144).
 
@@ -1920,7 +1920,7 @@ function vincEmpresaId(rotulo) {
   return '';
 }
 
-// A conferência fica em arquivo (ADR-145): fechar o Hub, instalar uma versão
+// A conferência fica em arquivo (ADR-145): fechar o Asgard, instalar uma versão
 // nova ou a janela travar não perde o que já foi lido.
 async function vincSalvar() {
   try {
@@ -1988,11 +1988,11 @@ function renderVinculosTool() {
     <div id="vincLista"></div>
     ${infoBoxHtml(
       '<p><strong>Quem entra:</strong> os sites com Tipo <strong>MPI+</strong> nas abas MPI e Busca Cliente da planilha de publicações (MPI e Busca ficam de fora: não moram no painel). Ou a sua lista, com razão social e domínio; o link do painel é opcional.</p>' +
-      '<p><strong>Achar o contrato:</strong> sem link do painel, o Hub busca a razão social no painel e abre os projetos do cliente. Com mais de um contrato, fica com o que está <strong>publicado no domínio da planilha</strong> (a URL de produção que o painel informa); com link temporário na sua lista, ele manda. Cada projeto aberto custa de 20 a 50 s.</p>' +
+      '<p><strong>Achar o contrato:</strong> sem link do painel, o Asgard busca a razão social no painel e abre os projetos do cliente. Com mais de um contrato, fica com o que está <strong>publicado no domínio da planilha</strong> (a URL de produção que o painel informa); com link temporário na sua lista, ele manda. Cada projeto aberto custa de 20 a 50 s.</p>' +
       '<p><strong>Ler o painel:</strong> abre o contrato numa janela oculta, espera o contrato remoto carregar e lê o estado do Alpine: Configuração → 5. Integrações (Analytics G-…, Tag Manager GTM-…, Search Console, reCAPTCHA) e Relatório → Conexão (propriedade GA4, site do Search Console, as contas e o selo OK/Pendente). Nada é clicado nem salvo.</p>' +
-      '<p><strong>Vinculado</strong> = as três tags nas Integrações <em>e</em> o Relatório com Analytics e Search Console preenchidos e a conexão validada pelo painel. O reCAPTCHA entra como observação. O que o Hub não conseguiu ler sai como "Não consegui ler", nunca como pronto. O HTML do site é lido também: painel vazio com tag no ar é leitura suspeita, e entra na segunda passada.</p>' +
+      '<p><strong>Vinculado</strong> = as três tags nas Integrações <em>e</em> o Relatório com Analytics e Search Console preenchidos e a conexão validada pelo painel. O reCAPTCHA entra como observação. O que o Asgard não conseguiu ler sai como "Não consegui ler", nunca como pronto. O HTML do site é lido também: painel vazio com tag no ar é leitura suspeita, e entra na segunda passada.</p>' +
       '<p><strong>Segunda passada e vínculo:</strong> no fim, quem caiu em 504 ou leitura suspeita é conferido de novo. Depois, <strong>"Vincular os incompletos"</strong> roda o mesmo caminho do Publicar MPI+: procura (ou cria, com a caixa marcada) Analytics, Tag Manager, reCAPTCHA e Search Console no Google, sincroniza Integrações e Relatório no painel e confere de novo. Quem não tem link do painel ("Não achei") não entra: não há onde vincular.</p>' +
-      '<p><strong>O que sai:</strong> a planilha <code>.xlsx</code> com as abas Resumo (totais, por empresa e o que mais falta), Clientes (tudo, inclusive o link do painel, as tags no HTML e a ação do Hub) e Pendências (só quem não está vinculado). A aba Clientes serve de entrada para a próxima conferência, sem procurar os contratos de novo. A conferência fica salva em arquivo: fechar o Hub não perde nada.</p>',
+      '<p><strong>O que sai:</strong> a planilha <code>.xlsx</code> com as abas Resumo (totais, por empresa e o que mais falta), Clientes (tudo, inclusive o link do painel, as tags no HTML e a ação do Asgard) e Pendências (só quem não está vinculado). A aba Clientes serve de entrada para a próxima conferência, sem procurar os contratos de novo. A conferência fica salva em arquivo: fechar o Asgard não perde nada.</p>',
       'Como a conferência é feita'
     )}
   `;
@@ -2115,7 +2115,7 @@ function vincDetalhe(r) {
   if (r.site) partes.push(`no HTML: ${window.Vinculos.textoTagsDoSite(r.site)}`);
   if (r.faltando && r.faltando.length) partes.push(`falta: ${r.faltando.join(', ')}`);
   if (r.erro) partes.push(r.erro);
-  if (r.acao) partes.push(`Hub: ${r.acao}`);
+  if (r.acao) partes.push(`Asgard: ${r.acao}`);
   if (r.contrato) partes.push(`${r.contrato} (${r.comoAchou})`);
   return partes.join(' · ');
 }
@@ -2345,7 +2345,7 @@ async function vincVincularIncompletos() {
       relido.acao = pedacos.join('; ');
       if (i >= 0) vincEstado.resultados[i] = relido;
       if (relido.situacao === 'vinculado') ok++; else parciais++;
-      log(`${V.textoLinha(relido)} · Hub: ${relido.acao}`, vincTipoLog(relido));
+      log(`${V.textoLinha(relido)} · Asgard: ${relido.acao}`, vincTipoLog(relido));
       await vincSalvar();
       renderVinculos();
     }
@@ -2449,7 +2449,7 @@ function renderRelatorioTool() {
     ${infoBoxHtml(
       '<p><strong>Quem entra:</strong> as linhas das abas <strong>Busca</strong> (Busca Cliente) e <strong>MPI</strong> (MPI Solutions). Os fixos (bu_nome, usuario_responsavel_id, contract_type) vão como vieram. MPI+ não entra: não é Busca One.</p>' +
       '<p><strong>Salesforce:</strong> a conta pelo nº do contrato (MPI), pelo CNPJ (Busca), senão pela razão social; o primeiro contato (só o primeiro nome, e-mail e telefone); na aba Contratos, o contrato ativo da empresa: número, Site, Pacote Contratado (pacote_palavras) e Valor da Parcela Mensal (valor_mensal, como R$2034,24).</p>' +
-      '<p><strong>O site:</strong> o Hub lê o HTML do site do contrato: o ID do cliente (campo oculto idProjeto, o mesmo que a extensão mostra; senão o $idProjetoBusca do geral.php no Bitbucket; senão a busca no painel), as tags, e se o site diz que é <strong>Busca One</strong> ou <strong>Híbrido</strong> (senão vale o Tipo da planilha de fluxo de publicação, senão a estrutura).</p>' +
+      '<p><strong>O site:</strong> o Asgard lê o HTML do site do contrato: o ID do cliente (campo oculto idProjeto, o mesmo que a extensão mostra; senão o $idProjetoBusca do geral.php no Bitbucket; senão a busca no painel), as tags, e se o site diz que é <strong>Busca One</strong> ou <strong>Híbrido</strong> (senão vale o Tipo da planilha de fluxo de publicação, senão a estrutura).</p>' +
       '<p><strong>Palavras:</strong> One = as categorias (a página /categorias); Híbrido = as categorias mais as palavras-chave de cada uma (menu, páginas de categoria e sitemap, juntados sem repetir). Separadas por <code>|</code>, sem espaço.</p>' +
       '<p><strong>Google:</strong> a propriedade do GA4 pela tag do site (o G-, ou o G- que o container GTM dispara); qual login enxerga a conta (pelos acessos da conta, senão pelas sessões conectadas, senão o padrão da marca, dito como suposição); o site no Search Console dos logins conectados em Configurações → Sessão do Google (conecte os logins de relatório antes de rodar).</p>' +
       '<p><strong>O que sai:</strong> a planilha .xlsx com as abas Busca e MPI prontas para importar, mais <strong>Diagnóstico</strong> (como cada dado foi achado) e <strong>Pendências</strong> (o que faltou e por quê). A rodada fica salva em arquivo a cada linha e nunca para por uma linha que não achou.</p>',
@@ -2661,7 +2661,7 @@ function renderRelatorioLogins(lista) {
   });
 }
 
-// ---------- Tela inicial (Hub) ----------
+// ---------- Tela inicial (Asgard) ----------
 
 // O nome do usuário logado para a saudação (ADR-113). Vem do processo (Salesforce
 // se conectado, senão do e-mail); enquanto não chega, mostra o que dá para
@@ -2900,7 +2900,7 @@ function backButtonHtml({ tabs = '' } = {}) {
   const nome = (m && m.nome) || (TOOLS.find((t) => t.id === state.view) || {}).name || '';
   const tag = (m && m.tag) || 'MOD_' + String(state.view || '').toUpperCase();
   return `<div class="tool-head anim-in">
-    <button class="th-back" id="backToHub">${ICONS.hub}<span>Hub</span></button>
+    <button class="th-back" id="backToHub">${ICONS.hub}<span>Asgard</span></button>
     <span class="th-sep">/</span><span class="th-name">${escapeHtml(nome)}</span>
     ${tabs}
     <span class="th-tag" ${tabs ? 'style="margin-left:8px"' : ''}>${escapeHtml(tag)}</span>
@@ -4406,7 +4406,7 @@ let bulkCriar = true;       // criar no Google o que não existir
 // resumo do fim (ADR-069).
 let bulkSslPendentes = [];
 let bulkSslAtivados = [];
-// Domínios cujo contato técnico não é nosso: o Hub não mexe no DNS deles, e a
+// Domínios cujo contato técnico não é nosso: o Asgard não mexe no DNS deles, e a
 // lista vai para o atendimento falar com o cliente (ADR-072). Sai em .xlsx.
 let bulkForaDeCasa = [];
 let bulkGoogleQuebrado = null; // motivo, quando a chave do Google foi recusada nesta rodada (ADR-092)
@@ -4423,7 +4423,7 @@ const BULK_PAPEIS = {
 };
 
 // O site temporário do painel (…mpitemporario.com.br). Confirma o contrato
-// certo quando o Hub acha o link do painel sozinho (ADR-098).
+// certo quando o Asgard acha o link do painel sozinho (ADR-098).
 const DOMINIO_TEMPORARIO = 'mpitemporario.com.br';
 function normalizarTemporario(valor) {
   let s = String(valor || '').trim().toLowerCase();
@@ -4526,7 +4526,7 @@ function bulkMontarLinhas() {
       erros.push(`linha ${numero}: "${temporarioBruto}" não é um link temporário (…${DOMINIO_TEMPORARIO}); ignorei. ${painel ? 'Vale o link do painel' : 'Sem ele, a linha só segue se o cliente tiver um contrato só'}`);
       temporario = '';
     } else if (/^https?[a-z0-9]/i.test(String(temporarioBruto).trim().replace(/^https?:\/\//i, ''))) {
-      erros.push(`linha ${numero}: o link temporário "${temporarioBruto}" começa com "http" colado no endereço. Se estiver assim na aba Publicação do painel, está certo (é o que o Hub compara); se não, corrija na planilha`);
+      erros.push(`linha ${numero}: o link temporário "${temporarioBruto}" começa com "http" colado no endereço. Se estiver assim na aba Publicação do painel, está certo (é o que o Asgard compara); se não, corrija na planilha`);
     }
     if (vistos.has(dominio)) {
       erros.push(`linha ${numero}: ${dominio} repetido, contei só a primeira`);
@@ -4535,7 +4535,7 @@ function bulkMontarLinhas() {
     vistos.add(dominio);
 
     const painelOk = painel ? !!normalizePainelUrl(painel) : false;
-    // Sem link, mas com razão social: o Hub procura no painel (ADR-098).
+    // Sem link, mas com razão social: o Asgard procura no painel (ADR-098).
     const painelAchar = !painel && !!razao;
     rows.push({
       razao,
@@ -4606,9 +4606,9 @@ function renderBulkTool() {
     <div id="bulkPrevia"></div>
     <div id="bulkLista"></div>
     <div id="bulkDetalhe"></div>
-    ${infoBoxHtml(`<p class="hint">Cada site, na ordem que a publicação exige. Primeiro o contato técnico no Registro.br: se for nosso, o DNS entra; se não, o domínio vai para a lista dos que não estão conosco, que sai em .xlsx no fim para o atendimento. Zona que já existe na Cloudflare: só o A da raiz troca do IP antigo para o novo, e você confirma. Zona nova: a Cloudflare varre o DNS atual, o Hub completa com os autoritativos, replica tudo e troca só a raiz e o www; você confirma, e os nameservers vão para o Registro.br. Depois o painel: quem já está publicado é só vinculado; quem não está é aprovado e publicado. O SSL só é pedido quando o domínio já resolve para o servidor de produção; senão fica no aviso do fim. Por fim Analytics, Tag Manager e reCAPTCHA (reaproveita o que existe, cria o que faltar se a caixa estiver marcada), o painel (Integrações, Search Console, Relatório) e a linha na planilha. A única parada é a do DNS, uma por domínio. Com a opção do Salesforce marcada, no fim o Hub cria a tarefa "Publicação V1 -&gt; V2" de cada site publicado, já concluída e no seu nome, sem marcar ninguém. O caso ele acha sozinho: pela tarefa de publicação antiga que cita o domínio (no assunto ou nos comentários) ou pela conta com a razão social e o caso "Ongoing CS" dela. Quem ele não achar fica listado no fim; para esses, preencha a coluna <strong>Link do caso</strong>, que sempre tem prioridade. Use "Conferir os casos" antes, para ver o que ele escolheria sem criar nada.</p>
-    <p class="hint">Sem <strong>Link do painel</strong>, o Hub procura sozinho: busca a razão social no painel, abre os projetos e contratos do cliente e fica com o contrato cujo site temporário é o da coluna <strong>Link temporário</strong> (o link do alto da aba Publicação, …mpitemporario.com.br). Isso acontece antes do DNS: se não achar, a linha falha sem mexer em nada. Sem link temporário, só segue quando o cliente tem um contrato só. Com link do painel <em>e</em> link temporário, o Hub confere que o link abre o contrato desse temporário.</p>
-    <p class="hint">Tudo o que aparece no terminal também fica gravado em Documentos\Hub\logs, um arquivo por dia, e a rodada é salva a cada site: se o Windows fechar o Hub, abra de novo e retome de onde parou.</p>`, 'Protocolo de execução técnica & dependências')}
+    ${infoBoxHtml(`<p class="hint">Cada site, na ordem que a publicação exige. Primeiro o contato técnico no Registro.br: se for nosso, o DNS entra; se não, o domínio vai para a lista dos que não estão conosco, que sai em .xlsx no fim para o atendimento. Zona que já existe na Cloudflare: só o A da raiz troca do IP antigo para o novo, e você confirma. Zona nova: a Cloudflare varre o DNS atual, o Asgard completa com os autoritativos, replica tudo e troca só a raiz e o www; você confirma, e os nameservers vão para o Registro.br. Depois o painel: quem já está publicado é só vinculado; quem não está é aprovado e publicado. O SSL só é pedido quando o domínio já resolve para o servidor de produção; senão fica no aviso do fim. Por fim Analytics, Tag Manager e reCAPTCHA (reaproveita o que existe, cria o que faltar se a caixa estiver marcada), o painel (Integrações, Search Console, Relatório) e a linha na planilha. A única parada é a do DNS, uma por domínio. Com a opção do Salesforce marcada, no fim o Asgard cria a tarefa "Publicação V1 -&gt; V2" de cada site publicado, já concluída e no seu nome, sem marcar ninguém. O caso ele acha sozinho: pela tarefa de publicação antiga que cita o domínio (no assunto ou nos comentários) ou pela conta com a razão social e o caso "Ongoing CS" dela. Quem ele não achar fica listado no fim; para esses, preencha a coluna <strong>Link do caso</strong>, que sempre tem prioridade. Use "Conferir os casos" antes, para ver o que ele escolheria sem criar nada.</p>
+    <p class="hint">Sem <strong>Link do painel</strong>, o Asgard procura sozinho: busca a razão social no painel, abre os projetos e contratos do cliente e fica com o contrato cujo site temporário é o da coluna <strong>Link temporário</strong> (o link do alto da aba Publicação, …mpitemporario.com.br). Isso acontece antes do DNS: se não achar, a linha falha sem mexer em nada. Sem link temporário, só segue quando o cliente tem um contrato só. Com link do painel <em>e</em> link temporário, o Asgard confere que o link abre o contrato desse temporário.</p>
+    <p class="hint">Tudo o que aparece no terminal também fica gravado em Documentos\Asgard\logs, um arquivo por dia, e a rodada é salva a cada site: se o Windows fechar o Asgard, abra de novo e retome de onde parou.</p>`, 'Protocolo de execução técnica & dependências')}
     <div class="action-bar"><button type="button" class="btn ghost" id="bulkLogsBtn">${NAV_ICON.bulk} Abrir pasta de logs</button><span class="spacer"></span><span class="dim mono" style="font-size:11px">a rodada é salva a cada site</span></div>
   `;
 
@@ -4680,7 +4680,7 @@ function aplicarBulkMapa() {
     const aProcurar = rows.filter((r) => r.painelAchar);
     if (aProcurar.length) {
       const semTemp = aProcurar.filter((r) => !r.temporario).length;
-      log(`${aProcurar.length} linha(s) sem link do painel: o Hub procura pela razão social no começo de cada site${semTemp ? `. ${semTemp} sem link temporário: só seguem se o cliente tiver um contrato só` : ', e o link temporário confirma o contrato'}.`, 'info');
+      log(`${aProcurar.length} linha(s) sem link do painel: o Asgard procura pela razão social no começo de cada site${semTemp ? `. ${semTemp} sem link temporário: só seguem se o cliente tiver um contrato só` : ', e o link temporário confirma o contrato'}.`, 'info');
     }
   }
   renderBulkPrevia();
@@ -4711,7 +4711,7 @@ function renderBulkPrevia() {
   const linhasHtml = amostra.map((l) => `<tr>${Array.from({ length: nCols }, (_, c) => `<td class="${papelDe(c) ? '' : 'faint'}">${escapeHtml(String(l[c] || ''))}</td>`).join('')}</tr>`).join('');
 
   // Só o domínio é obrigatório. O link do painel pode faltar quando há razão
-  // social (o Hub procura, ADR-098); o temporário confirma o contrato; o link
+  // social (o Asgard procura, ADR-098); o temporário confirma o contrato; o link
   // do caso é da tarefa do Salesforce.
   const faltando = [];
   if (bulkMapa.dominio < 0) faltando.push(BULK_PAPEIS.dominio.rotulo);
@@ -4731,7 +4731,7 @@ function renderBulkPrevia() {
       <span>A primeira linha é cabeçalho</span>
     </label>
     ${faltando.length ? `<p class="hint warn-text">Falta marcar: ${faltando.join(' e ')}. Use os seletores no topo de cada coluna.</p>` : ''}
-    ${!faltando.length && bulkMapa.painel < 0 ? `<p class="hint">Sem a coluna do link do painel: o Hub procura cada cliente no painel pela razão social${semTemporario ? '. Sem a coluna do link temporário, só seguem os clientes que têm um contrato só' : ' e confirma o contrato pelo link temporário'}.</p>` : ''}
+    ${!faltando.length && bulkMapa.painel < 0 ? `<p class="hint">Sem a coluna do link do painel: o Asgard procura cada cliente no painel pela razão social${semTemporario ? '. Sem a coluna do link temporário, só seguem os clientes que têm um contrato só' : ' e confirma o contrato pelo link temporário'}.</p>` : ''}
   `;
 
   wrap.querySelectorAll('[data-bulk-col]').forEach((sel) => {
@@ -4828,7 +4828,7 @@ async function fecharPublicadoSemVinculo(row, motivo) {
 // subiu seria mentira). Não duplica (o main confere no caso) e nunca derrubou
 // a publicação: aqui a rodada já acabou, isto é só o registro no fim.
 async function criarTarefasSalesforceNoFim() {
-  // Critério: o Hub confirmou que o site está no ar (já estava ou subiu agora).
+  // Critério: o Asgard confirmou que o site está no ar (já estava ou subiu agora).
   // Falha de vínculo do Google não impede — a tarefa é da publicação (ADR-092).
   // Pede tarefa: quem tem Link do caso, ou todos, com a opção ligada (ADR-097).
   const comCaso = bulkRows.filter((r) => r.dominio && (r.caso || state.sfTarefasAuto));
@@ -4902,7 +4902,7 @@ async function criarTarefasSalesforce(linhas) {
 }
 
 // Conferência só de leitura (ADR-097): para cada site da planilha, diz qual
-// caso o Hub usaria e como achou, e se a tarefa V1 -> V2 já está lá. Não cria
+// caso o Asgard usaria e como achou, e se a tarefa V1 -> V2 já está lá. Não cria
 // nada. Serve para validar o padrão antes de deixar criar sozinho.
 async function conferirCasosSalesforce() {
   if (bulkRodando) return;
@@ -5031,7 +5031,7 @@ function restaurarRodada(estado) {
     r.publicadoDetalhe = x.publicadoDetalhe || '';
     if (x.empresa) r.empresa = x.empresa;
     if (x.dnsNosso !== null && x.dnsNosso !== undefined) r.dnsNosso = x.dnsNosso;
-    // O link que o Hub achou no painel volta junto: não procura de novo.
+    // O link que o Asgard achou no painel volta junto: não procura de novo.
     if (x.painelAchado && !r.painelOk && normalizePainelUrl(x.painelAchado)) {
       r.painel = x.painelAchado;
       r.painelAchado = x.painelAchado;
@@ -5154,7 +5154,7 @@ function renderBulkLista() {
                : `Publicar e vincular ${fila.length} site(s)`}
        </button>`;
     if (jaPublicados) {
-      html += `<p class="hint">Os ${jaPublicados} já publicados não são republicados: o Hub abre o painel de cada um, vê se o vínculo já está feito e só sincroniza quem precisa.</p>`;
+      html += `<p class="hint">Os ${jaPublicados} já publicados não são republicados: o Asgard abre o painel de cada um, vê se o vínculo já está feito e só sincroniza quem precisa.</p>`;
     }
     if (foraDaRodada) {
       html += `<p class="hint">${foraDaRodada} site(s) já terminaram nesta sessão e ficam de fora. <button type="button" class="btn ghost compact" id="bulkLimparConf">Incluir todos de novo</button></p>`;
@@ -5234,7 +5234,7 @@ async function rodarBulk({ retomando = false } = {}) {
   if (!fila.length) return;
 
   const cfg = await window.api.getPublicacaoConfig();
-  // O servidor é o de produção que o painel lista (ADR-140); com dois, o Hub
+  // O servidor é o de produção que o painel lista (ADR-140); com dois, o Asgard
   // pergunta uma vez e vale para a rodada toda. O IP de produção para o DNS
   // é o desse servidor (ADR-141), lido uma vez aqui pelo painel do primeiro
   // site da fila.
@@ -5880,7 +5880,7 @@ async function registrarLinhaDaPlanilha(row) {
 // Dá para pedir o SSL agora? O painel só emite o certificado depois que o
 // domínio resolve para o servidor de produção; pedir antes disso devolve
 // sempre "Não foi possível ativar o SSL de produção", uma mensagem que não
-// diz o que falta. Então o Hub pergunta ao DNS primeiro (ADR-069).
+// diz o que falta. Então o Asgard pergunta ao DNS primeiro (ADR-069).
 async function conferirApontamentoDeProducao(dominio, ipPreferido) {
   const cfg = await window.api.getPublicacaoConfig();
   // O IP que a zona recebeu (o do servidor do painel, ADR-141); a configuração
@@ -6091,7 +6091,7 @@ function renderPublishTool() {
       <input id="pubTemporario" type="text" placeholder="ex: http://cliente-migra.mpitemporario.com.br" value="${escapeHtml(pub.temporario || '')}" autocomplete="off" />
     </label>
     <label class="field">
-      <span>Link da tarefa no Salesforce (no fim da publicação, o Hub assume, conclui e comenta no feed marcando quem criou)</span>
+      <span>Link da tarefa no Salesforce (no fim da publicação, o Asgard assume, conclui e comenta no feed marcando quem criou)</span>
       <input id="pubSfTarefa" type="text" placeholder="cole o link da tarefa de publicação" value="${escapeHtml(pub.sfTarefa || '')}" autocomplete="off" />
     </label>
     <div class="field" style="gap:6px">
@@ -6114,7 +6114,7 @@ function renderPublishTool() {
     <div id="pubEtapas"></div>
     <div id="pubDetalhe"></div>
     </div>
-    ${infoBoxHtml(`<p>Um botão, uma parada. O Hub procura o domínio nas duas contas do Registro.br (contato técnico BCTDL é Busca Cliente, MPSOL83 é MPI Solutions), cria a zona na Cloudflare e deixa a própria Cloudflare varrer o DNS atual, completa com a fotografia dos autoritativos e monta a zona final: tudo replicado, só a raiz e o www vão para o servidor novo, e-mail e o resto ficam onde estão. Aí ele para e mostra o antes e o depois; você confirma e o resto segue sozinho: nameservers, aprovar, publicar, SSL quando o DNS apontar, tags e planilha. Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto e pergunta a empresa antes da planilha. Domínio fora do .br (.com, por exemplo): não há Registro.br para perguntar; o Hub confere se a raiz já aponta para o servidor de produção e segue para aprovar e publicar; se não aponta, avisa em destaque para você pedir o apontamento ao analista. O campo de hosts é para subdomínio que só aquele cliente usa e nenhuma varredura adivinharia. Antes de tudo o Hub procura o cliente no painel pela razão social e fica com o contrato do link temporário; não achando, pede o link do painel no terminal e segue por ele. Com o link da tarefa, a última etapa assume e conclui a tarefa no seu nome e comenta "Site publicado" no caso, marcando quem criou. Quando o Registro.br só publica a troca de DNS daqui a horas, o site vai para a lista "Aguardando a propagação" com o que falta, e a tela fica livre para outro site; o Hub termina cada um sozinho quando o DNS apontar, um de cada vez, primeiro o de previsão mais cedo. Na publicação automática da fila, o site cujo DNS é do cliente também entra nessa lista, como "aguardando o cliente", sem prazo: o Hub confere a cada 30 min e termina SSL, Search Console e tarefa quando o cliente apontar; "Conferir agora" não espera os 30 min.</p>`)}
+    ${infoBoxHtml(`<p>Um botão, uma parada. O Asgard procura o domínio nas duas contas do Registro.br (contato técnico BCTDL é Busca Cliente, MPSOL83 é MPI Solutions), cria a zona na Cloudflare e deixa a própria Cloudflare varrer o DNS atual, completa com a fotografia dos autoritativos e monta a zona final: tudo replicado, só a raiz e o www vão para o servidor novo, e-mail e o resto ficam onde estão. Aí ele para e mostra o antes e o depois; você confirma e o resto segue sozinho: nameservers, aprovar, publicar, SSL quando o DNS apontar, tags e planilha. Contato técnico do cliente: pula Cloudflare, Registro.br e SSL, faz o resto e pergunta a empresa antes da planilha. Domínio fora do .br (.com, por exemplo): não há Registro.br para perguntar; o Asgard confere se a raiz já aponta para o servidor de produção e segue para aprovar e publicar; se não aponta, avisa em destaque para você pedir o apontamento ao analista. O campo de hosts é para subdomínio que só aquele cliente usa e nenhuma varredura adivinharia. Antes de tudo o Asgard procura o cliente no painel pela razão social e fica com o contrato do link temporário; não achando, pede o link do painel no terminal e segue por ele. Com o link da tarefa, a última etapa assume e conclui a tarefa no seu nome e comenta "Site publicado" no caso, marcando quem criou. Quando o Registro.br só publica a troca de DNS daqui a horas, o site vai para a lista "Aguardando a propagação" com o que falta, e a tela fica livre para outro site; o Asgard termina cada um sozinho quando o DNS apontar, um de cada vez, primeiro o de previsão mais cedo. Na publicação automática da fila, o site cujo DNS é do cliente também entra nessa lista, como "aguardando o cliente", sem prazo: o Asgard confere a cada 30 min e termina SSL, Search Console e tarefa quando o cliente apontar; "Conferir agora" não espera os 30 min.</p>`)}
   `;
 
   document.getElementById('backToHub').addEventListener('click', goHome);
@@ -6155,7 +6155,7 @@ function renderPublishTool() {
 
 // Os dois botões de teste do fechamento da tarefa no Salesforce (ADR-089).
 // Cada um roda um passo sozinho, sem publicar nada, para conferir no link
-// colado que o Hub assume/conclui e que o comentário marca quem criou.
+// colado que o Asgard assume/conclui e que o comentário marca quem criou.
 function wireTesteSalesforce() {
   const status = document.getElementById('pubSfTesteStatus');
   const linkAtual = () => (document.getElementById('pubSfTarefa')?.value || '').trim() || (pub && pub.sfTarefa) || '';
@@ -6311,7 +6311,7 @@ function pubPrecisaPainel() {
 }
 
 // Antes da primeira etapa (o DNS inclusive): o link do painel tem que ser o
-// do contrato certo. O Hub procura pela razão social e confirma pelo
+// do contrato certo. O Asgard procura pela razão social e confirma pelo
 // temporário (ADR-098); não achando, pede o link no terminal. Link que chegou
 // pronto (do Criar propriedades) é conferido pelo temporário, se houver.
 // Sem link certo, não começa nada.
@@ -6880,7 +6880,7 @@ async function consultarRegistrobr(dominio, candidatas) {
 }
 
 // Só domínio .br tem contato técnico no Registro.br. Um .com (ou qualquer
-// outro) está num registrador que o Hub não alcança: o cliente costuma ter
+// outro) está num registrador que o Asgard não alcança: o cliente costuma ter
 // feito o apontamento antes, e quando não fez, quem pede é o analista
 // (ADR-079).
 const dominioBr = (d) => /\.br$/i.test(String(d || ''));
@@ -7163,7 +7163,7 @@ function servidorRotulo(s) {
 async function pubEtapaPublicar() {
   if (!pubPrecisaPainel()) throw new Error('link do painel inválido');
   // O servidor é o de produção que o painel lista (ADR-140): um só, é ele; dois
-  // ou mais, o Hub pergunta aqui — e no automático desiste, porque ninguém
+  // ou mais, o Asgard pergunta aqui — e no automático desiste, porque ninguém
   // responde. Sem parada de confirmação (ADR-072): o que vai acontecer fica
   // dito no terminal, antes de acontecer.
   log(`Publicando ${pub.dominio} em produção no servidor de produção que o painel lista, sem www, como o painel espera.`, 'cmd');
@@ -7238,7 +7238,7 @@ async function pubVerificarScPendente() {
   }
 }
 
-// Do "Criar propriedades": a mesma linha, na aba da marca. Aqui o Hub não
+// Do "Criar propriedades": a mesma linha, na aba da marca. Aqui o Asgard não
 // publicou o site (isso é feito no servidor); a linha registra o dia em que
 // as propriedades foram criadas e o geral.php commitado, como a equipe já faz.
 async function registrarPlanilhaCriacao(v, btn) {
@@ -7265,7 +7265,7 @@ async function registrarPlanilhaCriacao(v, btn) {
 // ----- Planilha de publicações (ADR-062) -----
 //
 // Uma linha por site, na aba MPI ou BUSCA, com as 26 colunas na ordem da
-// planilha. O que o Hub fez vai como "Finalizado"; o que não se aplicou
+// planilha. O que o Asgard fez vai como "Finalizado"; o que não se aplicou
 // (DNS do cliente) vai como "Não se aplica", nunca como feito.
 
 const PLANILHA_ABA_POR_MARCA = { mpiplus: 'MPI', mpisolutions: 'MPI', bc: 'Busca Cliente' };
@@ -7639,7 +7639,7 @@ async function oauthLogin() {
 
   state.oauthPending = { url: '' };
   renderOauthStatus();
-  log('Abrindo o navegador para o login do Google, conclua por lá e volte pro Hub.', 'cmd');
+  log('Abrindo o navegador para o login do Google, conclua por lá e volte pro Asgard.', 'cmd');
 
   const stopListening = window.api.onOauthUrl((url) => {
     state.oauthPending = { url };
@@ -7988,7 +7988,7 @@ function renderSuspendTool() {
     <button id="mailCheckBtn" class="btn primary full-width">Verificar apontamento</button>
     </div>
     <div id="mailCheck"></div>
-    ${infoBoxHtml(`<p>O Hub consulta o DNS autoritativo de cada domínio na fila, checa se o registro A aponta para o servidor da <strong>M3 Solutions</strong> e marca automaticamente como seguro. IPs externos (Google, Vesta, terceiros) são desmarcados por segurança; o resto você decide.</p><div class="destaque">As tags <code>{dominio}</code>${modo.projeto ? ' e <code>{projeto}</code>' : ''} são interpoladas para cada destinatário individual antes da transmissão via Microsoft Graph API.</div>`)}
+    ${infoBoxHtml(`<p>O Asgard consulta o DNS autoritativo de cada domínio na fila, checa se o registro A aponta para o servidor da <strong>M3 Solutions</strong> e marca automaticamente como seguro. IPs externos (Google, Vesta, terceiros) são desmarcados por segurança; o resto você decide.</p><div class="destaque">As tags <code>{dominio}</code>${modo.projeto ? ' e <code>{projeto}</code>' : ''} são interpoladas para cada destinatário individual antes da transmissão via Microsoft Graph API.</div>`)}
     <div class="stat-grid" id="mailStats"></div>
   `;
 
@@ -8526,7 +8526,7 @@ async function diagnosticoSalesforce(btn) {
   btn.textContent = original;
   if (res.log) for (const e of res.log) log(e.message, e.type);
   if (!res.ok) { log(`Salesforce: ${res.error}`, 'error'); return; }
-  log('Conexão com o Salesforce conferida. O resumo acima é o que o Hub vai usar.', 'success');
+  log('Conexão com o Salesforce conferida. O resumo acima é o que o Asgard vai usar.', 'success');
 }
 
 function openSettings(tab) {
@@ -8879,7 +8879,7 @@ el.clearCredsBtn.addEventListener('click', async () => {
 // ---------- Inicialização ----------
 
 async function init() {
-  log('Hub iniciado.', 'info');
+  log('Asgard iniciado.', 'info');
   // Rodada em massa que ficou pela metade (o Windows fechou tudo, por exemplo).
   window.api.lerRodada().then((r) => {
     const estado = r && r.estado;
