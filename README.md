@@ -371,7 +371,9 @@ A chave fica criptografada nesta máquina, como a do Bitbucket, e nunca volta pa
 
 ## 12. Configurando o Escritório (Gemini e e-mail de vhost)
 
-O Escritório (a tela de abertura do Hub, ADR-149) usa o Gemini para o que a
+O Escritório (a tela de abertura do Hub, ADR-149; em 3D e de tela cheia
+desde a ADR-153: o menu volta quando o mouse encosta na borda esquerda, o
+topo na de cima) usa o Gemini para o que a
 triagem do Hub e as regras aprendidas não resolvem. Sem chave ele funciona
 igual, só que toda tarefa desconhecida vira pendência.
 

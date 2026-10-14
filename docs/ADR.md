@@ -7094,7 +7094,8 @@ Salesforce além das que os fluxos de hoje já fazem; fila a cada 5 min.
 9. **Fora desta fase:** `deps.executar` (os agentes) é a fase 2; as
    verificações de Hospedagem (domínios na faixa da M3, e-mail não repetido)
    e do Integrador (PR aprovado, build verde) estão declaradas e barram com
-   "verificação ainda não implementada (fase 3)"; a tela 3D é a fase 5.
+   "verificação ainda não implementada (fase 3)"; a tela 3D é a fase 5
+   (entregue na ADR-153).
 
 **Ajuste do mesmo dia (13/10/2026): o comentário manda.** O assunto das
 tarefas costuma ser genérico ("Ajuste Site MPI" serve para republicar um
@@ -7341,6 +7342,126 @@ desconhecida e propor a regra) continua disponível para quem ligar. Huginn
 manda SSL e suspensão pela fila com a mesma validação da tela, sem repetir
 e-mail. Ratatoskr está pronto para o dia em que sair do standby. `npm test`
 ganhou as verificações dos dois executores, das regras e do interruptor.
+
+## ADR-153 — Escritório, fases 4 e 5: a tela de tela cheia com o escritório em 3D isométrico, a planta como código, e o menu que volta pela borda
+
+**Status:** aceita — fases 4 e 5 de 5, entregues juntas a pedido de
+14/10/2026. Fecha a série ADR-149 → ADR-152.
+
+**Contexto.** Em 14/10/2026 o Guilherme mandou dois prints de um escritório
+isométrico (salas numeradas, mesas, divisórias de vidro, um cartão por agente
+com nome e papel, "MOSTRAR PAINÉIS" no pé) e pediu as fases 4 e 5: "a tela
+de dashboard completa igual está mostrando no print, mostrando os agentes,
+caminhos e etc na tela toda; o menu pode ser escondido em algum canto e
+mostrar quando eu passar o mouse". O vídeo com a animação de referência não
+veio; a animação daqui foi desenhada para "fazer sentido" com o que o
+orquestrador já sabe (o pedido era "algo parecido, só que que faça mais
+sentido"), e pode ser ajustada quando o vídeo chegar.
+
+**Decisão.**
+
+1. **A planta é código puro e vive fora da tela** (`lib/escritorio/planta.js`,
+   dual, testado em `tools/test-escritorio-planta.js`). Dez salas em duas
+   filas com um corredor no meio: 01 Sala de Comando (Odin), 02 a 09 uma por
+   agente, na ordem do catálogo, e **10 Sala de Reunião**, que não tem
+   ocupante: é para onde vai quem espera você. Cada sala tem a mesa do
+   ocupante, a cadeira atrás dela, o monitor, duas mesas vazias de
+   decoração, uma planta e uma **pista** livre à direita da mesa que liga a
+   cadeira à porta, no lado do corredor. `caminho(de, para)` devolve os
+   pontos por onde se anda (pista, porta, corredor em z = 0, porta, pista),
+   e o teste prova para todas as 100 combinações de sala que nenhum trecho
+   atravessa parede nem a mesa redonda da reunião. **`dirigir(snapshot)` é
+   o diretor de cena**: puro, a partir do snapshot do orquestrador diz onde
+   cada figura deve estar e o que flutua sobre ela. A regra é esta, e é o
+   que faz a animação ter sentido:
+   - **na mesa** quem está ocioso, em standby ou trabalhando (trabalhando
+     com um losango ciano girando sobre a cabeça e a tela do monitor acesa
+     em ciano; ocioso com a tela verde; standby com a tela fraca);
+   - **ausente** (cadeira vazia, monitor apagado) quem está desligado;
+   - **na Sala de Reunião**, sentado à mesa redonda com um losango amarelo
+     de pergunta, quem tem pendência aberta com você (pergunta, retomar,
+     proposta de regra, tarefa pendente ou interrompida); **o Odin vai para
+     lá** quando a pendência não é de agente nenhum (pergunta da triagem,
+     "para você"). Os três lugares de frente para o corredor enchem
+     primeiro; o Odin tem prioridade;
+   - **na Sala de Comando, de pé perto da porta**, com um losango vermelho,
+     quem tem tarefa escalada (veio reportar);
+   - **o Odin varrendo a fila** fica na mesa com um losango verde girando;
+   - **cada tarefa aberta é um pacote** (um cubo com a cor do estado) em
+     cima de uma mesa: na fila, em análise e escalada na mesa do Odin;
+     planejada, aguardando confirmação, executando (pulsando), falhou e
+     aguardando externo na mesa do agente; pendente na mesa de reunião. Até
+     6 por mesa, com "+n" quando há mais. Quem muda de mesa **viaja pelo
+     corredor** (é o encaminhamento que se vê); quem conclui vira um "✓"
+     verde que sobe e some.
+   Sugestão para agente em standby não leva ninguém à reunião.
+2. **Three.js r158 vendorizado, sem build nem módulo** (`renderer/vendor/
+   three.min.js`, com a licença MIT ao lado e um LEIA-ME de como atualizar).
+   É o último build clássico (UMD) que a biblioteca publicou: da r160 em
+   diante só existe módulo ES, e módulo por `file://` esbarra no CORS do
+   Chromium; manter a ADR-001 (sem bundler) pesou mais que ter a versão
+   mais nova. O build imprime um aviso de depreciação no console do
+   DevTools; é só isso.
+3. **A cena** (`renderer/escritorio-cena.js`) tem três partes separadas:
+   a **simulação** (recebe o que o diretor mandou, compara com onde cada
+   figura e pacote está e anda até lá a 7 m/s pelo caminho da planta, os
+   pacotes a 11 m/s pelo ar), o **motor 3D** (câmera ortográfica isométrica,
+   luz direcional com sombra, paredes de vidro com arestas ciano, mesas,
+   cadeiras, monitores que acendem, figuras de cápsula e cabeça, losangos,
+   cubos; pan com o botão esquerdo, giro limitado com o direito ou Shift,
+   zoom pela roda, duplo clique recentra; clique na figura abre o agente) e
+   o **motor 2D** (a mesma planta em canvas 2D isométrico, com a mesma
+   simulação e os mesmos cartões), que entra sozinho quando o WebGL não
+   existe e pode ser escolhido pelo botão "3D/2D" do rodapé (a escolha fica
+   no localStorage). Os cartões dos agentes e os rótulos das salas são HTML
+   ancorado ao ponto 3D projetado (`ancorar(id, elemento, altura)`): texto
+   nítido, clicável, com o CSS do Hub; cartões que se cobririam (duas
+   figuras lado a lado na reunião) sobem até desencostar.
+4. **Nada roda para sempre (ADR-126).** O laço de quadros tem teto de 30
+   fps e só gira enquanto alguém anda, um ícone de trabalho gira, um pacote
+   pulsa ou a câmera se move; parado, desenha uma vez e fica. Para com a
+   janela sem foco (`html.sem-foco`) ou escondida, e volta no foco. Sair do
+   Escritório para outra tela desliga o laço (`window.hubEscritorioSair`,
+   chamado pelo `render()` do app.js); o canvas e o contexto WebGL ficam
+   guardados no motor e voltam para o palco quando a tela volta, sem criar
+   contexto novo.
+5. **Tela cheia com o menu pela borda.** Com `state.view === 'escritorio'`,
+   o `.app` ganha `esc-cheia`: o topo e a barra lateral saem da grade
+   (`position: fixed`, recolhidos fora da tela, sem a animação de entrada
+   do redesign, que fixaria `transform: none` por cima) e voltam quando o
+   mouse encosta numa faixa de 10 px na borda esquerda (menu) ou de 6 px na
+   de cima (topo), pelo botão ☰ do HUD ou recolhem quando o mouse sai
+   deles ou no Esc. O terminal de Atividade e o Git Bash não aparecem na
+   tela cheia; o botão "Atividade" do rodapé traz a Atividade por cima da
+   cena, à direita. O painel central vira o palco inteiro.
+6. **O HUD e a gaveta.** Por cima da cena: no alto à esquerda o título, o
+   modo (manual / observação / automático), as pendências e a linha "01 /
+   SALA DE COMANDO · Odin, o orquestrador · última varredura"; no alto à
+   direita o Comando enxuto (Automático, Observação, Gemini, Rodar agora,
+   Freio); no pé, como na referência, "Mostrar/Esconder painéis" (os
+   cartões; a escolha fica no localStorage), Pendências, Fila, Regras,
+   Concluídas, Comando, Atividade, Recentrar e 3D/2D. Cada botão abre uma
+   **gaveta** à direita, por cima da cena, com o mesmo conteúdo da tela da
+   fase 3 (as pendências com todas as respostas e o formulário de regra, a
+   fila com histórico/Executar/reanalisar, as regras com editar/apagar, as
+   concluídas, e o Comando com os interruptores grandes, os contadores do
+   dia, a lista de espera do DNS e os cartões completos dos agentes com o
+   interruptor de cada um). Clicar num cartão ou numa figura abre a gaveta
+   do agente: o cartão completo, as pendências dele, as tarefas em aberto e
+   as últimas concluídas; a do Odin mostra o que está na mesa dele. A
+   atualização do snapshot (a cada evento do orquestrador) redesenha o HUD,
+   os cartões e a gaveta e manda o diretor à simulação, sem refazer a cena.
+
+**Consequências.** O Escritório passa a ser a tela de verdade: dá para ver
+de longe quem está trabalhando, quem está esperando você na reunião e
+quantas tarefas há em cada mesa, e tudo que a fase 3 fazia continua a um
+clique no rodapé. `npm test` ganhou `test-escritorio-planta.js` (46
+verificações da planta, dos caminhos e do diretor) e o
+`test-escritorio-browser.js` foi refeito para a tela cheia (menu pela
+borda, cena, cartões, quem anda, gaveta, terminal por cima, saída da tela);
+o headless do Playwright tem WebGL por SwiftShader, então o motor 3D é
+exercitado de verdade. Quando o vídeo de referência chegar, o que muda é o
+`dirigir` e a simulação, não a planta nem a tela.
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

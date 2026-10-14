@@ -607,6 +607,10 @@ function render() {
   guardarSettingsBox();
   el.leftPanel.classList.toggle('wide', state.view === 'home' || state.view === 'kanban' || state.view === 'config' || state.view === 'escritorio');
   document.querySelector('.app-body')?.classList.toggle('home', state.view === 'home');
+  // O Escritório é de tela cheia (ADR-153): o menu e o topo saem da grade e
+  // voltam pela borda; ao sair dele, a cena para de pedir quadros.
+  document.querySelector('.app')?.classList.toggle('esc-cheia', state.view === 'escritorio');
+  if (state.view !== 'escritorio' && typeof window.hubEscritorioSair === 'function') window.hubEscritorioSair();
   renderChrome();
   // Os atalhos leem os campos da tela nova, então esperam ela existir.
   queueMicrotask(renderAtalhosTerminal);

@@ -103,6 +103,18 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
   check('a telemetria do topo não trabalha com a janela escondida', /if \(document\.visibilityState === 'hidden'\) return;/.test(recorta(app, 'function iniciarTopbarLive(', '\n}')));
   check('o CSS também saiu', !/\.tb-pill|\.statusbar|\.nav-foot|\.sb-dot/.test(css));
 
+  console.log('\n=== A cena do Escritório (ADR-153) não roda para sempre ===');
+  {
+    const cena = ler('renderer', 'escritorio-cena.js');
+    const laco = recorta(cena, 'function criarLaco(', '\n  }');
+    check('o laço para com a janela escondida ou sem foco e só volta no foco', /document\.hidden/.test(laco) && /sem-foco/.test(laco) && /visibilitychange/.test(laco) && /addEventListener\('focus'/.test(laco));
+    check('o laço tem teto de quadros por segundo', /FPS_MAX/.test(laco) && /const FPS_MAX = 30;/.test(cena));
+    check('só pede outro quadro enquanto algo se move (figura, pacote, ícone de trabalho ou câmera)', /if \(continua\) raf = requestAnimationFrame\(quadro\);/.test(laco) && /return movendo \|\| camMudou;/.test(cena));
+    check('ícone de pergunta e de erro ficam parados; só o de trabalho e o da fila giram', /if \(f\.icone === 'trabalho' \|\| f\.icone === 'fila'\) \{ f\.iconeAng \+= dt \* 1\.6; movendo = true; \}/.test(cena));
+    check('sair do Escritório desliga o laço (app.js chama hubEscritorioSair no render)', /window\.hubEscritorioSair\(\)/.test(app) && /motor\.desligar\(\)/.test(ler('renderer', 'escritorio-ui.js')));
+    check('o pixel ratio tem teto (sem 4K de sombra por quadro)', /Math\.min\(window\.devicePixelRatio \|\| 1, 1\.5\)/.test(cena));
+  }
+
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
   process.exit(falhas ? 1 : 0);
 })();

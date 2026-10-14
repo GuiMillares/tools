@@ -647,7 +647,8 @@ convenção do "Criar propriedades", listada na aba **Vincular Analytics**.
 
 ### 4.15 Escritório — `escritorio`
 
-A tela principal do Hub (a primeira da barra lateral e a de abertura): o
+A tela principal do Hub (a primeira da barra lateral e a de abertura), de
+tela cheia, com o escritório em 3D (ADR-153): o
 **orquestrador** e os **agentes** que fazem sozinhos o que antes era feito
 módulo a módulo (ADR-149, ADR-150). O orquestrador, **Odin**, lê a fila de
 deploy do Salesforce a cada 5 minutos, decide o que cada tarefa precisa e
@@ -666,7 +667,7 @@ toda tela e em todo seletor.
   um site em subdiretório, por exemplo): vira pendência "para você", com a
   leitura, até você marcar como tratada. Tarefas do mesmo tipo de pedido
   (pelo comentário, não só pelo assunto) entram na mesma pendência.
-- **Agentes** (um cartão cada, com a sala): **Thor** (Publicador MPI+:
+- **Agentes** (uma figura na própria sala, com o cartão preso a ela): **Thor** (Publicador MPI+:
   Publicar MPI+ e Publicação em Massa), **Freyr** (Publicador Busca One:
   propriedades, geral.php, vhost), **Tyr** (Bloqueador de Contatos),
   **Huginn** (Hospedagem & E-mails: SSL e suspensão), **Ratatoskr**
@@ -716,6 +717,28 @@ toda tela e em todo seletor.
   (Conferir Vínculos, Planilha do Relatório, Quando publicou, Ouvidoria,
   Bloquear Contatos, Publicação em Massa, Mergear PRs), o cartão do agente
   mostra "trabalhando" com o nome do módulo.
+- **A tela é o escritório em 3D, de tela cheia (ADR-153):** dez salas
+  numeradas em duas filas com um corredor no meio (01 Sala de Comando do
+  Odin, 02 a 09 uma por agente, 10 Sala de Reunião), divisórias de vidro,
+  mesas, monitores e uma figura por agente com o cartão (nome · papel)
+  preso a ela. O que se vê diz o estado: **na mesa** quem está ocioso, em
+  standby ou trabalhando (losango ciano girando e monitor aceso); **cadeira
+  vazia** quem está desligado; **na Sala de Reunião**, com um losango
+  amarelo, quem tem pendência aberta com você, e o Odin vai para lá quando a
+  pendência não é de agente nenhum; **de pé na Sala de Comando**, com
+  losango vermelho, quem tem tarefa escalada. Cada tarefa aberta é um
+  **pacote** na mesa de quem cuida dela (na fila e escalada na do Odin,
+  pendente na de reunião) e viaja pelo corredor quando é encaminhada; a
+  concluída vira um "✓" que sobe. Pan, zoom e giro pelo mouse; duplo clique
+  recentra. Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
+  rodapé). O menu do Hub e o topo ficam recolhidos e voltam quando o mouse
+  encosta na borda esquerda ou na de cima (ou pelo ☰). O rodapé tem
+  "Mostrar/Esconder painéis" (os cartões) e abre, numa gaveta por cima da
+  cena, as Pendências, a Fila, as Regras, as Concluídas, o Comando e a
+  Atividade (o terminal). Clicar numa figura ou num cartão abre a gaveta
+  do agente, com o interruptor dele, as pendências e as tarefas. Nada
+  anima parado: o laço de quadros só roda enquanto alguém anda ou trabalha,
+  e para com a janela sem foco ou ao sair da tela.
 
 O painel flutuante da automação foi absorvido pelo Escritório (4.10,
 ADR-150).

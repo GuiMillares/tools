@@ -1,0 +1,2 @@
+Three.js r158 (three@0.158.0), build/three.min.js, o último build clássico (UMD) que a biblioteca publicou: o renderer do Hub carrega por <script> sem build nem módulos ES (ADR-001). Para atualizar: npm pack three@<versão> e copiar build/three.min.js (até a r159; da r160 em diante só existe o módulo ES).
+Licença: three.LICENSE (MIT).
