@@ -83,6 +83,8 @@ app.whenReady().then(async () => {
   const oauthCfg = lerJson(path.join(userData(), 'oauth-config.json')) || {};
   const SCOPES_SA = [
     'https://www.googleapis.com/auth/analytics.readonly',
+    // Só o --criar-analytics escreve (cria a propriedade e o data stream), como o Hub.
+    ...(args.includes('--criar-analytics') ? ['https://www.googleapis.com/auth/analytics.edit'] : []),
     'https://www.googleapis.com/auth/analytics.manage.users.readonly',
     'https://www.googleapis.com/auth/tagmanager.readonly',
     'https://www.googleapis.com/auth/webmasters.readonly',
