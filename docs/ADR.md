@@ -15,7 +15,7 @@ passado.
 <!-- indice:inicio (gerado por tools/indice-adr.js; não edite à mão) -->
 ## Índice
 
-158 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
+159 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
 
 - **ADR-001** — Electron puro, sem framework de UI e sem build step
 - **ADR-002** — Toda rede no processo principal; renderer só fala por IPC
@@ -173,6 +173,7 @@ passado.
 - **ADR-155** — Dívidas pagas de uma vez: OAuth criptografado, GA4 sem duplicata por slot reaproveitado, service workers do painel, notificação de pendência e o resumo "Hoje" do Escritório
 - **ADR-156** — Pacotes clicáveis, suíte a cada push e em paralelo, índice da ADR, e o backlog antigo: fila de PRs persistida, histórico exportado, ID ambíguo escolhido
 - **ADR-157** — O mapa de fluxo: a segunda visão do Escritório, com Odin no centro, os agentes em volta e as tarefas correndo pelas linhas
+- **ADR-158** — A identidade do app vira Asgard de vez: nome e appId novos, a pasta de dados copiada na primeira abertura e a instalação antiga trocada pela nova
 - **Pendências conhecidas** (não são decisões — são dívidas)
 - **ADR-146** — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
 <!-- indice:fim -->
@@ -7873,6 +7874,43 @@ navegador prova: 5 nós e 4 linhas, o estado nos nós, o palco escondido e o
 motor parado no mapa, o pulso que nasce de um encaminhamento e o laço que
 para quando ele termina, o clique no nó, e a volta ao 3D.
 
+## ADR-158 — A identidade do app vira Asgard de vez: nome e appId novos, a pasta de dados copiada na primeira abertura e a instalação antiga trocada pela nova
+
+**Status:** aceita — bloco 4 (o último) do pedido de 14/10/2026.
+
+**Contexto.** A ADR-154 trocou o que se vê (productName, ícone, marca),
+mas o `package.json` seguia `pr-merge-tool` / `com.castrotech.prmergetool`:
+a pasta instalada era `Programs\pr-merge-tool`, a de dados
+`%APPDATA%\pr-merge-tool`, e "Aplicativos instalados" mostrava Asgard com a
+identidade antiga por baixo. Era a pendência mais antiga da lista.
+
+**Decisão.**
+
+1. `name: "asgard"` e `appId: "com.castrotech.asgard"` (o lock acompanha).
+   Com isso o Electron passa a usar `%APPDATA%\asgard` como userData e o
+   instalador, `%LOCALAPPDATA%\Programs\asgard`.
+2. **Os dados migram sozinhos** (`migrarDadosDoNomeAntigo`, a primeira
+   coisa no `whenReady`): se a pasta nova ainda não tem `hub-state.json` e
+   a antiga existe, tudo é **copiado** (credenciais `.enc`, hub-state,
+   escritório, regras, caches do Analytics e do GTM, histórico de merges,
+   `Local Storage` com a lista de espera do DNS e as preferências da tela,
+   `Partitions` com os logins dos painéis), menos os caches do Chromium.
+   A pasta antiga fica como está, de reserva, e `migrado-de.txt` na nova
+   diz de onde veio e quando. O log do dia continua em `Documentos\Hub`.
+3. **A instalação antiga sai antes da nova entrar** (`tools/atualizar.js`,
+   `desinstalarAntiga`): fecha o que estiver rodando em
+   `Programs\pr-merge-tool`, roda o `Uninstall Asgard.exe /S` dela (que
+   não toca nos dados) e, se a pasta sobrar, apaga. A conferência pela
+   versão do registro passa a preferir a entrada cuja `InstallLocation` é a
+   pasta nova, porque as duas se chamam "Asgard" no Windows.
+4. A skill de deploy e o `conferir-instalado.js` seguem o `name` do
+   package.json, então apontam para as pastas novas sem mais nada.
+
+**Consequências.** Uma instalação só, com a identidade certa; atalhos
+refeitos pelo instalador com o mesmo nome. Se algo der errado na migração,
+os dados continuam intactos em `%APPDATA%\pr-merge-tool`: basta copiar à
+mão. Quando a pasta antiga puder ser apagada é decisão do Guilherme.
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): tratado na
@@ -7880,8 +7918,6 @@ para quando ele termina, o clique no nó, e a volta ao 3D.
   o cache vale 7 dias). Risco residual: reuso feito há menos de 7 dias sem
   ninguém ter procurado o cliente antigo.
 
-- `package.json` ainda se identifica como `pr-merge-tool` / `"PR Merge Tool"` /
-  `com.castrotech.prmergetool`. O instalador sai com o nome antigo.
 - **MPI+ não tem template de GTM próprio** — usa o da Busca Cliente (ADR-015).
 - **Se o tenant do Azure bloquear registro de app**, a ferramenta de suspensão
   não tem plano B implementado (ADR-023).

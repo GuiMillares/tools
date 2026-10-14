@@ -26,6 +26,25 @@ async function invocarLocal(canal, payload) {
   return fn({ sender: win ? win.webContents : null }, payload);
 }
 
+// O app chamava pr-merge-tool e os dados moravam em %APPDATA%\pr-merge-tool
+// (ADR-158). Na primeira abertura como Asgard, tudo é COPIADO para a pasta
+// nova (os caches do Chromium não); a antiga fica como está, de reserva.
+const NOME_ANTIGO = 'pr-merge-tool';
+const PASTAS_DE_CACHE = new Set(['Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'Shared Dictionary', 'blob_storage', 'lockfile', 'Crashpad']);
+function migrarDadosDoNomeAntigo() {
+  try {
+    const nova = app.getPath('userData');
+    const antiga = path.join(app.getPath('appData'), NOME_ANTIGO);
+    if (path.basename(nova).toLowerCase() === NOME_ANTIGO) return false;
+    if (!fs.existsSync(antiga) || fs.existsSync(path.join(nova, 'hub-state.json'))) return false;
+    fs.mkdirSync(nova, { recursive: true });
+    fs.cpSync(antiga, nova, { recursive: true, force: false, errorOnExist: false, filter: (origem) => !PASTAS_DE_CACHE.has(path.basename(origem)) });
+    fs.writeFileSync(path.join(nova, 'migrado-de.txt'), `Copiado de ${antiga} em ${new Date().toISOString()} (ADR-158). A pasta antiga ficou como reserva.\n`);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 const credsPath = () => path.join(app.getPath('userData'), 'credentials.enc');
 const hubStatePath = () => path.join(app.getPath('userData'), 'hub-state.json');
 const googleConfigPath = () => path.join(app.getPath('userData'), 'google-config.json');
@@ -121,6 +140,7 @@ if (!instanciaUnica) {
   });
 
   app.whenReady().then(() => {
+    migrarDadosDoNomeAntigo();
     createWindow();
     // O orquestrador do Escritório (ADR-149) nasce com a janela: lê o que
     // ficou gravado, abre a pendência das tarefas interrompidas e, se o modo

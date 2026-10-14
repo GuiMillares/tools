@@ -882,8 +882,6 @@ o primeiro.
 
 Nada aqui está prometido — é a lista do que já se sabe que falta.
 
-- Renomear a identidade do app no `package.json` (ainda sai como "PR Merge
-  Tool"; ver Pendências na ADR).
 - Desfazer/limpar container GTM duplicado que o próprio app detectou.
 - Template de GTM próprio para MPI+ (hoje usa o da Busca Cliente). Precisa
   do container exportado do GTM que seja o modelo do MPI+ (ADR-156).

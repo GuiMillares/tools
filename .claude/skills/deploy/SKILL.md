@@ -5,7 +5,7 @@ description: Fecha uma alteração do Hub (pr-merge-tool) de ponta a ponta - rod
 
 # Deploy do Hub
 
-O Hub que o Guilherme usa é a cópia instalada em `%LOCALAPPDATA%\Programs\pr-merge-tool`,
+O Hub que o Guilherme usa é a cópia instalada em `%LOCALAPPDATA%\Programs\asgard`,
 não a pasta do projeto. Alteração que fica só no repositório não existe para ele:
 só chega com build + instalação (`npm run atualizar`, `tools/atualizar.js`). Por
 isso o combinado em 01/10/2026 é: **toda alteração termina commitada, instalada e
@@ -66,7 +66,7 @@ Timeout de 10 min no Bash (600000 ms): o build leva 1 a 2 min. O script:
 - sobe o último número da versão no `package.json` e no `package-lock.json`;
 - gera o instalador numa pasta temporária e copia para `dist\` (ignorada);
 - **fecha o Hub aberto** (pede para fechar; força depois de 20 s) e instala por
-  cima, em silêncio, mantendo os dados em `%APPDATA%\pr-merge-tool`;
+  cima, em silêncio, mantendo os dados em `%APPDATA%\asgard` (ADR-158);
 - confere a versão no registro do Windows e reabre o Hub.
 
 Antes de rodar, olhe o fim do log do dia

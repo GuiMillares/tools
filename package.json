@@ -1,7 +1,7 @@
 {
-  "name": "pr-merge-tool",
+  "name": "asgard",
   "version": "1.0.90",
-  "description": "Asgard: o hub de automações da agência (Bitbucket, Google, Salesforce, Cloudflare, Registro.br, painéis MPI+)",
+  "description": "Asgard: o Hub da equipe com o orquestrador e os agentes (merge de PRs, publicação, propriedades Google, e-mails, relatórios)",
   "main": "main.js",
   "author": "Guilherme",
   "license": "UNLICENSED",
@@ -28,7 +28,7 @@
     "xlsx": "^0.18.5"
   },
   "build": {
-    "appId": "com.castrotech.prmergetool",
+    "appId": "com.castrotech.asgard",
     "productName": "Asgard",
     "npmRebuild": false,
     "asarUnpack": [

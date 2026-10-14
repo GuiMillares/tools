@@ -1,7 +1,7 @@
 // npm run atualizar — sobe a versão, gera o instalador e instala por cima do
 // Asgard já instalado.
 //
-// O Asgard instalado é uma cópia congelada em %LOCALAPPDATA%\Programs\pr-merge-tool:
+// O Asgard instalado é uma cópia congelada em %LOCALAPPDATA%\Programs\asgard:
 // mudança no código só chega nele com build + reinstalação. Este script junta os
 // passos e contorna dois tropeços conhecidos:
 //  - o editor (Electron) segura dist\win-unpacked\resources\app.asar e o
@@ -11,7 +11,8 @@
 //    que aparece no nome do instalador e em "Aplicativos instalados".
 //
 // Os dados do app (credenciais, histórico, configurações) ficam em
-// %APPDATA%\pr-merge-tool e não são tocados.
+// %APPDATA%\asgard e não são tocados (a pasta pr-merge-tool de antes da
+// ADR-158 fica de reserva).
 
 const fs = require('fs');
 const os = require('os');
@@ -67,12 +68,34 @@ function powershell(comando) {
   return (r.stdout || '').trim();
 }
 
-function versaoInstalada(productName) {
+// A versão registrada no Windows. Com a instalação antiga (pr-merge-tool) e a
+// nova (asgard) tendo o mesmo DisplayName, vale a que mora na pasta pedida.
+function versaoInstalada(productName, pastaInstalada) {
   const nome = productName.replace(/'/g, "''");
+  const pasta = String(pastaInstalada || '').replace(/'/g, "''");
   return powershell(
     "(Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' -ErrorAction SilentlyContinue | " +
-      `Where-Object { $_.DisplayName -like '${nome}*' } | Select-Object -First 1).DisplayVersion`
+      `Where-Object { $_.DisplayName -like '${nome}*' } | ` +
+      (pasta ? `Sort-Object { if ($_.InstallLocation -and $_.InstallLocation.TrimEnd('\\') -eq '${pasta}') { 0 } else { 1 } } | ` : '') +
+      'Select-Object -First 1).DisplayVersion'
   );
+}
+
+// A instalação de antes da ADR-158 (pasta pr-merge-tool) sai antes da nova
+// entrar: o desinstalador dela, em silêncio, que não toca nos dados do app.
+function desinstalarAntiga(pastaAntiga) {
+  if (!fs.existsSync(pastaAntiga)) return;
+  const desinstalador = fs.readdirSync(pastaAntiga).find((n) => /^Uninstall .*\.exe$/i.test(n));
+  etapa(`Tirando a instalação antiga de ${pastaAntiga}`);
+  fecharHubAberto(pastaAntiga);
+  if (desinstalador) {
+    const r = spawnSync(path.join(pastaAntiga, desinstalador), ['/S', `_?=${pastaAntiga}`], { stdio: 'ignore' });
+    if (r.status !== 0) aviso(`O desinstalador antigo saiu com código ${r.status}; sigo com a instalação nova.`);
+  }
+  for (let i = 0; i < 15 && fs.existsSync(pastaAntiga); i++) esperar(1000);
+  if (fs.existsSync(pastaAntiga)) {
+    try { fs.rmSync(pastaAntiga, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 }); } catch (e) { aviso(`A pasta antiga ficou (${e.message}); apague à mão depois.`); }
+  }
 }
 
 // Pede ao Asgard aberto que feche sozinho, como clicar no X, pra não cortar uma
@@ -140,10 +163,11 @@ function main() {
   const lock = fs.existsSync(LOCK_PATH) ? lerJson(LOCK_PATH) : null;
   const productName = pkg.dados.build?.productName || pkg.dados.name;
   const pastaInstalada = path.join(process.env.LOCALAPPDATA || '', 'Programs', pkg.dados.name);
+  const pastaAntiga = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'pr-merge-tool');
 
   const versaoAntiga = pkg.dados.version;
   const versaoNova = proximaVersao(versaoAntiga);
-  const instaladaAntes = versaoInstalada(productName);
+  const instaladaAntes = versaoInstalada(productName, pastaInstalada) || versaoInstalada(productName);
 
   console.log(
     `Asgard ${versaoAntiga} → ${versaoNova}` +
@@ -203,7 +227,8 @@ function main() {
       aviso(`Não consegui copiar para dist\\ (${e.message}) — a instalação segue mesmo assim.`);
     }
 
-    // 4. Instala por cima.
+    // 4. Instala por cima. A instalação antiga (outro nome, outro appId) sai antes.
+    if (pkg.dados.name !== 'pr-merge-tool') desinstalarAntiga(pastaAntiga);
     fecharHubAberto(pastaInstalada);
 
     etapa('Instalando por cima do Asgard atual');
@@ -223,7 +248,7 @@ function main() {
     }
 
     // 5. Confere pelo registro do Windows, não pela palavra do instalador.
-    const instaladaDepois = versaoInstalada(productName);
+    const instaladaDepois = versaoInstalada(productName, pastaInstalada);
     if (instaladaDepois !== versaoNova) {
       throw new Falha(
         `O instalador terminou, mas o Windows registra a versão "${instaladaDepois || 'nenhuma'}" em vez de ${versaoNova}. ` +
