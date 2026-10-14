@@ -735,8 +735,9 @@ toda tela e em todo seletor.
   cor do estado; o cartão fica preso por um fio. A câmera só se move pela
   mão: pan, zoom e giro pelo mouse; duplo clique recentra. Em janela menor
   os cartões, losangos e rótulos encolhem junto com a cena, os cartões
-  viram compactos (avatar e nome) e nunca cobrem outro cartão nem o nome de
-  uma sala; redimensionar a janela reenquadra. Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
+  (uma linha: avatar, nome · papel) viram compactos (avatar e nome) e saem
+  do caminho uns dos outros para cima ou para o lado, sem cobrir outro
+  cartão nem o nome de uma sala; redimensionar a janela reenquadra. Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
   rodapé). O menu do Hub e o topo ficam recolhidos e voltam quando o mouse
   encosta na borda esquerda ou na de cima (ou pelo ☰). O rodapé tem
   "Mostrar/Esconder painéis" (os cartões) e abre, numa gaveta por cima da

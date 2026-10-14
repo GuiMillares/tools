@@ -36,7 +36,6 @@
   const ALTURA_PAREDE = 1.5;
   const VELOCIDADE = 7;        // metros por segundo, andando
   const VELOCIDADE_PACOTE = 11; // o pacote voa mais rápido que a figura anda
-  const ALTURA_CARTAO = 2.15;   // onde o cartão do agente se prende (acima da cabeça)
   const FPS_MAX = 30;
   const DESLOCAMENTO_Y = 26;    // a cena fica este tanto de px abaixo do meio: sobra espaço aos cartões do fundo
   // Os cartões encolhem junto com a cena: tamanho cheio a partir de 24 px/m,
@@ -291,7 +290,10 @@
       // `fixo`: um obstáculo que não se move (o rótulo da sala) e que os
       // cartões evitam. `centro`: ancorado pelo centro (o losango); senão,
       // pelo pé. `escala` encolhe tudo junto com a cena.
-      ancorar(id, el, altura, op) { if (el) lista.set(id, { el, altura: altura == null ? 0 : altura, empurrar: !!(op && op.empurrar), centro: !!(op && op.centro), fixo: !!(op && op.fixo) }); else lista.delete(id); },
+      // Ancorar de novo o mesmo elemento (depois de mudar o texto) manda medir
+      // o tamanho outra vez; fora isso, a medida fica guardada (ler offsetWidth
+      // a cada quadro força o layout).
+      ancorar(id, el, altura, op) { if (el) lista.set(id, { el, altura: altura == null ? 0 : altura, empurrar: !!(op && op.empurrar), centro: !!(op && op.centro), fixo: !!(op && op.fixo), w: 0, h: 0 }); else lista.delete(id); },
       posicionar(pontoDe, projetar, escala) {
         const k = escala || 1;
         const caixas = [];
@@ -301,24 +303,36 @@
           if (!p) { a.el.style.display = 'none'; continue; }
           const s = projetar(p.x, (p.y || 0) + a.altura, p.z);
           a.el.style.display = '';
-          const w = (a.el.offsetWidth || 160) * k, h = (a.el.offsetHeight || 40) * k;
+          if (!a.w) { a.w = a.el.offsetWidth || 160; a.h = a.el.offsetHeight || 40; }
+          const w = a.w * k, h = a.h * k;
           if (a.empurrar) { caixas.push({ a, x: s.x, y: s.y, w, h }); continue; }
           // O rótulo é ancorado pela esquerda, no pé: a caixa dele é [x, y - h, x + w, y].
           if (a.fixo) postos.push({ x: s.x + w / 2, y: s.y, w, h });
           a.el.style.transform = `translate(${Math.round(s.x)}px, ${Math.round(s.y)}px) translate(${a.fixo ? '0' : '-50%'}, ${a.centro ? '-50%' : '-100%'}) scale(${k})`;
         }
-        // A caixa de cada cartão é [x - w/2, y - h, x + w/2, y]; de cima para
-        // baixo, quem cobre um já colocado (ou um rótulo) sobe até desencostar.
+        // A caixa de cada cartão é [x - w/2, y - h, x + w/2, y]. De cima para
+        // baixo, quem cobre um já colocado (ou um rótulo) sai do caminho pelo
+        // lado mais barato: um pouco para cima, ou para a direita/esquerda,
+        // para não virar uma torre longe da figura.
         caixas.sort((u, v) => u.y - v.y);
+        const bateEm = (c, x, y) => postos.find((o) => Math.abs(o.x - x) < (o.w + c.w) / 2 && y > o.y - o.h - 4 && y - c.h < o.y + 4);
         for (const c of caixas) {
-          let y = c.y;
-          for (let tenta = 0; tenta < 14; tenta++) {
-            const bate = postos.find((o) => Math.abs(o.x - c.x) < (o.w + c.w) / 2 && y > o.y - o.h - 4 && y - c.h < o.y + 4);
-            if (!bate) break;
-            y = bate.y - bate.h - 6;
+          let melhor = { x: c.x, y: c.y, custo: 0 };
+          if (bateEm(c, c.x, c.y)) {
+            const cands = [];
+            let y = c.y;
+            for (let t = 0; t < 8; t++) { const o = bateEm(c, c.x, y); if (!o) break; y = o.y - o.h - 6; }
+            cands.push({ x: c.x, y, custo: c.y - y });
+            for (const lado of [1, -1]) {
+              let x = c.x;
+              for (let t = 0; t < 8; t++) { const o = bateEm(c, x, c.y); if (!o) break; x = o.x + lado * ((o.w + c.w) / 2 + 8); }
+              cands.push({ x, y: c.y, custo: Math.abs(x - c.x) * 1.15 });
+            }
+            cands.sort((u, v) => u.custo - v.custo);
+            melhor = cands[0];
           }
-          postos.push({ x: c.x, y, w: c.w, h: c.h });
-          c.a.el.style.transform = `translate(${Math.round(c.x)}px, ${Math.round(y)}px) translate(-50%, -100%) scale(${k})`;
+          postos.push({ x: melhor.x, y: melhor.y, w: c.w, h: c.h });
+          c.a.el.style.transform = `translate(${Math.round(melhor.x)}px, ${Math.round(melhor.y)}px) translate(-50%, -100%) scale(${k})`;
         }
       },
       limpar() { lista.clear(); },
@@ -331,14 +345,18 @@
     if (!THREE || !Planta) return null;
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'low-power', failIfMajorPerformanceCaveat: false });
+      // GPU dedicada quando houver (a de baixo consumo deixava a cena travada).
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false });
     } catch (e) { return null; }
     const canvas = renderer.domElement;
     canvas.className = 'esc-canvas';
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
     renderer.setClearColor(CORES.fundo, 1);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    // A sombra é só da parte fixa (mesas, cadeiras, plantas) e é calculada uma
+    // vez: as figuras têm o anel no chão no lugar da sombra.
+    renderer.shadowMap.autoUpdate = false;
     host.appendChild(canvas);
 
     const scene = new THREE.Scene();
@@ -351,7 +369,7 @@
     const sol = new THREE.DirectionalLight(0xc8ffe4, 1.25);
     sol.position.set(28, 60, 22);
     sol.castShadow = true;
-    sol.shadow.mapSize.set(2048, 2048);
+    sol.shadow.mapSize.set(1024, 1024);
     Object.assign(sol.shadow.camera, { left: -42, right: 42, top: 42, bottom: -42, near: 1, far: 200 });
     sol.shadow.bias = -0.0006;
     scene.add(sol);
@@ -364,7 +382,7 @@
       piso: mat(CORES.piso, { roughness: 0.95 }), sala: mat(CORES.sala, { roughness: 0.95 }), corredor: mat(CORES.corredor, { roughness: 0.95 }),
       mesa: mat(CORES.mesa), tampo: mat(CORES.mesaTampo, { roughness: 0.6 }), cadeira: mat(CORES.cadeira), monitor: mat(CORES.monitor, { roughness: 0.5, metalness: 0.2 }),
       vaso: mat(CORES.vaso), folha: mat(CORES.folha, { roughness: 0.9 }),
-      parede: new THREE.MeshPhysicalMaterial({ color: CORES.parede, transparent: true, opacity: 0.09, roughness: 0.15, metalness: 0, transmission: 0, side: THREE.DoubleSide, depthWrite: false }),
+      parede: new THREE.MeshStandardMaterial({ color: CORES.parede, transparent: true, opacity: 0.09, roughness: 0.2, metalness: 0, side: THREE.DoubleSide, depthWrite: false }),
       aresta: new THREE.LineBasicMaterial({ color: CORES.parede, transparent: true, opacity: 0.45 }),
       grade: new THREE.LineBasicMaterial({ color: CORES.grade, transparent: true, opacity: 0.5 }),
       cabeca: mat(CORES.cabeca, { roughness: 0.7 }),
@@ -377,7 +395,7 @@
       cabeca: new THREE.SphereGeometry(0.26, 14, 12), corpo: new THREE.CapsuleGeometry(0.3, 0.55, 4, 10),
       pacote: new THREE.BoxGeometry(0.3, 0.3, 0.3), pop: new THREE.OctahedronGeometry(0.3),
       anel: new THREE.RingGeometry(0.42, 0.58, 36),
-      fio: new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 2.3, 0), new THREE.Vector3(0, 3.1, 0)]),
+      fio: new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 2.3, 0), new THREE.Vector3(0, 2.95, 0)]),
     };
     materiais.fio = new THREE.LineBasicMaterial({ color: 0x22f2ef, transparent: true, opacity: 0.4 });
 
@@ -483,6 +501,7 @@
     }
 
     // ----- a parte viva: figuras, ícones, pacotes, pops -----
+    renderer.shadowMap.needsUpdate = true; // uma vez, com a parte fixa pronta
     const dinamico = new THREE.Group();
     scene.add(dinamico);
     const figurasMesh = new Map();
@@ -492,8 +511,8 @@
     function figura(ent) {
       const g = new THREE.Group();
       const tipo = ent.id === Planta.ORQUESTRADOR ? 'orquestrador' : (ent.dados && ent.dados.modo === 'standby') ? 'standby' : 'auto';
-      const corpo = new THREE.Mesh(geo.corpo, materiais.corpo[tipo].clone()); corpo.position.y = 0.72; corpo.castShadow = true;
-      const cabeca = new THREE.Mesh(geo.cabeca, materiais.cabeca.clone()); cabeca.position.y = 1.5; cabeca.castShadow = true;
+      const corpo = new THREE.Mesh(geo.corpo, materiais.corpo[tipo].clone()); corpo.position.y = 0.72;
+      const cabeca = new THREE.Mesh(geo.cabeca, materiais.cabeca.clone()); cabeca.position.y = 1.5;
       const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.09, 0.06), materiais.monitor); visor.position.set(0, 1.54, 0.24);
       // O anel luminoso no chão (a cor diz o estado) e o fio que sobe até o
       // cartão, como na referência; o losango com o ícone é HTML, ancorado.
@@ -529,7 +548,7 @@
       for (const [id, g] of figurasMesh) if (!sim.figuras.has(id)) { dinamico.remove(g); figurasMesh.delete(id); }
       for (const [id, ent] of sim.pacotes) {
         let m = pacotesMesh.get(id);
-        if (!m) { m = new THREE.Mesh(geo.pacote, materiais.pacote.na_fila); m.castShadow = true; dinamico.add(m); pacotesMesh.set(id, m); }
+        if (!m) { m = new THREE.Mesh(geo.pacote, materiais.pacote.na_fila); dinamico.add(m); pacotesMesh.set(id, m); }
         const estado = ent.dados ? ent.dados.estado : 'na_fila';
         const base = materiais.pacote[estado] || materiais.pacote.na_fila;
         if (estado === 'executando') {
@@ -698,7 +717,7 @@
           // O anel no chão e o fio até o cartão (o losango é HTML).
           const corAnel = f.icone ? (CORES.icone[f.icone] || CORES.icone.trabalho) : tipo === 'orquestrador' ? CORES.corpo.orquestrador : tipo === 'standby' ? 0x4f7d69 : CORES.icone.ok;
           ctx.strokeStyle = hex(corAnel); ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(pe.x, pe.y, 0.5 * cam.zoom, 0.5 * cam.zoom * Math.sin(cam.el), 0, 0, Math.PI * 2); ctx.stroke();
-          const f1 = projetar(f.pos.x, 2.3, f.pos.z), f2 = projetar(f.pos.x, 3.1, f.pos.z);
+          const f1 = projetar(f.pos.x, 2.3, f.pos.z), f2 = projetar(f.pos.x, 2.95, f.pos.z);
           ctx.strokeStyle = 'rgba(34,242,239,0.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(f1.x, f1.y); ctx.lineTo(f2.x, f2.y); ctx.stroke();
           ctx.globalAlpha = 1; ctx.lineWidth = 1;
         } });

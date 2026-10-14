@@ -7499,6 +7499,21 @@ rodapé quebra linha e a gaveta estreita; até 860 px a gaveta ocupa a largura.
 O teste de navegador reduz a janela a 1000×640 e prova que nenhum cartão
 cobre outro nem um rótulo.
 
+**Terceiro adendo (14/10/2026, "ainda bagunçado e bem travado").** O
+empurrão só para cima fazia uma torre de cartões longe das figuras, e a cena
+estava pesada. Decisões: o cartão passa a ter **uma linha** (avatar, nome ·
+papel; a função fica na gaveta) e a atividade só quando há; o empurrão
+escolhe **o lado mais barato** entre subir e ir para a direita ou a
+esquerda; os tamanhos dos elementos ancorados são medidos uma vez por
+ancoragem (ler `offsetWidth` a cada quadro forçava o layout), e a tela
+reancora o cartão a cada desenho para medir de novo quando o texto muda. No
+motor 3D: vidro com `MeshStandardMaterial` (o físico custava um shader
+caro), sombra 1024 com PCF simples e **calculada uma vez, só da parte fixa**
+(`shadowMap.autoUpdate = false`; as figuras e os pacotes não projetam
+sombra, o anel no chão faz o papel), pixel ratio até 1,25 e
+`powerPreference: 'high-performance'` (a GPU de baixo consumo deixava a
+cena travada em notebook).
+
 ## ADR-154 — O Hub vira Asgard: nome, grafia rúnica na marca e a runa Othala como ícone
 
 **Contexto.** Pedido do Guilherme (14/10): "muda o nome de hub para Asgard

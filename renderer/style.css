@@ -1568,7 +1568,7 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .esc-sem-cena { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-dim); }
 
 /* Os cartões presos às figuras, como no escritório de referência. */
-.esc-agente { pointer-events: auto; display: inline-flex; align-items: center; gap: 7px; max-width: 220px; padding: 4px 9px 4px 4px; border: 1px solid var(--border-hi); border-left: 2px solid var(--border-hi); border-radius: 6px; background: rgba(6, 18, 16, 0.86); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); transition: border-color 140ms ease-out, box-shadow 140ms ease-out, opacity 160ms ease-out; }
+.esc-agente { pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 3px 8px 3px 3px; border: 1px solid var(--border-hi); border-left: 2px solid var(--border-hi); border-radius: 6px; background: rgba(6, 18, 16, 0.86); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); transition: border-color 140ms ease-out, box-shadow 140ms ease-out, opacity 160ms ease-out; }
 .esc-agente:hover, .esc-agente.aberto { border-color: var(--accent-line); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 2px var(--accent-soft); }
 .esc-agente.standby { opacity: 0.8; border-style: dashed; border-left-style: solid; }
 .esc-agente.est-trabalhando { border-left-color: var(--accent-2); }
@@ -1578,7 +1578,7 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .esc-agente.orquestrador { border-left-color: var(--warning); }
 .esc-agente.est-desligado { opacity: 0.5; }
 .esc-overlay.sem-paineis .esc-agente { opacity: 0; pointer-events: none; }
-.esc-agente-avatar { flex: none; width: 24px; height: 24px; border-radius: 4px; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 12px; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); }
+.esc-agente-avatar { flex: none; width: 20px; height: 20px; border-radius: 4px; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 11px; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); }
 .esc-agente.standby .esc-agente-avatar { color: var(--text-dim); background: var(--panel-hi); border-color: var(--border); }
 .esc-agente.orquestrador .esc-agente-avatar { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-line); }
 .esc-agente-texto { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
@@ -1622,9 +1622,9 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .esc-sala-rotulo { transform-origin: 0 100%; }
 .esc-selo { transform-origin: 50% 100%; }
 /* Compacto (cena pequena): só avatar, nome e, se houver, a atividade. */
-.esc-overlay.compacto .esc-agente { padding: 3px 7px 3px 3px; gap: 6px; }
-.esc-overlay.compacto .esc-agente-avatar { width: 20px; height: 20px; font-size: 11px; }
-.esc-overlay.compacto .esc-agente-papel, .esc-overlay.compacto .esc-agente-funcao { display: none; }
+.esc-overlay.compacto .esc-agente { padding: 2px 6px 2px 2px; gap: 5px; }
+.esc-overlay.compacto .esc-agente-avatar { width: 18px; height: 18px; font-size: 10px; }
+.esc-overlay.compacto .esc-agente-papel { display: none; }
 .esc-overlay.compacto .esc-agente .esc-agente-atividade { max-width: 120px; }
 .esc-sala-rotulo { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-faint); white-space: nowrap; padding: 2px 6px; border-left: 1px solid var(--border-hi); }
 .esc-lugar-n { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--accent-ink); background: var(--accent); border-radius: 8px; padding: 0 6px; line-height: 16px; }

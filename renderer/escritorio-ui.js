@@ -29,7 +29,7 @@
   const OPS = [['igual', '='], ['diferente', '≠'], ['contem', 'contém'], ['naoContem', 'não contém'], ['comeca', 'começa com'], ['termina', 'termina com'], ['regex', 'bate com (regex)'], ['vazio', 'está vazio'], ['naoVazio', 'não está vazio']];
   const ESTADO_AGENTE = { ocioso: ['ocioso', 'neutral'], standby: ['standby', 'neutral'], trabalhando: ['trabalhando', 'run'], aguardando: ['aguardando você', 'warn'], erro: ['com erro', 'err'], desligado: ['desligado', 'off'] };
   const PREFS_CHAVE = 'hub.escritorio.tela';
-  const ALTURA_CARTAO = 3.2;  // o cartão, no alto do fio, em metros da planta
+  const ALTURA_CARTAO = 3.0;  // o cartão, no alto do fio, em metros da planta
   const ALTURA_LOSANGO = 2.1; // o losango com o ícone, logo acima da cabeça
 
   const ui = { snap: null, carregando: false, erro: '', aba: 'tudo', gaveta: null, historico: null, editando: null, pendenciaAberta: null, timerRefresh: null, ultimaEsperas: '', paineis: true, motorPreferido: '3d', terminal: false };
@@ -343,8 +343,8 @@
         c.addEventListener('click', () => { ui.gaveta = 'agente:' + a.id; desenhar(); });
         overlay.appendChild(c);
         cartoes.set(a.id, c);
-        if (motor) motor.ancorar(a.id, c, ALTURA_CARTAO, { empurrar: true });
       }
+      if (motor) motor.ancorar(a.id, c, ALTURA_CARTAO, { empurrar: true });
       let l = losangos.get(a.id);
       if (!l) {
         l = document.createElement('div');
@@ -363,7 +363,6 @@
         <span class="esc-agente-avatar">${esc((a.nome || '?').charAt(0))}</span>
         <span class="esc-agente-texto">
           <span class="esc-agente-nome">${esc(a.nome)}<span class="esc-agente-papel"> · ${esc(a.papel || '')}</span></span>
-          <span class="esc-agente-funcao">${esc(a.funcao || (a.sala ? a.sala.nome : ''))}</span>
           ${a.estado === 'trabalhando' ? `<span class="esc-agente-atividade">${esc(a.atividade || 'trabalhando')}</span>` : a.estado === 'aguardando' ? '<span class="esc-agente-atividade aguarda">aguardando você</span>' : a.estado === 'erro' ? '<span class="esc-agente-atividade erro">com erro</span>' : ''}
         </span>
         <span class="esc-agente-dot ${tom}"></span>`;

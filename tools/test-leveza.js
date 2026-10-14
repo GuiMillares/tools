@@ -112,7 +112,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     check('só pede outro quadro enquanto algo se move (figura, pacote, ícone de trabalho ou câmera)', /if \(continua\) raf = requestAnimationFrame\(quadro\);/.test(laco) && /return movendo \|\| camMudou;/.test(cena));
     check('ícone de pergunta e de erro ficam parados; só o de trabalho e o da fila giram', /if \(f\.icone === 'trabalho' \|\| f\.icone === 'fila'\) \{ f\.iconeAng \+= dt \* 1\.6; movendo = true; \}/.test(cena));
     check('sair do Escritório desliga o laço (app.js chama hubEscritorioSair no render)', /window\.hubEscritorioSair\(\)/.test(app) && /motor\.desligar\(\)/.test(ler('renderer', 'escritorio-ui.js')));
-    check('o pixel ratio tem teto (sem 4K de sombra por quadro)', /Math\.min\(window\.devicePixelRatio \|\| 1, 1\.5\)/.test(cena));
+    check('o pixel ratio tem teto (sem 4K de sombra por quadro)', /Math\.min\(window\.devicePixelRatio \|\| 1, 1\.25\)/.test(cena));
   }
 
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
