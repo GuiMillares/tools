@@ -1,6 +1,6 @@
 {
   "name": "pr-merge-tool",
-  "version": "1.0.87",
+  "version": "1.0.88",
   "description": "Asgard: o hub de automações da agência (Bitbucket, Google, Salesforce, Cloudflare, Registro.br, painéis MPI+)",
   "main": "main.js",
   "author": "Guilherme",
