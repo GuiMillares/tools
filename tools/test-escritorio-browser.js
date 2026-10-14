@@ -25,6 +25,7 @@ const SNAP = {
   rodando: false,
   modelo: { configurado: false, temChave: true, ligado: false, orquestrador: 'gemini-3.1-pro-preview', agentes: 'gemini-3.8-flash' },
   contadores: { dia: '2026-10-13', chamadas: 3, tokensEntrada: 1200, tokensSaida: 300, tokensPensamento: 100 },
+  resumo: { hoje: { pelosAgentes: 2, pelaMao: 1, falhas: 0, ignoradas: 1, execucoes: 2, pendenciasCriadas: 2, pendenciasAbertas: 4, tempoMedioMin: 25, porAgente: { 'publicador-mpiplus': 2 } }, semana: { pelosAgentes: 5, pelaMao: 2, falhas: 1, ignoradas: 3, execucoes: 6, pendenciasCriadas: 4, pendenciasAbertas: 4, tempoMedioMin: 31, porAgente: { 'publicador-mpiplus': 4, bloqueador: 1 } }, calculadoEm: '2026-10-13T12:00:00.000Z' },
   ultimaVarredura: { quando: '2026-10-13T12:00:00.000Z', ok: true, lidas: 4 },
   salas: [],
   agentes: [
@@ -214,6 +215,7 @@ const STUB = `
     check('"Rodar agora" chama escritorioRodar', (await chamadas('escritorioRodar')).length === 1);
     await gaveta('comando');
     check('a gaveta Comando mostra os contadores, os cartões dos agentes e os interruptores grandes', await page.evaluate(() => /3/.test(document.querySelector('#escGaveta .esc-stat b').textContent) && document.querySelectorAll('#escGaveta .esc-agente-card').length === 4 && !!document.querySelector('#escGaveta [data-ligar="geral"]')));
+    check('o resumo "Hoje e últimos 7 dias" (ADR-155) está na gaveta, por agente com o nome, e a frase do dia no título', await page.evaluate(() => { const g = document.getElementById('escGaveta'); const linhas = [...g.querySelectorAll('#escResumo ~ .table-wrap tbody tr')].map((tr) => [...tr.children].map((td) => td.textContent.trim()).join(' ')); return !!g.querySelector('#escResumo') && /Hoje 2 1 0 1 2 25 min/.test(linhas[0] || '') && /7 dias 5 2 1 3 4 31 min/.test(linhas[1] || '') && /Thor 4 · Tyr 1/.test(g.textContent) && /hoje: 2 pelos agentes · 1 à mão · 4 pendência\(s\)/.test(document.querySelector('.home-hi__sub').textContent); }), await page.evaluate(() => [...document.querySelectorAll('#escGaveta #escResumo ~ .table-wrap tbody tr')].map((tr) => tr.textContent.replace(/\s+/g, ' ').trim()).join(' | ') + ' // ' + document.querySelector('.home-hi__sub').textContent));
     await page.click('#escGaveta .esc-agente-card[data-agente-card="bloqueador"] .esc-mini-switch');
     check('o interruptor do agente chama escritorioLigar({ agente, valor })', JSON.stringify(await ultima('escritorioLigar')) === '{"agente":"bloqueador","valor":true}');
     check('a linha "Aguardando DNS" aparece quando a lista de espera tem alguém', await page.evaluate(() => { esperas = [{ dominio: 'w.com.br', status: 'esperando', cliente: true }]; window.hubEscritorio.desenhar(); const el = document.getElementById('escEsperas'); const ok = !!el && /o cliente apontar/.test(el.textContent) && /w\.com\.br/.test(el.textContent); esperas = []; window.hubEscritorio.desenhar(); return ok && !document.getElementById('escEsperas'); }));

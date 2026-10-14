@@ -191,6 +191,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('escritorio:evento', handler);
     return () => ipcRenderer.removeListener('escritorio:evento', handler);
   },
+  // O processo principal pede para abrir o Escritório numa gaveta (a notificação clicada, ADR-155).
+  onEscritorioAbrir: (callback) => {
+    const handler = (_event, dados) => callback(dados);
+    ipcRenderer.on('escritorio:abrir', handler);
+    return () => ipcRenderer.removeListener('escritorio:abrir', handler);
+  },
   onEscritorioLog: (callback) => {
     const handler = (_event, dados) => callback(dados);
     ipcRenderer.on('escritorio:log', handler);

@@ -7553,23 +7553,83 @@ a versão instalada pelo nome novo (procura "Asgard" no registro de programas)
 e instala por cima do mesmo jeito, pelo `appId`; a partir daí volta ao normal.
 A limpeza do user agent (`uaSemElectron`) tira "Hub" e "Asgard".
 
+## ADR-155 — Dívidas pagas de uma vez: OAuth criptografado, GA4 sem duplicata por slot reaproveitado, service workers do painel, notificação de pendência e o resumo "Hoje" do Escritório
+
+**Status:** aceita — bloco 1 do pedido de 14/10/2026 ("pode fazer todos
+agora na ordem que achar melhor, menos o Asgard para o time").
+
+**Contexto.** Depois das fases do Escritório, o Guilherme pediu uma lista de
+planos de melhoria e mandou fazer todos, menos distribuir o Asgard para o
+time. Este bloco é o que era risco (segurança e duplicata) e o que faltava
+para o Escritório ser usado sem ficar olhando para ele.
+
+**Decisão.**
+
+1. **O Client Secret do OAuth e os refresh tokens saem do texto puro.**
+   `oauth-config.json` e `oauth-token*.json` (userData) viram
+   `oauth-config.enc` e `oauth-token*.enc`, cifrados pelo `safeStorage`,
+   como as outras chaves (ADR-004). Migração sem passo manual: a primeira
+   leitura que encontra só o `.json` grava o `.enc` e apaga o `.json`;
+   sem criptografia do sistema, gravar é recusado e o `.json` antigo é lido
+   onde está. **O segredo não volta mais para a tela**: `oauth:getConfig`
+   devolve `clientSecret: ''` e `temSecret`; a tela mostra "gravado nesta
+   máquina" e, ao salvar, secret em branco mantém o gravado (o processo
+   principal faz o merge). Os handlers que recebiam `clientSecret` do
+   renderer (`oauth:login`, `analytics:listBrandAccounts`,
+   `tagmanager:listBrandAccounts`, os dois `grantAccessBulk`) passam por
+   `oauthCredenciais(pedido)`: o que o pedido traz, senão o gravado. A
+   service account **já estava fora do projeto** (`Pictures\hub-automacao-
+   863933e0bf08.json`, configurada em `google-config.json`); a pendência
+   dizia o contrário por estar velha. Cabe ao Guilherme revogar o Client
+   Secret antigo no console do Google e colar um novo, já que o antigo viveu
+   em texto.
+2. **GA4: o que o cache acha é confirmado na API, e antes de criar o cache
+   vale 7 dias.** `varrerDataStreams` ganha `confirmar` (padrão ligado):
+   cada achado do cache é relido com uma chamada (`dataStreams.list`); se o
+   data stream mudou de domínio (slot reaproveitado para outro cliente), o
+   cache é corrigido e a busca segue para a API. E ganha `validadeMs`: a
+   conferência antes de criar propriedade (ADR-046) passa
+   `ANALYTICS_CACHE_VALIDO_CRIACAO_MS` (7 dias), então um slot reaproveitado
+   há mais de uma semana é relido antes de alguém criar uma duplicata. A
+   busca comum segue com 30 dias. Risco residual: reuso feito há menos de 7
+   dias sem ninguém ter procurado o cliente antigo.
+3. **Service workers do painel.** `painelDescartarJanela` passa a limpar
+   `serviceworkers` e `cachestorage` da partição `persist:painel-mpi` depois
+   de destruir a janela (os cookies, o login, ficam) e anota na Atividade
+   quantos processos e MB o Asgard tem naquele momento, para a pendência da
+   ADR-125 ter medida em vez de suspeita.
+4. **Notificação do Windows quando nasce uma pendência.** O orquestrador
+   marca `nova: true` no evento `pendencia` só quando cria a pendência (uma
+   tarefa entrando numa já aberta não avisa). O processo principal mostra a
+   `Notification` com o id e a pergunta; o clique restaura e foca a janela e
+   manda `escritorio:abrir` para a tela abrir a gaveta de pendências.
+   `ia-config.json` ganha `notificar` (padrão ligado), com a caixa em
+   Configurações › Escritório & IA.
+5. **O resumo "Hoje e últimos 7 dias"** (`lib/escritorio/resumo.js`, dual):
+   conta pelo histórico das tarefas, não pelo estado: feitas pelos agentes
+   (execução ok e concluída), feitas à mão ("tratada por você"), ignoradas,
+   falhas, execuções, pendências criadas e abertas, tempo médio da entrada
+   na fila até a execução, e por agente. Vai no snapshot (`resumo`), aparece
+   como frase no título do Escritório ("hoje: 2 pelos agentes · 1 à mão") e
+   como tabela na gaveta Comando. É a medida para decidir se vale tirar um
+   agente do standby.
+
+**Consequências.** `npm test` ganhou `test-segredos-oauth.js` (migração,
+recusa sem criptografia, segredo fora da tela, merge do secret em branco),
+`test-escritorio-notificacao.js` e `test-escritorio-resumo.js`; o
+`test-analytics-scan.js` cobre o slot reaproveitado (cache confirmado e
+corrigido, validade de criação). A lista de pendências conhecidas perde
+quatro itens.
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
-- **Cache de data streams e slot reaproveitado** (ADR-131): o cache vale 30
-  dias e, se ele acha, a busca nem vai à API. Quando um slot é reaproveitado
-  para um cliente novo (ADR-016), por até 30 dias a busca pelo cliente novo
-  acha 0 propriedades sem nenhuma chamada, e a do cliente antigo ainda devolve
-  o slot com o domínio velho (reproduzido com a API falsa do
-  `test-gtm-template.js`). A conferência antes de criar propriedade (ADR-046)
-  usa a mesma varredura: pode deixar criar duplicada. Proposta: confirmar na
-  API o que o cache achou (uma chamada) e, quando nada casar, reler também as
-  do cache antes de dizer que não existe.
+- **Cache de data streams e slot reaproveitado** (ADR-131): tratado na
+  ADR-155 (o achado do cache é confirmado na API; antes de criar propriedade
+  o cache vale 7 dias). Risco residual: reuso feito há menos de 7 dias sem
+  ninguém ter procurado o cliente antigo.
 
 - `package.json` ainda se identifica como `pr-merge-tool` / `"PR Merge Tool"` /
   `com.castrotech.prmergetool`. O instalador sai com o nome antigo.
-- `toolCategory()` em `app.js` é código morto — definido e nunca chamado.
-- `oauth-config.json` guarda o Client Secret e `oauth-token.json` guarda o
-  refresh token, ambos em texto (ver ADR-004 e ADR-013).
 - **MPI+ não tem template de GTM próprio** — usa o da Busca Cliente (ADR-015).
 - **Se o tenant do Azure bloquear registro de app**, a ferramenta de suspensão
   não tem plano B implementado (ADR-023).
@@ -7579,15 +7639,14 @@ A limpeza do user agent (`uaSemElectron`) tira "Hub" e "Asgard".
   interface — só recriar no destino, o que gera um `GTM-ID` novo e obriga a
   atualizar e republicar cada site. Ver a conversa sobre isso antes de tratar
   como tarefa simples.
-- **Credencial dentro da pasta do projeto** — e, até a ADR-024, dentro do
-  instalador também. Um JSON de service account com
-  `private_key` e um `.txt` com o API Token do Bitbucket foram encontrados
-  soltos na raiz, num zip. As duas credenciais foram revogadas e recriadas. O
-  `.txt` já saiu; o JSON **ainda está na raiz** e precisa ser movido para fora
-  do repositório — o campo "Caminho do arquivo da Service Account" nas
-  configurações aceita qualquer caminho absoluto, justamente para o arquivo
-  morar fora daqui. Não basta `.gitignore`: o certo é o arquivo não existir
-  nesta pasta.
+- **Credencial dentro da pasta do projeto** — conferido em 14/10/2026
+  (ADR-155): a service account mora fora do projeto
+  (`Pictures\hub-automacao-863933e0bf08.json`, configurada em
+  `google-config.json`) e a raiz não tem JSON de credencial. Sobra um JSON
+  antigo (`hub-automacao-189437b5726a.json`) dentro do userData, que pode ser
+  resto de uma chave revogada: o Guilherme decide se apaga. O Client Secret
+  do OAuth viveu em texto até a ADR-155; revogar e recriar é passo manual
+  dele no console do Google.
 - O commit do `geral.php` não tem trava contra escrita concorrente (ver ADR-009).
 - A **Search Console API** precisa ser habilitada no projeto do Google Cloud
   para o sitemap e o `sites.add` funcionarem (ADR-038). O escopo já está na
@@ -7595,8 +7654,9 @@ A limpeza do user agent (`uaSemElectron`) tira "Hub" e "Asgard".
 - **Janelas ocultas do painel que sobram depois da automação** (ADR-125): no
   Hub instalado, 3 processos (~330 MB), nascidos quando a automação abriu o
   painel, seguiam vivos uma hora depois, embora o código devolva a janela com
-  prazo de 3 min (`painelSoltarJanela`). Falta descobrir se são janelas que
-  escaparam do cache ou processos que o Chromium mantém para o site.
+  prazo de 3 min (`painelSoltarJanela`). Desde a ADR-155 o descarte limpa os
+  service workers da partição e anota na Atividade quantos processos e MB o
+  Asgard tem naquele momento: é por essa linha que se confere se sobrou.
 
 ## ADR-146 — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
 

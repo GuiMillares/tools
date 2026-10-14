@@ -717,6 +717,14 @@ toda tela e em todo seletor.
   (Conferir Vínculos, Planilha do Relatório, Quando publicou, Ouvidoria,
   Bloquear Contatos, Publicação em Massa, Mergear PRs), o cartão do agente
   mostra "trabalhando" com o nome do módulo.
+- **Aviso fora da tela (ADR-155):** quando nasce uma pendência, uma
+  notificação do Windows com a pergunta; clicar nela traz o Asgard e abre as
+  pendências. Desliga em Configurações › Escritório & IA.
+- **Resumo "Hoje e últimos 7 dias" (ADR-155):** quantas tarefas os agentes
+  fizeram sozinhos, quantas você fez à mão, falhas, ignoradas, pendências e
+  o tempo médio da fila até a execução, no título da tela (a frase do dia) e
+  na gaveta Comando (a tabela, com o total por agente). É a medida para
+  decidir se vale tirar um agente do standby.
 - **A tela é o escritório em 3D, de tela cheia (ADR-153):** dez salas
   numeradas em duas filas com um corredor no meio (01 Sala de Comando do
   Odin, 02 a 09 uma por agente, 10 Sala de Reunião), divisórias de vidro,
@@ -863,7 +871,6 @@ Nada aqui está prometido — é a lista do que já se sabe que falta.
 
 - Renomear a identidade do app no `package.json` (ainda sai como "PR Merge
   Tool"; ver Pendências na ADR).
-- Guardar o Client Secret do OAuth no `safeStorage`.
 - Desfazer/limpar container GTM duplicado que o próprio app detectou.
 - Escolher manualmente qual resultado usar quando a busca por tags existentes é
   ambígua (hoje só avisa e deixa de fora).

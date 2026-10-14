@@ -248,7 +248,7 @@
       <button class="esc-menu-btn" id="escMenuBtn" title="Menu do Hub (ou encoste o mouse na borda esquerda)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
       <div class="esc-titulo">
         <div class="esc-titulo-linha"><span class="home-hi__ola">Escritório</span><span class="home-pill ${s.ligado.geral ? (s.ligado.observacao ? 'cyan' : '') : 'dim'}">${modo}</span><span class="home-pill ${pendAbertas.length ? 'warn' : 'dim'}">${pendAbertas.length} pendência(s)</span></div>
-        <div class="home-hi__sub">01 / SALA DE COMANDO · ${esc((s.orquestrador && s.orquestrador.nome) || 'Odin')}, o orquestrador${s.modelo.configurado ? ` · ${esc(s.modelo.orquestrador)}` : ' · sem modelo'} · ${v ? `última varredura ${hora(v.quando)}${v.ok === false ? ' · falhou: ' + esc(v.erro || '') : ''}` : 'nenhuma varredura ainda'}${s.rodando ? ' · <b class="esc-vivo">varrendo…</b>' : ''}${trabalhando ? ` · ${trabalhando} trabalhando` : ''}</div>
+        <div class="home-hi__sub">01 / SALA DE COMANDO · ${esc((s.orquestrador && s.orquestrador.nome) || 'Odin')}, o orquestrador${s.modelo.configurado ? ` · ${esc(s.modelo.orquestrador)}` : ' · sem modelo'} · ${v ? `última varredura ${hora(v.quando)}${v.ok === false ? ' · falhou: ' + esc(v.erro || '') : ''}` : 'nenhuma varredura ainda'}${s.rodando ? ' · <b class="esc-vivo">varrendo…</b>' : ''}${trabalhando ? ` · ${trabalhando} trabalhando` : ''}${s.resumo && window.EscritorioResumo ? ' · ' + esc(window.EscritorioResumo.frase(s.resumo)) : ''}</div>
       </div>`;
     cena.querySelector('#escHudComando').innerHTML = `
       <div class="esc-hud-switches">
@@ -429,12 +429,24 @@
         <div class="esc-stat"><b>${s.regras.filter((r) => r.ativa !== false).length}</b><small>regra(s) ativa(s)</small></div>
       </div>
       ${linhaEsperas()}
+      ${htmlResumo(s)}
       ${!s.modelo.configurado ? '<p class="hint mt8">Sem modelo: tarefa que a triagem não reconhece vira pendência, e você decide uma vez (Ignorar sempre, Avisar sempre, Encaminhar sempre). Os agentes não usam modelo nunca.</p>' : ''}
     </div>
     <div class="home-sec-title">Agentes <span class="r">${s.agentes.filter((a) => a.modo === 'auto').length} automáticos · ${s.agentes.filter((a) => a.modo === 'standby').length} em standby</span></div>
     <div class="esc-agentes">${s.agentes.map(cardAgente).join('')}</div>`;
   }
 
+  // O que os agentes fizeram hoje e nos últimos 7 dias (ADR-155).
+  function htmlResumo(s) {
+    const r = s.resumo;
+    if (!r || !r.hoje || !r.semana) return '';
+    const nome = (id) => { const a = s.agentes.find((x) => x.id === id); return a ? a.nome : id; };
+    const linha = (titulo, x) => `<tr><td><b>${titulo}</b></td><td>${x.pelosAgentes}</td><td>${x.pelaMao}</td><td>${x.falhas}</td><td>${x.ignoradas}</td><td>${x.pendenciasCriadas}</td><td>${x.tempoMedioMin == null ? '—' : x.tempoMedioMin + ' min'}</td></tr>`;
+    const porAgente = Object.entries(r.semana.porAgente || {}).sort((a, b) => b[1] - a[1]).map(([id, n]) => `${esc(nome(id))} ${n}`).join(' · ');
+    return `<div class="home-sec-title" id="escResumo">Hoje e últimos 7 dias <span class="r">o que os agentes fizeram sozinhos</span></div>
+      <div class="table-wrap"><table class="table esc-tabela"><thead><tr><th></th><th>Pelos agentes</th><th>À mão</th><th>Falhas</th><th>Ignoradas</th><th>Pendências</th><th>Da fila à execução</th></tr></thead><tbody>${linha('Hoje', r.hoje)}${linha('7 dias', r.semana)}</tbody></table></div>
+      ${porAgente ? `<p class="hint">Por agente (7 dias): ${porAgente}</p>` : ''}`;
+  }
   function htmlAgente(s, id) {
     if (id === 'orquestrador') {
       const naMesa = s.tarefas.filter((t) => ['na_fila', 'em_analise', 'escalada'].includes(t.estado));
@@ -760,6 +772,8 @@
     if (api().escritorioRendererPronto) api().escritorioRendererPronto().catch(() => {});
     if (api().onEscritorioLog) api().onEscritorioLog((d) => logar(d && d.message, (d && d.type) || 'info'));
     if (api().onEscritorioEvento) api().onEscritorioEvento(() => agendarRefresh());
+    // A notificação do Windows clicada (ADR-155): abre o Escritório na gaveta pedida.
+    if (api().onEscritorioAbrir) api().onEscritorioAbrir((d) => { ui.gaveta = (d && d.gaveta) || 'pendencias'; abrir(); carregar().then(() => desenhar()); });
     // O app.js pode ter desenhado antes de este script existir (o render()
     // cai no Início): com o snapshot na mão, a tela certa entra no lugar.
     carregar().then(() => { atualizarChip(); if (ativa()) renderEscritorioTool(); });

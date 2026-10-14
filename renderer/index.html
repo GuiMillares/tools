@@ -393,6 +393,7 @@
               <span>Teto diário de chamadas ao modelo (0 = sem teto)</span>
               <input id="iaTetoInput" type="number" min="0" step="1" placeholder="200" autocomplete="off" />
             </label>
+            <label class="checkbox-field"><input id="iaNotificarInput" type="checkbox" checked /><span>Notificação do Windows quando nasce uma pendência (ADR-155)</span></label>
           </div>
           <div class="grid-3">
             <label class="field">
@@ -449,6 +450,7 @@
   <!-- O Escritório em 3D (ADR-153): Three.js r158 vendorizado (build clássico), a planta e a cena, antes da tela. -->
   <script src="vendor/three.min.js"></script>
   <script src="../lib/escritorio/planta.js"></script>
+  <script src="../lib/escritorio/resumo.js"></script>
   <script src="escritorio-cena.js"></script>
   <script src="escritorio-ui.js"></script>
 </body>

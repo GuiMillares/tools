@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, clipboard, session } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, clipboard, session, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
@@ -1226,7 +1226,7 @@ ipcMain.handle('google:createProject', async (event, { domain: dominioBruto, saP
         // Para no primeiro casamento: uma existente já basta para não criar
         // outra (o que importa). Duplicatas entre as que já estão no cache são
         // vistas de graça na passada do cache, e o cache só cresce.
-        const v = await varrerDataStreams(analyticsadmin, gaTodasAsProps, (item, web) => web.some((w) => dominioDeUri(w.uri) === domain), push);
+        const v = await varrerDataStreams(analyticsadmin, gaTodasAsProps, (item, web) => web.some((w) => dominioDeUri(w.uri) === domain), push, { validadeMs: ANALYTICS_CACHE_VALIDO_CRIACAO_MS });
         for (const p of v.achadas) gaExistentes.push({ property: p.property, displayName: p.displayName, conta: p.conta, contaName: p.contaName });
         if (gaExistentes.length) {
           push(`Achei pelo domínio do data stream: ${gaExistentes.map((p) => p.property).join(', ')}`, 'success');
@@ -4071,6 +4071,14 @@ function painelDescartarJanela() {
   const { win } = painelJanela;
   painelJanela = null;
   if (win && !win.isDestroyed()) win.destroy();
+  // O site do painel deixa service workers vivos num processo próprio mesmo
+  // sem janela (pendência da ADR-125): limpa; os cookies (o login) ficam.
+  try { session.fromPartition(PAINEL_PARTITION).clearStorageData({ storages: ['serviceworkers', 'cachestorage'] }).catch(() => {}); } catch (e) { /* sem sessão não há o que limpar */ }
+  try {
+    const m = app.getAppMetrics();
+    const mb = Math.round(m.reduce((s, p) => s + ((p.memory && p.memory.workingSetSize) || 0), 0) / 1024);
+    escritorioEnviar('escritorio:log', { message: `Painel: janela descartada depois de ${Math.round(PAINEL_JANELA_TTL_MS / 60000)} min sem uso; processos do Asgard agora: ${m.length} (${mb} MB).`, type: 'info' });
+  } catch (e) { /* diagnóstico, não é erro */ }
 }
 
 // Devolve a janela ao cache (ou descarta, quando a etapa deu erro).
@@ -5646,19 +5654,23 @@ function saveAnalyticsStreamsCache(cache) {
   try { fs.writeFileSync(analyticsStreamsCachePath(), JSON.stringify(cache)); } catch (e) { /* cache é conveniência */ }
 }
 const ANALYTICS_CACHE_VALIDO_MS = 30 * 24 * 60 * 60 * 1000; // relê o que tem mais de 30 dias
+// Antes de CRIAR propriedade o cache vale só 7 dias (ADR-155): um slot
+// reaproveitado para outro cliente ficaria invisível por até 30 dias e a
+// conferência criaria uma duplicata.
+const ANALYTICS_CACHE_VALIDO_CRIACAO_MS = 7 * 24 * 60 * 60 * 1000;
 
 // A varredura de data streams, compartilhada pela busca (findExisting) e pela
 // conferência antes de criar propriedade (ADR-046). `casa(item, web)` decide o
 // casamento; `web` é [{ measurementId, uri, displayName }] por propriedade.
 // Devolve { achadas: [{...item, measurementIds: web}], lidas, doCache, erros, teto }.
-async function varrerDataStreams(analyticsadmin, candidatas, casa, push, { pararAoAchar = true } = {}) {
+async function varrerDataStreams(analyticsadmin, candidatas, casa, push, { pararAoAchar = true, validadeMs = ANALYTICS_CACHE_VALIDO_MS, confirmar = true } = {}) {
   const cache = readAnalyticsStreamsCache();
   const achadas = [];
   const naoLidas = [];
   let doCache = 0;
   for (const item of candidatas) {
     const c = cache[item.property];
-    if (c && Array.isArray(c.web) && Date.now() - (c.at || 0) < ANALYTICS_CACHE_VALIDO_MS) {
+    if (c && Array.isArray(c.web) && Date.now() - (c.at || 0) < validadeMs) {
       doCache++;
       if (casa(item, c.web)) achadas.push({ ...item, measurementIds: c.web });
     } else {
@@ -5666,6 +5678,25 @@ async function varrerDataStreams(analyticsadmin, candidatas, casa, push, { parar
     }
   }
   if (doCache) push(`${doCache} propriedade(s) conferidas pelo cache local (sem chamada à API)${achadas.length ? `: ${achadas.length} casa(m)` : ''}.`, 'info');
+
+  // O que o cache achou é confirmado na API, uma chamada por achado (ADR-155):
+  // um slot reaproveitado para outro cliente aparecia com o domínio velho por
+  // até 30 dias. Mudou de dono: o cache é corrigido e a busca segue.
+  if (confirmar && achadas.length) {
+    const confirmadas = [];
+    for (const a of achadas) {
+      let streams = null;
+      try { const res = await analyticsadmin.properties.dataStreams.list({ parent: a.property }); streams = res.data.dataStreams || []; } catch (e) { confirmadas.push(a); continue; } // sem permissão: fica como o cache diz
+      const web = streams.filter((s) => s.webStreamData?.measurementId).map((s) => ({ measurementId: s.webStreamData.measurementId, uri: s.webStreamData.defaultUri || '', displayName: s.displayName || '' }));
+      cache[a.property] = { ...(cache[a.property] || {}), web, account: a.account, displayName: a.displayName, at: Date.now() };
+      if (casa(a, web)) confirmadas.push({ ...a, measurementIds: web });
+      else push(`O cache dizia que ${a.displayName || a.property} casava, mas o data stream mudou (${web.map((w) => w.uri).join(', ') || 'sem stream'}): cache corrigido, sigo procurando.`, 'warn');
+    }
+    saveAnalyticsStreamsCache(cache);
+    achadas.length = 0;
+    achadas.push(...confirmadas);
+    if (confirmadas.length) push(`${confirmadas.length} achado(s) do cache confirmado(s) na API.`, 'info');
+  }
 
   // Só vai à API se o cache não achou. Ordem inversa: as contas mais novas (de
   // número maior) recebem os clientes novos, então o que se procura costuma
@@ -8404,21 +8435,48 @@ ipcMain.handle('planilha:registrar', async (event, { aba, linha, pularSeExistir 
 
 // ---------- OAuth de usuário (login manual, pra conceder acesso em contas que a service account ainda não tem) ----------
 
+// Em texto puro só o que ficou de antes da ADR-155, e só até a primeira leitura,
+// que migra para o .enc (safeStorage) e apaga o .json.
 const oauthConfigPath = () => path.join(app.getPath('userData'), 'oauth-config.json');
+const oauthConfigEncPath = () => path.join(app.getPath('userData'), 'oauth-config.enc');
 
 // Uma sessão por "slot": a principal (slot vazio) é a do "Conceder acesso", e
 // cada marca tem a sua, porque registrar a propriedade no Search Console só
 // funciona autenticado COMO a conta que vai enxergá-la (ADR-049).
 const oauthTokenPath = (slot) =>
   path.join(app.getPath('userData'), slot ? `oauth-token-${String(slot).replace(/[^a-z0-9_-]/gi, '')}.json` : 'oauth-token.json');
+const oauthTokenEncPath = (slot) =>
+  path.join(app.getPath('userData'), slot ? `oauth-token-${String(slot).replace(/[^a-z0-9_-]/gi, '')}.enc` : 'oauth-token.enc');
 
-function readOauthConfigFile() {
-  try {
-    if (!fs.existsSync(oauthConfigPath())) return {};
-    return JSON.parse(fs.readFileSync(oauthConfigPath(), 'utf-8'));
-  } catch (e) {
-    return {};
+// Segredo em JSON criptografado pelo safeStorage (ADR-155). Se só existe o
+// arquivo em texto puro, lê, grava o .enc e apaga o texto puro.
+function lerSegredoJson(encPath, plainPath) {
+  if (fs.existsSync(encPath)) {
+    try { return JSON.parse(safeStorage.decryptString(fs.readFileSync(encPath))); } catch (e) { return null; }
   }
+  if (!fs.existsSync(plainPath)) return null;
+  let dados;
+  try { dados = JSON.parse(fs.readFileSync(plainPath, 'utf-8')); } catch (e) { return null; }
+  if (safeStorage.isEncryptionAvailable()) {
+    try { fs.writeFileSync(encPath, safeStorage.encryptString(JSON.stringify(dados))); fs.unlinkSync(plainPath); } catch (e) { /* fica o texto puro até a próxima leitura */ }
+  }
+  return dados;
+}
+function gravarSegredoJson(encPath, plainPath, dados) {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Criptografia do sistema indisponível; não vou gravar segredo em texto puro.');
+  fs.writeFileSync(encPath, safeStorage.encryptString(JSON.stringify(dados)));
+  try { if (fs.existsSync(plainPath)) fs.unlinkSync(plainPath); } catch (e) { /* o .enc já vale */ }
+}
+function apagarSegredoJson(encPath, plainPath) {
+  for (const p of [encPath, plainPath]) { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) { /* o status ainda reporta expirado */ } }
+}
+function readOauthConfigFile() { return lerSegredoJson(oauthConfigEncPath(), oauthConfigPath()) || {}; }
+// O Client ID e o Secret de um pedido do renderer, ou os gravados: o segredo
+// não volta mais para a tela (ADR-155), então a tela manda em branco.
+function oauthCredenciais(pedido) {
+  const cfg = readOauthConfigFile();
+  const p = pedido || {};
+  return { clientId: String(p.clientId || cfg.clientId || '').trim(), clientSecret: String(p.clientSecret || cfg.clientSecret || '').trim() };
 }
 
 // Escopos de cada tipo de sessão. A da marca não precisa mexer em usuário
@@ -8445,8 +8503,9 @@ const OAUTH_SCOPES_RELATORIO = [
 
 ipcMain.handle('oauth:getConfig', () => {
   try {
-    if (!fs.existsSync(oauthConfigPath())) return { ok: true, config: {} };
-    return { ok: true, config: JSON.parse(fs.readFileSync(oauthConfigPath(), 'utf-8')) };
+    const cfg = readOauthConfigFile();
+    // O segredo fica nesta máquina; a tela só sabe que ele existe.
+    return { ok: true, config: { clientId: cfg.clientId || '', clientSecret: '', temSecret: !!cfg.clientSecret } };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -8454,8 +8513,12 @@ ipcMain.handle('oauth:getConfig', () => {
 
 ipcMain.handle('oauth:setConfig', (event, config) => {
   try {
-    fs.writeFileSync(oauthConfigPath(), JSON.stringify(config, null, 2));
-    return { ok: true };
+    const atual = readOauthConfigFile();
+    const c = config || {};
+    // Secret em branco mantém o gravado (a tela não o conhece mais).
+    const novo = { clientId: String(c.clientId || '').trim(), clientSecret: String(c.clientSecret || '').trim() || atual.clientSecret || '' };
+    gravarSegredoJson(oauthConfigEncPath(), oauthConfigPath(), novo);
+    return { ok: true, temSecret: !!novo.clientSecret };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -8474,12 +8537,7 @@ class ReauthNeeded extends Error {
 }
 
 function readOauthToken(slot) {
-  if (!fs.existsSync(oauthTokenPath(slot))) return null;
-  try {
-    return JSON.parse(fs.readFileSync(oauthTokenPath(slot), 'utf-8'));
-  } catch (e) {
-    return null;
-  }
+  return lerSegredoJson(oauthTokenEncPath(slot), oauthTokenPath(slot));
 }
 
 // Guarda o token preservando o refresh_token que já estava lá: o Google só
@@ -8491,16 +8549,12 @@ function saveOauthToken(tokens, extra = {}, slot) {
   if (!merged.refresh_token && previous.refresh_token) {
     merged.refresh_token = previous.refresh_token;
   }
-  fs.writeFileSync(oauthTokenPath(slot), JSON.stringify(merged, null, 2));
+  gravarSegredoJson(oauthTokenEncPath(slot), oauthTokenPath(slot), merged);
   return merged;
 }
 
 function clearOauthToken(slot) {
-  try {
-    if (fs.existsSync(oauthTokenPath(slot))) fs.unlinkSync(oauthTokenPath(slot));
-  } catch (e) {
-    // se não der pra apagar, o status ainda vai reportar expirado
-  }
+  apagarSegredoJson(oauthTokenEncPath(slot), oauthTokenPath(slot));
 }
 
 // Uma sessão só é utilizável se tiver refresh_token (renova sozinha) ou se o
@@ -8641,7 +8695,9 @@ ipcMain.handle('oauth:cancelLogin', () => {
   return { ok: true };
 });
 
-ipcMain.handle('oauth:login', async (event, { clientId, clientSecret, slot }) => {
+ipcMain.handle('oauth:login', async (event, pedido) => {
+  const { clientId, clientSecret } = oauthCredenciais(pedido);
+  const slot = pedido && pedido.slot;
   const { shell } = require('electron');
   const http = require('http');
 
@@ -8775,7 +8831,9 @@ ipcMain.handle('oauth:logout', (event, arg) => {
 // Resolve os nomes das contas da marca em IDs numéricos, usando o token do
 // usuário (a service account ainda não tem acesso nelas, é esse o problema
 // que a ferramenta resolve, então não dá pra listar com ela).
-ipcMain.handle('analytics:listBrandAccounts', async (event, { brand, clientId, clientSecret }) => {
+ipcMain.handle('analytics:listBrandAccounts', async (event, pedido) => {
+  const brand = pedido && pedido.brand;
+  const { clientId, clientSecret } = oauthCredenciais(pedido);
   try {
     const matchesBrand = brandFilter(brand);
     loadUserOauthClient(clientId, clientSecret);
@@ -8814,7 +8872,9 @@ ipcMain.handle('analytics:listBrandAccounts', async (event, { brand, clientId, c
 // Lista as contas do Tag Manager da marca usando o LOGIN do usuário, mesma
 // razão do lado do Analytics: a service account não enxerga uma conta em que
 // ainda não foi adicionada, que é justamente o que se quer resolver.
-ipcMain.handle('tagmanager:listBrandAccounts', async (event, { brand, clientId, clientSecret }) => {
+ipcMain.handle('tagmanager:listBrandAccounts', async (event, pedido) => {
+  const brand = pedido && pedido.brand;
+  const { clientId, clientSecret } = oauthCredenciais(pedido);
   try {
     // No Tag Manager o recorte das contas é outro (ADR-017): a mesma conta
     // atende Busca Cliente e MPI+.
@@ -8853,7 +8913,9 @@ ipcMain.handle('tagmanager:listBrandAccounts', async (event, { brand, clientId, 
   }
 });
 
-ipcMain.handle('tagmanager:grantAccessBulk', async (event, { accountIds, role, clientId, clientSecret }) => {
+ipcMain.handle('tagmanager:grantAccessBulk', async (event, pedido) => {
+  const { accountIds, role } = pedido || {};
+  const { clientId, clientSecret } = oauthCredenciais(pedido);
   const log = [];
   const push = (message, type = 'info') => log.push({ message, type });
 
@@ -8917,7 +8979,9 @@ ipcMain.handle('tagmanager:grantAccessBulk', async (event, { accountIds, role, c
   }
 });
 
-ipcMain.handle('analytics:grantAccessBulk', async (event, { accountIds, role, clientId, clientSecret }) => {
+ipcMain.handle('analytics:grantAccessBulk', async (event, pedido) => {
+  const { accountIds, role } = pedido || {};
+  const { clientId, clientSecret } = oauthCredenciais(pedido);
   const log = [];
   const push = (message, type = 'info') => log.push({ message, type });
 
@@ -9508,6 +9572,27 @@ function escritorioEnviar(canal, dados) {
   try { win.webContents.send(canal, dados); return true; } catch (e) { return false; }
 }
 
+// Uma notificação do Windows quando nasce uma pendência (ADR-155): o chip no
+// topo só avisa quem está olhando. Clicar nela traz o Asgard e abre as
+// pendências. Desliga em Configurações › Escritório & IA.
+function notificarEscritorio(evento) {
+  if (!evento || evento.tipo !== 'pendencia' || !evento.nova) return false;
+  if (readIaConfig().notificar === false) return false;
+  if (!Notification.isSupported()) return false;
+  const p = escritorio.loja ? escritorio.loja.pendencias().find((x) => x.id === evento.id) : null;
+  const corpo = p ? String(p.pergunta || '').slice(0, 180) : 'O orquestrador tem uma pergunta para você.';
+  try {
+    const n = new Notification({ title: `Asgard · Escritório · ${evento.id}`, body: corpo });
+    n.on('click', () => {
+      const win = janelaPrincipal();
+      if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+      escritorioEnviar('escritorio:abrir', { gaveta: 'pendencias' });
+    });
+    n.show();
+    return true;
+  } catch (e) { return false; }
+}
+
 // O log do orquestrador vai para o arquivo do dia daqui (o renderer pode nem
 // ter carregado ainda) e para o terminal pelo renderer, que o mostra sem
 // gravar de novo.
@@ -9667,7 +9752,7 @@ function iniciarEscritorio() {
       loja,
       ia: montarIa(),
       log: logEscritorio,
-      emitir: (evento) => escritorioEnviar('escritorio:evento', evento),
+      emitir: (evento) => { escritorioEnviar('escritorio:evento', evento); notificarEscritorio(evento); },
       lerFila: () => invocarLocal('salesforce:tarefas'),
       contexto: async (t) => {
         const r = await invocarLocal('salesforce:contexto', { tarefa: t.link });

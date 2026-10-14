@@ -608,7 +608,8 @@ async function roda(brand, opts = {}, measurementId = 'G-NOVO123ABC') {
     check('guardou no cache o domínio de cada propriedade lida', ['properties/1', 'properties/2', 'properties/3'].every((p) => Array.isArray(lidoNoCache[p]?.web)) && lidoNoCache['properties/2'].web[0]?.measurementId === 'G-BBB', Object.keys(lidoNoCache).join(','));
     listadas = 0;
     const rCache = await handlers['google:findExisting'](null, { query: 'clinicasaovicente.com.br', saPath: saFake, brand: 'bc' });
-    check('a 2ª busca pelo mesmo domínio acha pelo cache, sem chamar a API', rCache.analytics.length === 1 && rCache.analytics[0]?.measurementIds[0]?.measurementId === 'G-BBB' && listadas === 0, `${rCache.analytics.length} achada(s), ${listadas} chamada(s)`);
+    // ADR-155: o achado do cache é confirmado na API com UMA chamada (o slot pode ter mudado de dono).
+    check('a 2ª busca pelo mesmo domínio acha pelo cache e só confirma o achado na API (uma chamada)', rCache.analytics.length === 1 && rCache.analytics[0]?.measurementIds[0]?.measurementId === 'G-BBB' && listadas === 1, `${rCache.analytics.length} achada(s), ${listadas} chamada(s)`);
 
     // mesma busca com a marca MPI Solutions: agora só a conta dela
     listadas = 0;

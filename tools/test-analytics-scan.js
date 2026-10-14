@@ -36,6 +36,7 @@ const ctx = {
   ANALYTICS_SCAN_LIMIT: constante('ANALYTICS_SCAN_LIMIT'),
   ANALYTICS_SCAN_CONCURRENCY: constante('ANALYTICS_SCAN_CONCURRENCY'),
   ANALYTICS_CACHE_VALIDO_MS: constante('ANALYTICS_CACHE_VALIDO_MS'),
+  ANALYTICS_CACHE_VALIDO_CRIACAO_MS: constante('ANALYTICS_CACHE_VALIDO_CRIACAO_MS'),
   analyticsStreamsCachePath: () => cachePath,
 };
 const vm = require('vm');
@@ -76,7 +77,7 @@ const push = () => {};
   console.log('\n=== 2ª busca do MESMO cliente (cache quente) ===');
   const antes = chamadas;
   const v2 = await ctx.varrerDataStreams(api, candidatas, casa, push);
-  check('acha pelo cache sem nenhuma chamada à API', v2.achadas.length === 1 && chamadas === antes, `chamadas novas=${chamadas - antes}`);
+  check('acha pelo cache e só confirma o achado na API (uma chamada, ADR-155)', v2.achadas.length === 1 && chamadas === antes + 1, `chamadas novas=${chamadas - antes}`);
 
   console.log('\n=== Busca de outro cliente, das contas antigas (cache parcial) ===');
   const alvo2 = 'properties/5'; // conta 01, nunca lida (a 1ª busca parou ao achar na 18)
@@ -90,6 +91,29 @@ const push = () => {};
   const v4 = await ctx.varrerDataStreams(api, candidatas, () => false, push);
   check('sem casamento: varre tudo que falta e devolve 0, com o cache completo', v4.achadas.length === 0 && Object.keys(JSON.parse(fs.readFileSync(cachePath, 'utf8'))).length === candidatas.length, `lidas agora=${chamadas - antes3}`);
   check('parar() do mapLimit é respeitado (nada além do escopo)', chamadas <= candidatas.length + ctx.ANALYTICS_SCAN_CONCURRENCY * 3, String(chamadas));
+
+  console.log('\n=== Slot reaproveitado (ADR-155): o cache é confirmado na API ===');
+  // O slot do cliente antigo passa a outro cliente; a properties/7 também muda de dono.
+  const stream = (dom, parent) => ({ data: { dataStreams: [{ displayName: dom, webStreamData: { measurementId: 'G-' + parent.split('/')[1], defaultUri: 'https://' + dom } }] } });
+  api.properties.dataStreams.list = async ({ parent }) => { chamadas++; if (parent === ALVO) return stream('novocliente.com.br', parent); if (parent === 'properties/7') return stream('outronovo.com.br', parent); return stream(`cliente${parent.split('/')[1]}.com.br`, parent); };
+  const antes5 = chamadas;
+  const v5 = await ctx.varrerDataStreams(api, candidatas, casa, push);
+  check('o achado do cache é confirmado com UMA chamada: o slot mudou de dono, então não devolve o cliente antigo', v5.achadas.length === 0 && chamadas - antes5 === 1, `achadas=${v5.achadas.length} chamadas=${chamadas - antes5}`);
+  check('o cache do slot foi corrigido para o cliente novo', JSON.parse(fs.readFileSync(cachePath, 'utf8'))[ALVO].web[0].uri.includes('novocliente'));
+  const antes6 = chamadas;
+  const v6 = await ctx.varrerDataStreams(api, candidatas, (i, web) => web.some((w) => ctx.dominioDeUri(w.uri) === 'novocliente.com.br'), push);
+  check('o cliente novo é achado pelo cache corrigido (uma chamada, a confirmação)', v6.achadas.length === 1 && v6.achadas[0].property === ALVO && chamadas - antes6 === 1, `chamadas=${chamadas - antes6}`);
+  // Antes de criar propriedade o cache vale 7 dias: a properties/7, lida há 8, é relida e o cliente novo dela aparece.
+  const c7 = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  c7['properties/7'].at = Date.now() - 8 * 24 * 3600000;
+  fs.writeFileSync(cachePath, JSON.stringify(c7));
+  const antes7 = chamadas;
+  const v7 = await ctx.varrerDataStreams(api, candidatas, (i, web) => web.some((w) => ctx.dominioDeUri(w.uri) === 'outronovo.com.br'), push, { validadeMs: ctx.ANALYTICS_CACHE_VALIDO_CRIACAO_MS });
+  check('com a validade de criação (7 dias), relê só a entrada velha e acha o cliente que ocupou o slot', v7.achadas.length === 1 && v7.achadas[0].property === 'properties/7' && chamadas - antes7 === 1, `chamadas=${chamadas - antes7}`);
+  const antes8 = chamadas;
+  const v8 = await ctx.varrerDataStreams(api, candidatas, (i, web) => web.some((w) => ctx.dominioDeUri(w.uri) === 'outronovo.com.br'), push, { confirmar: false });
+  check('com confirmar: false o cache manda sozinho, sem chamada', v8.achadas.length === 1 && chamadas - antes8 === 0);
+  check('a validade de criação é menor que a da busca', ctx.ANALYTICS_CACHE_VALIDO_CRIACAO_MS < ctx.ANALYTICS_CACHE_VALIDO_MS);
 
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');

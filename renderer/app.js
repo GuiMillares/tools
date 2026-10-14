@@ -78,10 +78,6 @@ const TOOLS = [
   { id: 'relatorio', category: 'google', name: 'Planilha do Relatório', desc: 'A planilha "Domínios e Analytics" (abas Busca e MPI) preenchida: Salesforce (contato, contrato, pacote, valor), o site (ID do cliente, tipo, categorias e palavras-chave) e o Google (GA4, Search Console e qual login enxerga cada um). Só leitura.' },
 ];
 
-function toolCategory(id) {
-  return TOOLS.find((t) => t.id === id)?.category || 'git';
-}
-
 // Cada projeto é de uma marca, e cada marca mora em contas do Google diferentes.
 // Quem sabe em quais contas é o main.js, aqui só os rótulos do seletor.
 const BRANDS = [
@@ -7627,7 +7623,7 @@ function renderOauthPending(wrap) {
 }
 
 async function oauthLogin() {
-  if (!state.oauthClientId || !state.oauthClientSecret) {
+  if (!state.oauthClientId || !(state.oauthClientSecret || state.oauthTemSecret)) {
     log('Configure o OAuth Client ID e o Client Secret nas configurações (ícone de engrenagem).', 'error');
     openSettings();
     return;
@@ -7731,7 +7727,7 @@ async function conectarMarca(brand) {
   if (deRelatorio && (!state.contasRelatorio || el.contasRelatorioInput && el.contasRelatorioInput.value.split(/[\n,;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean).join('\n') !== (state.contasRelatorio || []).join('\n'))) {
     log('Salve as configurações antes de conectar um login de relatório novo.', 'warn');
   }
-  if (!state.oauthClientId || !state.oauthClientSecret) {
+  if (!state.oauthClientId || !(state.oauthClientSecret || state.oauthTemSecret)) {
     log('Configure o OAuth Client ID e o Client Secret, a sessão da marca usa os mesmos.', 'error');
     return;
   }
@@ -8547,7 +8543,8 @@ function openSettings(tab) {
   el.bitbucketWorkspaceInput.value = state.bitbucketWorkspace || '';
   for (const campo of WORKSPACE_FIELDS) el[campo.el].value = state.bitbucketWorkspaces?.[campo.brand] || '';
   el.oauthClientIdInput.value = state.oauthClientId || '';
-  el.oauthClientSecretInput.value = state.oauthClientSecret || '';
+  el.oauthClientSecretInput.value = '';
+  el.oauthClientSecretInput.placeholder = state.oauthTemSecret ? 'gravado nesta máquina (deixe em branco para manter)' : 'GOCSPX-...';
   el.msClientIdInput.value = state.msClientId || '';
   el.msTenantInput.value = state.msTenant || '';
   // A chave de histórico nunca volta do processo principal, o campo só
@@ -8618,6 +8615,7 @@ const iaEl = () => ({
   orq: document.getElementById('iaModeloOrqInput'), ag: document.getElementById('iaModeloAgInput'),
   nivel: document.getElementById('iaNivelSelect'), lista: document.getElementById('iaModelosLista'),
   status: document.getElementById('iaStatus'), listar: document.getElementById('iaListarBtn'), remover: document.getElementById('iaRemoverBtn'),
+  notificar: document.getElementById('iaNotificarInput'),
 });
 let iaConfigLida = null;
 // O e-mail de vhost da Busca One (ADR-132): editado aqui, gravado no
@@ -8647,6 +8645,7 @@ function preencherConfigIa() {
     f.orq.value = r.config.modeloOrquestrador || '';
     f.ag.value = r.config.modeloAgentes || '';
     f.nivel.value = r.config.nivelPensamento || '';
+    if (f.notificar) f.notificar.checked = r.config.notificar !== false;
     if (f.status) f.status.textContent = r.temChave ? 'chave gravada nesta máquina' : 'sem chave: o Escritório abre pendência para o que a triagem não reconhece';
   }).catch(() => {});
 }
@@ -8724,10 +8723,11 @@ el.saveSettingsBtn.addEventListener('click', async () => {
 
   const clientId = el.oauthClientIdInput.value.trim();
   const clientSecret = el.oauthClientSecretInput.value.trim();
-  if (clientId !== state.oauthClientId || clientSecret !== state.oauthClientSecret) {
+  // Secret em branco mantém o gravado; o processo principal faz o merge (ADR-155).
+  if (clientId !== state.oauthClientId || clientSecret) {
     state.oauthClientId = clientId;
-    state.oauthClientSecret = clientSecret;
-    await window.api.setOauthConfig({ clientId, clientSecret });
+    const rOauth = await window.api.setOauthConfig({ clientId, clientSecret });
+    if (rOauth && rOauth.ok) { state.oauthTemSecret = !!rOauth.temSecret; el.oauthClientSecretInput.value = ''; el.oauthClientSecretInput.placeholder = state.oauthTemSecret ? 'gravado nesta máquina (deixe em branco para manter)' : 'GOCSPX-...'; }
   }
 
   const msClientId = el.msClientIdInput.value.trim();
@@ -8826,7 +8826,7 @@ el.saveSettingsBtn.addEventListener('click', async () => {
     // IA & Escritório (ADR-149): config em arquivo, chave no safeStorage.
     const f = iaEl();
     if (f.key && window.api.iaSetConfig) {
-      const config = { modeloOrquestrador: f.orq.value.trim(), modeloAgentes: f.ag.value.trim(), nivelPensamento: f.nivel.value, tetoChamadasDia: Number(f.teto.value) };
+      const config = { modeloOrquestrador: f.orq.value.trim(), modeloAgentes: f.ag.value.trim(), nivelPensamento: f.nivel.value, tetoChamadasDia: Number(f.teto.value), notificar: f.notificar ? !!f.notificar.checked : true };
       const apiKey = f.key.value.trim();
       const mudou = !iaConfigLida || apiKey || JSON.stringify({ ...iaConfigLida.config, ...config, temperatura: undefined }) !== JSON.stringify({ ...iaConfigLida.config, temperatura: undefined });
       if (mudou) {
@@ -8935,7 +8935,9 @@ async function init() {
   const oauthRes = await window.api.getOauthConfig();
   if (oauthRes.ok && oauthRes.config) {
     state.oauthClientId = oauthRes.config.clientId || '';
-    state.oauthClientSecret = oauthRes.config.clientSecret || '';
+    // O segredo não vem mais para a tela (ADR-155): só se existe.
+    state.oauthClientSecret = '';
+    state.oauthTemSecret = !!oauthRes.config.temSecret;
   }
   const msRes = await window.api.getMsConfig();
   if (msRes.ok && msRes.config) {
