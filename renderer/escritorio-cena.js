@@ -163,6 +163,8 @@
       return mudou;
     };
     cam.recentrar = () => { cam.azAlvo = AZ0; cam.zoomAlvo = cam.zoomBase; cam.alvoAlvo = { ...centro }; };
+    // A câmera só se move pela mão (pedido de 14/10/2026): sem entrada
+    // animada e sem acompanhar quem anda.
     cam.limitarAlvo = () => { cam.alvoAlvo.x = Math.max(Planta.PISO.x0, Math.min(Planta.PISO.x1, cam.alvoAlvo.x)); cam.alvoAlvo.z = Math.max(Planta.PISO.z0, Math.min(Planta.PISO.z1, cam.alvoAlvo.z)); };
     // Arrasto com o botão esquerdo move; com o direito (ou Shift) gira um pouco;
     // a roda aproxima; duplo clique volta ao enquadramento inicial.
@@ -236,13 +238,42 @@
     };
   }
 
+  // Avisa a tela quando muda o conjunto de pacotes em viagem (os selos).
+  function criarVigiaDeViagens(sim, aoViajar) {
+    let ultimo = '';
+    return () => {
+      if (typeof aoViajar !== 'function') return;
+      const ids = [...sim.pacotes.values()].filter((p) => p.andando).map((p) => p.id).sort();
+      const chave = ids.join(',');
+      if (chave === ultimo) return;
+      ultimo = chave;
+      aoViajar(ids);
+    };
+  }
+  // Os pontos da cena que a tela pode ancorar: figuras (pelo id, ou 'losango:id'),
+  // rótulos de sala ('sala:nn'), contadores de mesa ('lugar:x'), pacotes em
+  // viagem ('pacote:id').
+  function criarPontoDe(sim, Planta, dirAtual) {
+    return (id) => {
+      if (id.startsWith('sala:')) { const s = Planta.salaPorNumero(id.slice(5)); return s ? { x: s.rotulo.x, y: 0, z: s.rotulo.z } : null; }
+      if (id.startsWith('lugar:')) { const d = dirAtual(); const l = d && d.lugares.find((x) => x.lugar === id.slice(6)); return l ? { x: l.x, y: l.y + 0.5, z: l.z } : null; }
+      if (id.startsWith('pacote:')) { const p = sim.pacotes.get(id.slice(7)); return p && p.andando ? { x: p.pos.x, y: p.pos.y || 0.76, z: p.pos.z } : null; }
+      const losango = id.startsWith('losango:');
+      const f = sim.figuras.get(losango ? id.slice(8) : id);
+      if (!f || f.opacidade <= 0.02) return null;
+      // O losango de quem trabalha flutua: o ângulo só avança enquanto o laço roda.
+      const flutua = losango && (f.icone === 'trabalho' || f.icone === 'fila') ? Math.sin(f.iconeAng * 2) * 0.25 : 0;
+      return { x: f.pos.x, y: flutua, z: f.pos.z };
+    };
+  }
+
   // Os elementos HTML presos a pontos da cena.
   function criarAncoras() {
     const lista = new Map();
     return {
       // `empurrar`: cartões que não podem se cobrir (duas figuras lado a lado
       // na reunião): o de baixo sobe até desencostar do outro.
-      ancorar(id, el, altura, op) { if (el) lista.set(id, { el, altura: altura == null ? 0 : altura, empurrar: !!(op && op.empurrar) }); else lista.delete(id); },
+      ancorar(id, el, altura, op) { if (el) lista.set(id, { el, altura: altura == null ? 0 : altura, empurrar: !!(op && op.empurrar), centro: !!(op && op.centro) }); else lista.delete(id); },
       posicionar(pontoDe, projetar) {
         const caixas = [];
         for (const [id, a] of lista) {
@@ -251,7 +282,7 @@
           const s = projetar(p.x, (p.y || 0) + a.altura, p.z);
           a.el.style.display = '';
           if (a.empurrar) { caixas.push({ a, x: s.x, y: s.y, w: a.el.offsetWidth || 160, h: a.el.offsetHeight || 40 }); continue; }
-          a.el.style.transform = `translate(${Math.round(s.x)}px, ${Math.round(s.y)}px) translate(-50%, -100%)`;
+          a.el.style.transform = `translate(${Math.round(s.x)}px, ${Math.round(s.y)}px) translate(-50%, ${a.centro ? '-50%' : '-100%'})`;
         }
         // A caixa de cada cartão é [x - w/2, y - h, x + w/2, y]; de cima para
         // baixo, quem cobre um já colocado sobe para cima dele.
@@ -322,8 +353,11 @@
     };
     const geo = {
       cabeca: new THREE.SphereGeometry(0.26, 14, 12), corpo: new THREE.CapsuleGeometry(0.3, 0.55, 4, 10),
-      icone: new THREE.OctahedronGeometry(0.26), pacote: new THREE.BoxGeometry(0.3, 0.3, 0.3), pop: new THREE.OctahedronGeometry(0.3),
+      pacote: new THREE.BoxGeometry(0.3, 0.3, 0.3), pop: new THREE.OctahedronGeometry(0.3),
+      anel: new THREE.RingGeometry(0.42, 0.58, 36),
+      fio: new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 2.3, 0), new THREE.Vector3(0, 3.1, 0)]),
     };
+    materiais.fio = new THREE.LineBasicMaterial({ color: 0x22f2ef, transparent: true, opacity: 0.4 });
 
     // ----- a parte fixa: piso, salas, mesas, cadeiras, plantas -----
     const estatico = new THREE.Group();
@@ -439,9 +473,13 @@
       const corpo = new THREE.Mesh(geo.corpo, materiais.corpo[tipo].clone()); corpo.position.y = 0.72; corpo.castShadow = true;
       const cabeca = new THREE.Mesh(geo.cabeca, materiais.cabeca.clone()); cabeca.position.y = 1.5; cabeca.castShadow = true;
       const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.09, 0.06), materiais.monitor); visor.position.set(0, 1.54, 0.24);
-      const icone = new THREE.Mesh(geo.icone, materiais.icone.trabalho); icone.position.y = 2.25; icone.visible = false;
-      g.add(corpo, cabeca, visor, icone);
-      g.userData = { id: ent.id, corpo, cabeca, icone, tipo };
+      // O anel luminoso no chão (a cor diz o estado) e o fio que sobe até o
+      // cartão, como na referência; o losango com o ícone é HTML, ancorado.
+      const anel = new THREE.Mesh(geo.anel, new THREE.MeshBasicMaterial({ color: CORES.icone.ok, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
+      anel.rotation.x = -Math.PI / 2; anel.position.y = 0.02;
+      const fio = new THREE.Line(geo.fio, materiais.fio);
+      g.add(corpo, cabeca, visor, anel, fio);
+      g.userData = { id: ent.id, corpo, cabeca, anel, fio, tipo };
       corpo.userData.figura = ent.id; cabeca.userData.figura = ent.id;
       clicaveis.push(corpo, cabeca);
       dinamico.add(g);
@@ -458,12 +496,11 @@
         const u = g.userData;
         u.corpo.material.opacity = ent.opacidade; u.corpo.material.transparent = ent.opacidade < 1;
         u.cabeca.material.opacity = ent.opacidade; u.cabeca.material.transparent = ent.opacidade < 1;
-        if (ent.icone) {
-          u.icone.visible = true;
-          u.icone.material = materiais.icone[ent.icone] || materiais.icone.trabalho;
-          u.icone.rotation.y = ent.iconeAng;
-          u.icone.position.y = 2.25 + (ent.icone === 'trabalho' || ent.icone === 'fila' ? Math.sin(ent.iconeAng * 2) * 0.06 : 0);
-        } else u.icone.visible = false;
+        const corAnel = ent.icone ? (CORES.icone[ent.icone] || CORES.icone.trabalho) : u.tipo === 'orquestrador' ? CORES.corpo.orquestrador : u.tipo === 'standby' ? 0x4f7d69 : CORES.icone.ok;
+        u.anel.material.color.setHex(corAnel);
+        u.anel.material.opacity = 0.72 * ent.opacidade;
+        u.anel.scale.setScalar(ent.icone === 'trabalho' || ent.icone === 'fila' ? 1 + 0.08 * Math.sin(ent.iconeAng * 2.2) : 1);
+        u.fio.visible = ent.opacidade > 0.5;
         const tela = ent.dados && telas.get(ent.dados.sala);
         if (tela && ent.dados.sala !== Planta.REUNIAO) tela.material = materiais.tela[ent.tela] || materiais.tela.desligada;
       }
@@ -513,19 +550,16 @@
       laco.pedir();
     }
 
-    const pontoDe = (id) => {
-      if (id.startsWith('sala:')) { const s = Planta.salaPorNumero(id.slice(5)); return s ? { x: s.rotulo.x, y: 0, z: s.rotulo.z } : null; }
-      if (id.startsWith('lugar:')) { const l = ultimoDir && ultimoDir.lugares.find((x) => x.lugar === id.slice(6)); return l ? { x: l.x, y: l.y + 0.5, z: l.z } : null; }
-      const f = sim.figuras.get(id);
-      return f && f.opacidade > 0.02 ? { x: f.pos.x, y: 0, z: f.pos.z } : null;
-    };
     let ultimoDir = null;
+    const pontoDe = criarPontoDe(sim, Planta, () => ultimoDir);
+    const vigiarViagens = criarVigiaDeViagens(sim, opcoes.aoViajar);
     const laco = criarLaco(host, (dt) => {
       const { movendo } = sim.avancar(dt);
       const camMudou = cam.suavizar(dt);
       aplicarCamera();
       sincronizar();
       renderer.render(scene, camera);
+      vigiarViagens();
       ancoras.posicionar(pontoDe, projetar);
       return movendo || camMudou;
     });
@@ -629,7 +663,11 @@
           ctx.strokeStyle = hex(CORES.corpo[tipo]); ctx.lineWidth = Math.max(3, 0.55 * cam.zoom); ctx.lineCap = 'round';
           ctx.beginPath(); ctx.moveTo(pe.x, pe.y - 0.2 * cam.zoom); ctx.lineTo(cabeca.x, cabeca.y + 0.3 * cam.zoom); ctx.stroke();
           ctx.fillStyle = hex(CORES.cabeca); ctx.beginPath(); ctx.arc(cabeca.x, cabeca.y, Math.max(2.5, 0.26 * cam.zoom), 0, Math.PI * 2); ctx.fill();
-          if (f.icone) { const i = projetar(f.pos.x, 2.25, f.pos.z); const r = Math.max(3, 0.26 * cam.zoom); ctx.fillStyle = hex(CORES.icone[f.icone] || CORES.icone.trabalho); ctx.save(); ctx.translate(i.x, i.y); ctx.rotate(f.iconeAng); ctx.fillRect(-r * 0.7, -r * 0.7, r * 1.4, r * 1.4); ctx.restore(); }
+          // O anel no chão e o fio até o cartão (o losango é HTML).
+          const corAnel = f.icone ? (CORES.icone[f.icone] || CORES.icone.trabalho) : tipo === 'orquestrador' ? CORES.corpo.orquestrador : tipo === 'standby' ? 0x4f7d69 : CORES.icone.ok;
+          ctx.strokeStyle = hex(corAnel); ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(pe.x, pe.y, 0.5 * cam.zoom, 0.5 * cam.zoom * Math.sin(cam.el), 0, 0, Math.PI * 2); ctx.stroke();
+          const f1 = projetar(f.pos.x, 2.3, f.pos.z), f2 = projetar(f.pos.x, 3.1, f.pos.z);
+          ctx.strokeStyle = 'rgba(34,242,239,0.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(f1.x, f1.y); ctx.lineTo(f2.x, f2.y); ctx.stroke();
           ctx.globalAlpha = 1; ctx.lineWidth = 1;
         } });
       }
@@ -650,16 +688,13 @@
       if (!cam._enquadrou) { cam.zoom = cam.zoomAlvo = cam.zoomBase; cam._enquadrou = true; }
       laco.pedir();
     }
-    const pontoDe = (id) => {
-      if (id.startsWith('sala:')) { const s = Planta.salaPorNumero(id.slice(5)); return s ? { x: s.rotulo.x, y: 0, z: s.rotulo.z } : null; }
-      if (id.startsWith('lugar:')) { const l = ultimoDir && ultimoDir.lugares.find((x) => x.lugar === id.slice(6)); return l ? { x: l.x, y: l.y + 0.5, z: l.z } : null; }
-      const f = sim.figuras.get(id);
-      return f && f.opacidade > 0.02 ? { x: f.pos.x, y: 0, z: f.pos.z } : null;
-    };
+    const pontoDe = criarPontoDe(sim, Planta, () => ultimoDir);
+    const vigiarViagens = criarVigiaDeViagens(sim, opcoes.aoViajar);
     const laco = criarLaco(host, (dt) => {
       const { movendo } = sim.avancar(dt);
       const camMudou = cam.suavizar(dt);
       desenhar();
+      vigiarViagens();
       ancoras.posicionar(pontoDe, projetar);
       return movendo || camMudou;
     });

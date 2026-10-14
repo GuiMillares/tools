@@ -728,9 +728,12 @@ toda tela e em todo seletor.
   pendência não é de agente nenhum; **de pé na Sala de Comando**, com
   losango vermelho, quem tem tarefa escalada. Cada tarefa aberta é um
   **pacote** na mesa de quem cuida dela (na fila e escalada na do Odin,
-  pendente na de reunião) e viaja pelo corredor quando é encaminhada; a
-  concluída vira um "✓" que sobe. Pan, zoom e giro pelo mouse; duplo clique
-  recentra. Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
+  pendente na de reunião) e viaja pelo corredor quando é encaminhada, com
+  um selo dizendo o assunto e para quem vai; a concluída vira um "✓" que
+  sobe. Cada agente leva, acima da cabeça, um losango com o ícone da sua
+  função (o mesmo da barra lateral) e um anel luminoso no chão, ambos com a
+  cor do estado; o cartão fica preso por um fio. A câmera só se move pela
+  mão: pan, zoom e giro pelo mouse; duplo clique recentra. Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
   rodapé). O menu do Hub e o topo ficam recolhidos e voltam quando o mouse
   encosta na borda esquerda ou na de cima (ou pelo ☰). O rodapé tem
   "Mostrar/Esconder painéis" (os cartões) e abre, numa gaveta por cima da

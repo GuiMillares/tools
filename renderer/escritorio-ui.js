@@ -29,11 +29,14 @@
   const OPS = [['igual', '='], ['diferente', '≠'], ['contem', 'contém'], ['naoContem', 'não contém'], ['comeca', 'começa com'], ['termina', 'termina com'], ['regex', 'bate com (regex)'], ['vazio', 'está vazio'], ['naoVazio', 'não está vazio']];
   const ESTADO_AGENTE = { ocioso: ['ocioso', 'neutral'], standby: ['standby', 'neutral'], trabalhando: ['trabalhando', 'run'], aguardando: ['aguardando você', 'warn'], erro: ['com erro', 'err'], desligado: ['desligado', 'off'] };
   const PREFS_CHAVE = 'hub.escritorio.tela';
-  const ALTURA_CARTAO = 2.0; // acima da cabeça da figura, em metros da planta
+  const ALTURA_CARTAO = 3.2;  // o cartão, no alto do fio, em metros da planta
+  const ALTURA_LOSANGO = 2.1; // o losango com o ícone, logo acima da cabeça
 
   const ui = { snap: null, carregando: false, erro: '', aba: 'tudo', gaveta: null, historico: null, editando: null, pendenciaAberta: null, timerRefresh: null, ultimaEsperas: '', paineis: true, motorPreferido: '3d', terminal: false };
   let motor = null;          // o motor da cena (3D ou 2D), vive enquanto o Hub estiver aberto
   const cartoes = new Map(); // id da figura → elemento do cartão
+  const losangos = new Map(); // id da figura → o losango com o ícone da função
+  const selos = new Map();    // id do pacote em viagem → o selo que viaja com ele
   const rotulos = new Map(); // número da sala → elemento do rótulo
   const contadores = new Map(); // lugar → elemento "+n"
 
@@ -189,16 +192,16 @@
     if (!cena) {
       painel.innerHTML = esqueleto();
       cena = painel.querySelector('#escCena');
-      cartoes.clear(); rotulos.clear(); contadores.clear();
+      cartoes.clear(); rotulos.clear(); contadores.clear(); losangos.clear(); selos.clear();
       montarCena(cena.querySelector('#escPalco'));
     }
+    const dir = window.Planta ? window.Planta.dirigir(s) : null;
     atualizarHud(cena, s);
     atualizarCartoes(cena, s);
     atualizarGaveta(cena, s);
     cena.querySelector('#escHist').innerHTML = ui.historico ? htmlHistorico(ui.historico) : '';
     ligarEventos(cena.querySelector('#escHist'));
-    if (motor && window.Planta) {
-      const dir = window.Planta.dirigir(s);
+    if (motor && dir) {
       motor.atualizar(dir, { concluidas: new Set(s.tarefas.filter((t) => t.estado === 'concluida').map((t) => t.id)) });
       atualizarContadores(dir);
     }
@@ -215,7 +218,7 @@
       return;
     }
     const aoFalhar = (e) => logar(`Escritório: o 3D não abriu (${e && e.message ? e.message : e}); a planta em 2D cobre.`, 'warn');
-    motor = window.hubEscritorioCena.montar(palco, { preferir: ui.motorPreferido, aoClicarFigura: (id) => { ui.gaveta = 'agente:' + id; desenhar(); }, aoFalhar });
+    motor = window.hubEscritorioCena.montar(palco, { preferir: ui.motorPreferido, aoClicarFigura: (id) => { ui.gaveta = 'agente:' + id; desenhar(); }, aoViajar: atualizarSelosDeViagem, aoFalhar });
     palco.insertBefore(motor.canvas, palco.firstChild);
     if (ui.motorPreferido === '3d' && motor.tipo === '2d') logar('Escritório: sem WebGL nesta máquina; a planta em 2D cobre.', 'warn');
     motor.ligar();
@@ -227,7 +230,7 @@
     const palco = document.getElementById('escPalco');
     if (!palco) return;
     if (motor) { motor.destruir(); motor = null; }
-    cartoes.clear(); rotulos.clear(); contadores.clear();
+    cartoes.clear(); rotulos.clear(); contadores.clear(); losangos.clear(); selos.clear();
     const overlay = palco.querySelector('#escOverlay');
     if (overlay) overlay.innerHTML = '';
     montarCena(palco);
@@ -280,7 +283,44 @@
     ligarEventos(cena.querySelector('#escHudRodape'));
   }
 
-  // ----- os cartões presos às figuras e os rótulos das salas -----
+  // ----- os cartões presos às figuras, os losangos e os rótulos das salas -----
+  // O ícone da função, como na referência: o do primeiro módulo do agente (os
+  // mesmos da barra lateral); o Odin leva o do Escritório.
+  function iconeDaFigura(a) {
+    const icones = typeof NAV_ICON !== 'undefined' ? NAV_ICON : null;
+    if (!icones) return `<b>${esc((a.nome || '?').charAt(0))}</b>`;
+    if (a.id === 'orquestrador') return icones.escritorio || '';
+    const modulo = (a.modulos || [])[0];
+    const chave = modulo === 'newproject' ? 'google' : modulo;
+    return icones[chave] || `<b>${esc((a.nome || '?').charAt(0))}</b>`;
+  }
+  // Nome curto da tarefa e para onde ela vai, para o selo que viaja com ela.
+  function textoDoSelo(t, s) {
+    if (!t) return '';
+    const assunto = String(t.assunto || '').replace(/\s+/g, ' ').trim();
+    const curto = assunto.length > 34 ? assunto.slice(0, 33) + '…' : assunto;
+    const ag = t.agente ? s.agentes.find((a) => a.id === t.agente) : null;
+    const destino = t.estado === 'pendente' ? 'reunião' : ag ? ag.nome : ((s.orquestrador && s.orquestrador.nome) || 'Odin');
+    return `${curto} → ${destino}`;
+  }
+  // Os selos dos pacotes em viagem: a cena avisa quando o conjunto muda.
+  function atualizarSelosDeViagem(ids) {
+    const overlay = document.getElementById('escOverlay');
+    if (!overlay || !motor) return;
+    const vivos = new Set(ids);
+    for (const [id, el] of selos) if (!vivos.has(id)) { el.remove(); selos.delete(id); motor.ancorar('pacote:' + id, null); }
+    for (const id of ids) {
+      if (selos.has(id)) continue;
+      const t = ui.snap && ui.snap.tarefas.find((x) => x.id === id);
+      const el = document.createElement('div');
+      el.className = 'esc-selo viagem';
+      el.dataset.pacote = id;
+      el.textContent = textoDoSelo(t, ui.snap || { agentes: [] });
+      overlay.appendChild(el);
+      selos.set(id, el);
+      motor.ancorar('pacote:' + id, el, 0.7);
+    }
+  }
   function atualizarCartoes(cena, s) {
     const overlay = cena.querySelector('#escOverlay');
     if (!overlay) return;
@@ -299,6 +339,17 @@
         cartoes.set(a.id, c);
         if (motor) motor.ancorar(a.id, c, ALTURA_CARTAO, { empurrar: true });
       }
+      let l = losangos.get(a.id);
+      if (!l) {
+        l = document.createElement('div');
+        l.className = 'esc-losango';
+        l.dataset.losango = a.id;
+        l.innerHTML = iconeDaFigura(a);
+        overlay.appendChild(l);
+        losangos.set(a.id, l);
+        if (motor) motor.ancorar('losango:' + a.id, l, ALTURA_LOSANGO, { centro: true });
+      }
+      l.className = `esc-losango ${a.modo} est-${esc(a.estado)}`;
       const [rot, tom] = ESTADO_AGENTE[a.estado] || [a.estado, 'neutral'];
       c.className = `esc-agente ${a.modo} est-${esc(a.estado)} ${ui.gaveta === 'agente:' + a.id ? 'aberto' : ''}`;
       c.title = `${a.nome} · ${a.papel}${a.modulosNomes ? ' · ' + a.modulosNomes : ''} · ${rot}`;
@@ -312,6 +363,7 @@
         <span class="esc-agente-dot ${tom}"></span>`;
     }
     for (const [id, c] of cartoes) if (!vistos.has(id)) { c.remove(); cartoes.delete(id); if (motor) motor.ancorar(id, null); }
+    for (const [id, l] of losangos) if (!vistos.has(id)) { l.remove(); losangos.delete(id); if (motor) motor.ancorar('losango:' + id, null); }
     if (window.Planta && !rotulos.size) {
       for (const sl of window.Planta.SALAS) {
         const r = document.createElement('div');

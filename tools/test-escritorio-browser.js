@@ -134,6 +134,19 @@ const STUB = `
       return /Thor/.test(thor.querySelector('.esc-agente-nome').textContent) && /Publicador MPI\+/.test(thor.querySelector('.esc-agente-papel').textContent) && posto(thor) && tyr.classList.contains('est-desligado') && bragi.classList.contains('standby') && bragi.classList.contains('est-trabalhando') && /Planilha do Relatório/.test(bragi.querySelector('.esc-agente-atividade').textContent) && odin.classList.contains('orquestrador') && /Odin/.test(odin.textContent);
     }));
     check('os rótulos das 10 salas estão na cena', await page.evaluate(() => document.querySelectorAll('#escOverlay .esc-sala-rotulo').length === 10 && /01 \/ SALA DE COMANDO/.test(document.querySelector('[data-sala="01"]').textContent)));
+    check('cada figura tem o losango com o ícone da função (ancorado); o do desligado não aparece; só o de quem trabalha flutua', await page.evaluate(() => {
+      const l = (id) => document.querySelector(`#escOverlay .esc-losango[data-losango="${id}"]`);
+      return document.querySelectorAll('#escOverlay .esc-losango').length === 5 && !!l('publicador-mpiplus').querySelector('svg') && !!l('orquestrador').querySelector('svg') && getComputedStyle(l('bloqueador')).display === 'none' && l('relator').classList.contains('est-trabalhando') && getComputedStyle(l('relator')).animationName === 'none' && /translate\(/.test(l('orquestrador').style.transform);
+    }));
+    const flutua = await page.evaluate(async () => {
+      const l = document.querySelector('#escOverlay .esc-losango[data-losango="relator"]'), t = document.querySelector('#escOverlay .esc-losango[data-losango="publicador-mpiplus"]');
+      const antes = l.style.transform, thorAntes = t.style.transform;
+      const t0 = Date.now();
+      while (l.style.transform === antes && Date.now() - t0 < 2500) await new Promise((r) => setTimeout(r, 50));
+      return { antes, depois: l.style.transform, thorAntes, thorDepois: t.style.transform };
+    });
+    check('o losango de quem trabalha flutua pelo laço (o transform muda entre quadros); o do ocioso fica parado', flutua.antes !== flutua.depois && flutua.thorAntes === flutua.thorDepois, JSON.stringify(flutua));
+    check('sem selo de reunião nem câmera automática (pedido de 14/10)', await page.evaluate(() => !document.querySelector('.esc-selo.reuniao') && !/cam\.seguir|cam\.entrada/.test(String(window.hubEscritorioCena.criarCamera))));
     check('o cabeçalho apresenta Odin como orquestrador e a última varredura', await page.evaluate(() => /Odin, o orquestrador/.test(document.querySelector('.home-hi__sub').textContent) && /última varredura/i.test(document.querySelector('.home-hi__sub').textContent)));
     await page.click('#escPaineis');
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#escOverlay .esc-agente')).opacity === '0', { timeout: 2000 }).catch(() => {});
@@ -154,8 +167,10 @@ const STUB = `
     check('e volta para o 3D', await page.evaluate(() => !document.querySelector('#escPalco canvas.esc-canvas-2d') && !!document.querySelector('#escPalco canvas.esc-canvas')));
 
     console.log('\n=== Quem muda de estado anda ===');
-    await page.evaluate(() => { const s = window.__snap; s.pendencias.find((p) => p.id === 'P-2').status = 'fechada'; s.agentes.find((a) => a.id === 'hospedagem').estado = 'ocioso'; s.tarefas.find((t) => t.id === '00T1').estado = 'concluida'; s.tarefas.find((t) => t.id === '00T1').rotulo = 'concluída'; });
+    await page.evaluate(() => { const s = window.__snap; s.pendencias.find((p) => p.id === 'P-2').status = 'fechada'; s.agentes.find((a) => a.id === 'hospedagem').estado = 'ocioso'; s.tarefas.find((t) => t.id === '00T1').estado = 'concluida'; s.tarefas.find((t) => t.id === '00T1').rotulo = 'concluída'; const t2 = s.tarefas.find((t) => t.id === '00T2'); t2.estado = 'planejada'; t2.rotulo = 'planejada'; t2.agente = 'publicador-mpiplus'; });
     await redesenhar();
+    await page.waitForSelector('#escOverlay .esc-selo.viagem[data-pacote="00T2"]', { timeout: 3000 }).catch(() => {});
+    check('a tarefa encaminhada viaja da mesa de reunião para a mesa do Thor com o selo dizendo o assunto e para quem vai', await page.evaluate(() => { const p = window.hubEscritorio.motor.sim.pacotes.get('00T2'); const selo = document.querySelector('#escOverlay .esc-selo.viagem[data-pacote="00T2"]'); return p && p.andando && p.lugar === 'sala:02' && !!selo && /Ativação de SSL - a\.com\.br → Thor/.test(selo.textContent) && /translate\(/.test(selo.style.transform); }), await page.evaluate(() => { const s = document.querySelector('#escOverlay .esc-selo.viagem'); return s ? s.textContent : 'sem selo'; }));
     const partiu = await page.evaluate(() => { const m = window.hubEscritorio.motor; const h = m.sim.figuras.get('hospedagem'); return { andando: h.andando, alvo: h.alvo.tipo, pos: { ...h.pos }, caminho: h.caminho.length, pops: m.sim.pops.length, pacote: m.sim.pacotes.has('00T1') }; });
     check('Huginn, sem pendência, sai da reunião andando para a mesa dele pelo corredor', partiu.andando && partiu.alvo === 'mesa' && partiu.caminho >= 6, JSON.stringify(partiu));
     check('a tarefa concluída sumiu da mesa e virou um "✓" subindo', !partiu.pacote && partiu.pops === 1, JSON.stringify(partiu));
@@ -282,8 +297,10 @@ const STUB = `
     // cheia e para o laço; voltar reaproveita o mesmo canvas.
     await page.evaluate(() => openSettings('ia'));
     await page.waitForFunction(() => document.querySelector('[data-cfg-pane="ia"].active'), { timeout: 3000 });
-    await page.waitForTimeout(450); // a animação de entrada do topo (fadeUp) roda de novo ao voltar à grade
-    check('sair do Escritório desfaz a tela cheia (menu e topo voltam à grade) e o laço de quadros para', await page.evaluate(() => !document.querySelector('.app').classList.contains('esc-cheia') && document.querySelector('.app-nav').getBoundingClientRect().left === 0 && document.querySelector('.topbar').getBoundingClientRect().top === 0 && window.hubEscritorio.motor.rodando === false));
+    // A animação de entrada do topo (fadeUp, 0,35 s) roda de novo ao voltar à grade: espera assentar.
+    await page.waitForFunction(() => document.querySelector('.topbar').getBoundingClientRect().top === 0 && document.querySelector('.app-nav').getBoundingClientRect().left === 0, { timeout: 3000 }).catch(() => {});
+    const saida = await page.evaluate(() => ({ cheia: document.querySelector('.app').classList.contains('esc-cheia'), nav: document.querySelector('.app-nav').getBoundingClientRect().left, topo: document.querySelector('.topbar').getBoundingClientRect().top, rodando: window.hubEscritorio.motor.rodando }));
+    check('sair do Escritório desfaz a tela cheia (menu e topo voltam à grade) e o laço de quadros para', !saida.cheia && saida.nav === 0 && saida.topo === 0 && saida.rodando === false, JSON.stringify(saida));
     check('a aba IA & Escritório abre com a configuração lida', await page.evaluate(() => document.getElementById('iaModeloOrqInput').value === 'gemini-3.1-pro-preview' && document.getElementById('iaNivelSelect').value === 'HIGH' && document.getElementById('iaTetoInput').value === '200' && /AIza/.test(document.getElementById('iaKeyInput').placeholder)));
     await page.click('#iaListarBtn');
     await page.waitForFunction(() => document.querySelectorAll('#iaModelosLista option').length === 2, { timeout: 3000 });

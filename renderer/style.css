@@ -1594,6 +1594,26 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .esc-agente-dot.err { background: var(--error); box-shadow: 0 0 8px var(--error); }
 .esc-agente-dot.neutral { background: var(--text-faint); }
 .esc-agente-dot.off { background: var(--border); }
+/* O losango com o ícone da função, logo acima da cabeça (a cor diz o estado).
+   O de quem trabalha flutua, mas pelo laço de quadros da cena (que só roda
+   enquanto há trabalho e para sem foco), não por animação CSS (ADR-126). */
+.esc-losango { width: 28px; height: 28px; pointer-events: none; color: var(--accent); }
+.esc-losango::before { content: ''; position: absolute; inset: 5px; transform: rotate(45deg); border: 1px solid currentColor; background: rgba(6, 18, 16, 0.92); box-shadow: 0 0 10px rgba(62, 233, 125, 0.22); }
+.esc-losango svg, .esc-losango b { position: absolute; inset: 0; margin: auto; width: 12px; height: 12px; font: 700 11px/12px var(--mono); text-align: center; }
+.esc-losango.est-trabalhando { color: var(--accent-2); }
+.esc-losango.est-trabalhando::before { box-shadow: 0 0 12px rgba(34, 242, 239, 0.35); }
+.esc-losango.est-aguardando { color: var(--warning); }
+.esc-losango.est-aguardando::before { box-shadow: 0 0 10px rgba(242, 193, 85, 0.3); }
+.esc-losango.est-erro { color: var(--error); }
+.esc-losango.standby { color: var(--text-faint); }
+.esc-losango.standby::before { box-shadow: none; }
+.esc-losango.orquestrador.est-ocioso { color: var(--warning); }
+.esc-losango.est-desligado { display: none !important; }
+/* O selo da tarefa que viaja pelo corredor: o assunto e para quem vai. */
+.esc-selo { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-2); border: 1px solid var(--accent-2-line); background: rgba(6, 18, 16, 0.92); border-radius: 10px; padding: 2px 8px; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4); }
+.esc-selo.viagem { max-width: 320px; overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0.02em; font-size: 10px; }
+/* O cartão fica no alto do fio: um toco de linha o liga ao fio desenhado na cena. */
+.esc-agente::after { content: ''; position: absolute; left: 50%; top: 100%; width: 1px; height: 6px; background: var(--accent-2-line); }
 .esc-sala-rotulo { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-faint); white-space: nowrap; padding: 2px 6px; border-left: 1px solid var(--border-hi); }
 .esc-lugar-n { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--accent-ink); background: var(--accent); border-radius: 8px; padding: 0 6px; line-height: 16px; }
 

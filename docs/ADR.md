@@ -7463,6 +7463,24 @@ o headless do Playwright tem WebGL por SwiftShader, então o motor 3D é
 exercitado de verdade. Quando o vídeo de referência chegar, o que muda é o
 `dirigir` e a simulação, não a planta nem a tela.
 
+**Adendo do mesmo dia (14/10/2026, o vídeo chegou).** Visto quadro a quadro
+(aberto num Chromium com H.264 pelo Playwright; não há ffmpeg na máquina), o
+vídeo de referência mostrou o que os prints não mostravam: os agentes são
+**losangos flutuantes com o ícone da função**, com um **anel luminoso no
+chão** e o cartão preso por um **fio**; deslizam de uma mesa a outra; a
+câmera deriva devagar; um selo "EM CALL" marca quem está junto. Entrou o
+que compõe o 3D dos agentes, das tarefas e do escritório: o **losango**
+(HTML ancorado acima da cabeça, com o ícone do primeiro módulo do agente,
+os mesmos da barra lateral; o do Odin é o do Escritório; a cor diz o estado
+e só o de quem trabalha flutua, e só com a janela em foco), o **anel no
+chão** (a cor do estado, pulsando devagar em quem trabalha), o **fio** até
+o cartão, e o **selo que viaja com a tarefa encaminhada** (o assunto e para
+quem vai, ancorado ao pacote enquanto ele anda pelo corredor). **Ficaram de
+fora, a pedido do Guilherme**: a câmera que entra animada e acompanha quem
+anda, e o selo "Em reunião · n" (feitos e tirados no mesmo dia; a câmera só
+se move pela mão). As figuras continuam andando pelo corredor: é o que dá
+sentido à sala de reunião e ao posto da sala de comando.
+
 ## ADR-154 — O Hub vira Asgard: nome, grafia rúnica na marca e a runa Othala como ícone
 
 **Contexto.** Pedido do Guilherme (14/10): "muda o nome de hub para Asgard
