@@ -39,12 +39,18 @@ function migrarDadosDoNomeAntigo() {
     if (!fs.existsSync(antiga) || fs.existsSync(path.join(nova, 'hub-state.json'))) return false;
     fs.mkdirSync(nova, { recursive: true });
     fs.cpSync(antiga, nova, { recursive: true, force: false, errorOnExist: false, filter: (origem) => !PASTAS_DE_CACHE.has(path.basename(origem)) });
+    // O Local State guarda a chave (DPAPI) que decifra todos os .enc: tem de ser
+    // o antigo, por cima do que o Chromium possa já ter criado para a pasta nova.
+    const localState = path.join(antiga, 'Local State');
+    if (fs.existsSync(localState)) fs.copyFileSync(localState, path.join(nova, 'Local State'));
     fs.writeFileSync(path.join(nova, 'migrado-de.txt'), `Copiado de ${antiga} em ${new Date().toISOString()} (ADR-158). A pasta antiga ficou como reserva.\n`);
     return true;
   } catch (e) {
     return false;
   }
 }
+// Antes de o Chromium abrir a pasta nova e escrever o Local State dele.
+migrarDadosDoNomeAntigo();
 const credsPath = () => path.join(app.getPath('userData'), 'credentials.enc');
 const hubStatePath = () => path.join(app.getPath('userData'), 'hub-state.json');
 const googleConfigPath = () => path.join(app.getPath('userData'), 'google-config.json');
@@ -140,7 +146,6 @@ if (!instanciaUnica) {
   });
 
   app.whenReady().then(() => {
-    migrarDadosDoNomeAntigo();
     createWindow();
     // O orquestrador do Escritório (ADR-149) nasce com a janela: lê o que
     // ficou gravado, abre a pendência das tarefas interrompidas e, se o modo

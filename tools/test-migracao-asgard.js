@@ -16,7 +16,8 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 const i = src.indexOf("const NOME_ANTIGO = 'pr-merge-tool';");
-const f = src.indexOf('\nconst credsPath', i);
+// Para antes da chamada que o main.js faz no carregamento (o teste chama à mão).
+const f = src.indexOf('\n// Antes de o Chromium abrir a pasta nova', i);
 if (i < 0 || f < 0) throw new Error('não achei a migração');
 
 const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-migra-'));
@@ -33,6 +34,11 @@ fs.writeFileSync(path.join(antiga, 'Cache', 'index'), 'cache');
 fs.writeFileSync(path.join(antiga, 'Local Storage', 'leveldb', '000.log'), 'ls');
 fs.writeFileSync(path.join(antiga, 'Partitions', 'painel-mpi', 'Network', 'Cookies'), 'cookies');
 fs.writeFileSync(path.join(antiga, 'lockfile'), '');
+// O Local State guarda a chave que decifra os .enc: o Chromium pode já ter
+// escrito um novo na pasta nova antes da migração; o antigo tem de vencer.
+fs.writeFileSync(path.join(antiga, 'Local State'), '{"os_crypt":{"encrypted_key":"ANTIGA"}}');
+fs.mkdirSync(nova, { recursive: true });
+fs.writeFileSync(path.join(nova, 'Local State'), '{"os_crypt":{"encrypted_key":"NOVA"}}');
 
 const ctx = { fs, path, Set, Date, app: { getPath: (k) => (k === 'userData' ? nova : appData) } };
 vm.createContext(ctx);
@@ -44,6 +50,8 @@ check('hub-state, credenciais e escritório chegaram', fs.readFileSync(path.join
 check('Local Storage e os logins dos painéis (Partitions) também', fs.existsSync(path.join(nova, 'Local Storage', 'leveldb', '000.log')) && fs.readFileSync(path.join(nova, 'Partitions', 'painel-mpi', 'Network', 'Cookies'), 'utf8') === 'cookies');
 check('os caches do Chromium e o lockfile não', !fs.existsSync(path.join(nova, 'Cache')) && !fs.existsSync(path.join(nova, 'lockfile')));
 check('deixa a marca de onde veio', /Copiado de .*pr-merge-tool/.test(fs.readFileSync(path.join(nova, 'migrado-de.txt'), 'utf8')));
+check('o Local State antigo (a chave dos .enc) vence o que já existia na pasta nova', /ANTIGA/.test(fs.readFileSync(path.join(nova, 'Local State'), 'utf8')));
+check('a migração roda antes do whenReady (antes de o Chromium escrever o Local State novo)', src.indexOf('\nmigrarDadosDoNomeAntigo();') > 0 && src.indexOf('\nmigrarDadosDoNomeAntigo();') < src.indexOf('app.whenReady()'));
 check('a pasta antiga fica intacta', fs.existsSync(path.join(antiga, 'hub-state.json')) && fs.existsSync(path.join(antiga, 'Cache', 'index')));
 
 console.log('\n=== Aberturas seguintes e casos em que não mexe ===');

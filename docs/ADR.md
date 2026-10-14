@@ -7911,6 +7911,18 @@ refeitos pelo instalador com o mesmo nome. Se algo der errado na migração,
 os dados continuam intactos em `%APPDATA%\pr-merge-tool`: basta copiar à
 mão. Quando a pasta antiga puder ser apagada é decisão do Guilherme.
 
+**Adendo do mesmo dia: o `Local State` é a chave dos `.enc`.** A primeira
+instalação (1.0.91) abriu com os dados copiados e nenhum segredo legível:
+"Conecte sua conta do Salesforce", "nenhuma credencial do Bitbucket". No
+Windows o `safeStorage` do Electron cifra com uma chave guardada em
+`userData\Local State` (protegida por DPAPI); o Chromium já tinha escrito um
+`Local State` novo na pasta nova antes da migração, a cópia não sobrescrevia,
+e todos os `.enc` ficaram cifrados com a chave que não estava mais lá.
+Correção: a migração roda **no carregamento do main.js, antes do
+`whenReady`** (antes de o Chromium abrir a pasta) e copia o `Local State`
+antigo por cima do que houver. Na máquina do Guilherme a pasta nova foi
+apagada e a migração refeita pela 1.0.92; o teste cobre os dois pontos.
+
 ## Pendências conhecidas (não são decisões — são dívidas)
 
 - **Cache de data streams e slot reaproveitado** (ADR-131): tratado na
