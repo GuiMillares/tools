@@ -7481,6 +7481,24 @@ anda, e o selo "Em reunião · n" (feitos e tirados no mesmo dia; a câmera só
 se move pela mão). As figuras continuam andando pelo corredor: é o que dá
 sentido à sala de reunião e ao posto da sala de comando.
 
+**Segundo adendo (14/10/2026, "os nomes estão ficando um por cima do
+outro").** Numa janela de ~1170 px os cartões, em tamanho fixo de pixels,
+cobriam uns aos outros e os rótulos das salas. Decisão: **tudo que é
+ancorado encolhe junto com a cena** (`escalaDosCartoes`: tamanho cheio a
+partir de 24 px/m, nunca abaixo de 55 %; o `scale` vai no mesmo transform da
+âncora, com a origem no ponto ancorado); abaixo de 75 % o cartão vira
+**compacto** (avatar, nome e, se houver, a atividade; a cena avisa a tela
+pelo `aoEscalar`). Os **rótulos das salas são obstáculos fixos** que os
+cartões evitam no mesmo empurrão que já evitava cartão sobre cartão. A cena
+fica 26 px abaixo do meio da janela (no Three.js o centro do frustum é em
+metros, então o deslocamento é dividido pelo zoom), para sobrar espaço aos
+cartões da fileira do fundo. **Redimensionar a janela reenquadra** o zoom
+quando ninguém mexeu nele. O HUD se rearruma: até 1280 px o Comando desce
+para baixo do título e perde os subtítulos dos interruptores; até 1100 px o
+rodapé quebra linha e a gaveta estreita; até 860 px a gaveta ocupa a largura.
+O teste de navegador reduz a janela a 1000×640 e prova que nenhum cartão
+cobre outro nem um rótulo.
+
 ## ADR-154 — O Hub vira Asgard: nome, grafia rúnica na marca e a runa Othala como ícone
 
 **Contexto.** Pedido do Guilherme (14/10): "muda o nome de hub para Asgard

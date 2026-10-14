@@ -218,7 +218,7 @@
       return;
     }
     const aoFalhar = (e) => logar(`Escritório: o 3D não abriu (${e && e.message ? e.message : e}); a planta em 2D cobre.`, 'warn');
-    motor = window.hubEscritorioCena.montar(palco, { preferir: ui.motorPreferido, aoClicarFigura: (id) => { ui.gaveta = 'agente:' + id; desenhar(); }, aoViajar: atualizarSelosDeViagem, aoFalhar });
+    motor = window.hubEscritorioCena.montar(palco, { preferir: ui.motorPreferido, aoClicarFigura: (id) => { ui.gaveta = 'agente:' + id; desenhar(); }, aoViajar: atualizarSelosDeViagem, aoEscalar: aoEscalar, aoFalhar });
     palco.insertBefore(motor.canvas, palco.firstChild);
     if (ui.motorPreferido === '3d' && motor.tipo === '2d') logar('Escritório: sem WebGL nesta máquina; a planta em 2D cobre.', 'warn');
     motor.ligar();
@@ -303,6 +303,12 @@
     const destino = t.estado === 'pendente' ? 'reunião' : ag ? ag.nome : ((s.orquestrador && s.orquestrador.nome) || 'Odin');
     return `${curto} → ${destino}`;
   }
+  // A cena avisa quando os cartões ficam pequenos demais para o papel e a
+  // função: viram compactos (avatar e nome), e voltam quando sobra espaço.
+  function aoEscalar(e) {
+    const overlay = document.getElementById('escOverlay');
+    if (overlay) overlay.classList.toggle('compacto', !!(e && e.compacto));
+  }
   // Os selos dos pacotes em viagem: a cena avisa quando o conjunto muda.
   function atualizarSelosDeViagem(ids) {
     const overlay = document.getElementById('escOverlay');
@@ -372,7 +378,7 @@
         r.textContent = `${sl.numero} / ${sl.nome}`;
         overlay.appendChild(r);
         rotulos.set(sl.numero, r);
-        if (motor) motor.ancorar('sala:' + sl.numero, r, 0);
+        if (motor) motor.ancorar('sala:' + sl.numero, r, 0, { fixo: true });
       }
     }
   }

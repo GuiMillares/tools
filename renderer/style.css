@@ -1614,6 +1614,18 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .esc-selo.viagem { max-width: 320px; overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0.02em; font-size: 10px; }
 /* O cartão fica no alto do fio: um toco de linha o liga ao fio desenhado na cena. */
 .esc-agente::after { content: ''; position: absolute; left: 50%; top: 100%; width: 1px; height: 6px; background: var(--accent-2-line); }
+/* Tudo que é ancorado encolhe junto com a cena (a cena manda o scale no
+   transform); a origem é o ponto da âncora: o pé do cartão, o centro do
+   losango, o canto esquerdo do rótulo. */
+.esc-agente { transform-origin: 50% 100%; }
+.esc-losango { transform-origin: 50% 50%; }
+.esc-sala-rotulo { transform-origin: 0 100%; }
+.esc-selo { transform-origin: 50% 100%; }
+/* Compacto (cena pequena): só avatar, nome e, se houver, a atividade. */
+.esc-overlay.compacto .esc-agente { padding: 3px 7px 3px 3px; gap: 6px; }
+.esc-overlay.compacto .esc-agente-avatar { width: 20px; height: 20px; font-size: 11px; }
+.esc-overlay.compacto .esc-agente-papel, .esc-overlay.compacto .esc-agente-funcao { display: none; }
+.esc-overlay.compacto .esc-agente .esc-agente-atividade { max-width: 120px; }
 .esc-sala-rotulo { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-faint); white-space: nowrap; padding: 2px 6px; border-left: 1px solid var(--border-hi); }
 .esc-lugar-n { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--accent-ink); background: var(--accent); border-radius: 8px; padding: 0 6px; line-height: 16px; }
 
@@ -1662,9 +1674,20 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .esc-agente-card.est-ocioso { border-left-color: var(--accent-line); }
 .esc-agente-card.est-desligado { opacity: 0.55; }
 .esc-cena .esc-hist-fundo { position: absolute; }
+@media (max-width: 1280px) {
+  .esc-hud-comando { top: 62px; }
+  .esc-switch.mini small { display: none; }
+}
 @media (max-width: 1100px) {
   .esc-hud-topo .home-hi__sub { display: none; }
+  .esc-hud-comando { top: 56px; }
   .esc-gaveta { width: min(560px, 60vw); }
+  .esc-hud-rodape { max-width: calc(100vw - 32px); flex-wrap: wrap; justify-content: center; row-gap: 2px; }
+  .esc-rodape-btn { height: 26px; padding: 0 7px; font-size: 9.5px; }
+}
+@media (max-width: 860px) {
+  .esc-gaveta { left: 18px; right: 18px; width: auto; top: 110px; }
+  .esc-hud-comando { gap: 6px; padding: 4px 6px; }
 }
 
 /* ---- Marca: Asgard (ADR-154). A runa Othala é o logotipo; a grafia rúnica

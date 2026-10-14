@@ -38,6 +38,11 @@
   const VELOCIDADE_PACOTE = 11; // o pacote voa mais rápido que a figura anda
   const ALTURA_CARTAO = 2.15;   // onde o cartão do agente se prende (acima da cabeça)
   const FPS_MAX = 30;
+  const DESLOCAMENTO_Y = 26;    // a cena fica este tanto de px abaixo do meio: sobra espaço aos cartões do fundo
+  // Os cartões encolhem junto com a cena: tamanho cheio a partir de 24 px/m,
+  // nunca menos que 55 %. (Numa janela de 1170 px a cena cabe com ~16 px/m.)
+  const escalaDosCartoes = (zoom) => Math.max(0.55, Math.min(1, zoom / 24));
+  const LIMIAR_COMPACTO = 0.75;  // abaixo disso o cartão mostra só avatar e nome
 
   // ---------- simulação ----------
   function criarSimulacao() {
@@ -238,6 +243,16 @@
     };
   }
 
+  // Avisa a tela quando a escala dos cartões cruza o limiar do compacto.
+  function criarVigiaDeEscala(aoEscalar) {
+    let ultimo = null;
+    return (escala) => {
+      const compacto = escala < LIMIAR_COMPACTO;
+      if (compacto === ultimo) return;
+      ultimo = compacto;
+      if (typeof aoEscalar === 'function') aoEscalar({ escala, compacto });
+    };
+  }
   // Avisa a tela quando muda o conjunto de pacotes em viagem (os selos).
   function criarVigiaDeViagens(sim, aoViajar) {
     let ultimo = '';
@@ -273,30 +288,37 @@
     return {
       // `empurrar`: cartões que não podem se cobrir (duas figuras lado a lado
       // na reunião): o de baixo sobe até desencostar do outro.
-      ancorar(id, el, altura, op) { if (el) lista.set(id, { el, altura: altura == null ? 0 : altura, empurrar: !!(op && op.empurrar), centro: !!(op && op.centro) }); else lista.delete(id); },
-      posicionar(pontoDe, projetar) {
+      // `fixo`: um obstáculo que não se move (o rótulo da sala) e que os
+      // cartões evitam. `centro`: ancorado pelo centro (o losango); senão,
+      // pelo pé. `escala` encolhe tudo junto com a cena.
+      ancorar(id, el, altura, op) { if (el) lista.set(id, { el, altura: altura == null ? 0 : altura, empurrar: !!(op && op.empurrar), centro: !!(op && op.centro), fixo: !!(op && op.fixo) }); else lista.delete(id); },
+      posicionar(pontoDe, projetar, escala) {
+        const k = escala || 1;
         const caixas = [];
+        const postos = [];
         for (const [id, a] of lista) {
           const p = pontoDe(id);
           if (!p) { a.el.style.display = 'none'; continue; }
           const s = projetar(p.x, (p.y || 0) + a.altura, p.z);
           a.el.style.display = '';
-          if (a.empurrar) { caixas.push({ a, x: s.x, y: s.y, w: a.el.offsetWidth || 160, h: a.el.offsetHeight || 40 }); continue; }
-          a.el.style.transform = `translate(${Math.round(s.x)}px, ${Math.round(s.y)}px) translate(-50%, ${a.centro ? '-50%' : '-100%'})`;
+          const w = (a.el.offsetWidth || 160) * k, h = (a.el.offsetHeight || 40) * k;
+          if (a.empurrar) { caixas.push({ a, x: s.x, y: s.y, w, h }); continue; }
+          // O rótulo é ancorado pela esquerda, no pé: a caixa dele é [x, y - h, x + w, y].
+          if (a.fixo) postos.push({ x: s.x + w / 2, y: s.y, w, h });
+          a.el.style.transform = `translate(${Math.round(s.x)}px, ${Math.round(s.y)}px) translate(${a.fixo ? '0' : '-50%'}, ${a.centro ? '-50%' : '-100%'}) scale(${k})`;
         }
         // A caixa de cada cartão é [x - w/2, y - h, x + w/2, y]; de cima para
-        // baixo, quem cobre um já colocado sobe para cima dele.
+        // baixo, quem cobre um já colocado (ou um rótulo) sobe até desencostar.
         caixas.sort((u, v) => u.y - v.y);
-        const postos = [];
         for (const c of caixas) {
           let y = c.y;
-          for (let tenta = 0; tenta < 12; tenta++) {
+          for (let tenta = 0; tenta < 14; tenta++) {
             const bate = postos.find((o) => Math.abs(o.x - c.x) < (o.w + c.w) / 2 && y > o.y - o.h - 4 && y - c.h < o.y + 4);
             if (!bate) break;
             y = bate.y - bate.h - 6;
           }
           postos.push({ x: c.x, y, w: c.w, h: c.h });
-          c.a.el.style.transform = `translate(${Math.round(c.x)}px, ${Math.round(y)}px) translate(-50%, -100%)`;
+          c.a.el.style.transform = `translate(${Math.round(c.x)}px, ${Math.round(y)}px) translate(-50%, -100%) scale(${k})`;
         }
       },
       limpar() { lista.clear(); },
@@ -528,7 +550,10 @@
     // ----- câmera e projeção -----
     let largura = 1, altura = 1;
     function aplicarCamera() {
-      camera.left = -largura / 2; camera.right = largura / 2; camera.top = altura / 2; camera.bottom = -altura / 2;
+      // O centro do frustum é em metros (o zoom só divide o tamanho): o
+      // deslocamento em px vira metros dividindo pelo zoom.
+      const desloca = DESLOCAMENTO_Y / cam.zoom;
+      camera.left = -largura / 2; camera.right = largura / 2; camera.top = altura / 2 + desloca; camera.bottom = -altura / 2 + desloca;
       camera.zoom = cam.zoom;
       const d = 150;
       camera.position.set(cam.alvo.x + d * Math.cos(cam.el) * Math.sin(cam.az), d * Math.sin(cam.el), cam.alvo.z + d * Math.cos(cam.el) * Math.cos(cam.az));
@@ -545,14 +570,19 @@
       largura = Math.max(1, Math.round(r.width)); altura = Math.max(1, Math.round(r.height));
       renderer.setSize(largura, altura, false);
       canvas.style.width = largura + 'px'; canvas.style.height = altura + 'px';
+      const zoomBaseAntes = cam.zoomBase;
       cam.zoomBase = zoomParaCaber(Planta, largura, altura, Math.PI / 4, cam.el);
+      // Primeira vez: enquadra. Depois, se ninguém mexeu no zoom, reenquadra
+      // ao redimensionar a janela.
       if (!cam._enquadrou) { cam.zoom = cam.zoomAlvo = cam.zoomBase; cam._enquadrou = true; }
+      else if (Math.abs(cam.zoomAlvo - zoomBaseAntes) < 1e-6) { cam.zoom = cam.zoomAlvo = cam.zoomBase; }
       laco.pedir();
     }
 
     let ultimoDir = null;
     const pontoDe = criarPontoDe(sim, Planta, () => ultimoDir);
     const vigiarViagens = criarVigiaDeViagens(sim, opcoes.aoViajar);
+    const vigiarEscala = criarVigiaDeEscala(opcoes.aoEscalar);
     const laco = criarLaco(host, (dt) => {
       const { movendo } = sim.avancar(dt);
       const camMudou = cam.suavizar(dt);
@@ -560,7 +590,9 @@
       sincronizar();
       renderer.render(scene, camera);
       vigiarViagens();
-      ancoras.posicionar(pontoDe, projetar);
+      const escala = escalaDosCartoes(cam.zoom);
+      vigiarEscala(escala);
+      ancoras.posicionar(pontoDe, projetar, escala);
       return movendo || camMudou;
     });
 
@@ -611,7 +643,7 @@
       const dx = x - cam.alvo.x, dz = z - cam.alvo.z;
       const sx = dx * Math.cos(cam.az) - dz * Math.sin(cam.az);
       const sy = (dx * Math.sin(cam.az) + dz * Math.cos(cam.az)) * Math.sin(cam.el) - y * Math.cos(cam.el);
-      return { x: largura / 2 + sx * cam.zoom, y: altura / 2 + sy * cam.zoom };
+      return { x: largura / 2 + sx * cam.zoom, y: altura / 2 + DESLOCAMENTO_Y + sy * cam.zoom };
     }
     const prof = (x, z) => x * Math.sin(cam.az) + z * Math.cos(cam.az); // quem está mais perto da câmera desenha por último
     function poligono(pontos, preenchimento, traco) {
@@ -684,18 +716,25 @@
       dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = Math.round(largura * dpr); canvas.height = Math.round(altura * dpr);
       canvas.style.width = largura + 'px'; canvas.style.height = altura + 'px';
+      const zoomBaseAntes = cam.zoomBase;
       cam.zoomBase = zoomParaCaber(Planta, largura, altura, Math.PI / 4, cam.el);
+      // Primeira vez: enquadra. Depois, se ninguém mexeu no zoom, reenquadra
+      // ao redimensionar a janela.
       if (!cam._enquadrou) { cam.zoom = cam.zoomAlvo = cam.zoomBase; cam._enquadrou = true; }
+      else if (Math.abs(cam.zoomAlvo - zoomBaseAntes) < 1e-6) { cam.zoom = cam.zoomAlvo = cam.zoomBase; }
       laco.pedir();
     }
     const pontoDe = criarPontoDe(sim, Planta, () => ultimoDir);
     const vigiarViagens = criarVigiaDeViagens(sim, opcoes.aoViajar);
+    const vigiarEscala = criarVigiaDeEscala(opcoes.aoEscalar);
     const laco = criarLaco(host, (dt) => {
       const { movendo } = sim.avancar(dt);
       const camMudou = cam.suavizar(dt);
       desenhar();
       vigiarViagens();
-      ancoras.posicionar(pontoDe, projetar);
+      const escala = escalaDosCartoes(cam.zoom);
+      vigiarEscala(escala);
+      ancoras.posicionar(pontoDe, projetar, escala);
       return movendo || camMudou;
     });
     function figuraEm(e) {
@@ -729,5 +768,5 @@
     return motor;
   }
 
-  window.hubEscritorioCena = { montar, criarSimulacao, criarCamera, zoomParaCaber, CORES };
+  window.hubEscritorioCena = { montar, criarSimulacao, criarCamera, zoomParaCaber, escalaDosCartoes, LIMIAR_COMPACTO, CORES };
 })();

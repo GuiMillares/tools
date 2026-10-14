@@ -146,6 +146,27 @@ const STUB = `
       return { antes, depois: l.style.transform, thorAntes, thorDepois: t.style.transform };
     });
     check('o losango de quem trabalha flutua pelo laço (o transform muda entre quadros); o do ocioso fica parado', flutua.antes !== flutua.depois && flutua.thorAntes === flutua.thorDepois, JSON.stringify(flutua));
+    // Janela pequena: os cartões encolhem com a cena e viram compactos; o HUD se rearruma.
+    await page.setViewportSize({ width: 1000, height: 640 });
+    await page.waitForFunction(() => document.getElementById('escOverlay').classList.contains('compacto'), { timeout: 3000 }).catch(() => {});
+    const pequena = await page.evaluate(() => {
+      const c = document.querySelector('#escOverlay .esc-agente[data-agente="publicador-mpiplus"]');
+      const m = /scale\(([\d.]+)\)/.exec(c.style.transform);
+      const r = document.querySelector('#escOverlay .esc-sala-rotulo[data-sala="01"]');
+      return { compacto: document.getElementById('escOverlay').classList.contains('compacto'), escala: m ? Number(m[1]) : null, papel: getComputedStyle(c.querySelector('.esc-agente-papel')).display, rotulo: /scale\(/.test(r.style.transform), comandoTop: document.getElementById('escHudComando').getBoundingClientRect().top };
+    });
+    check('em janela pequena os cartões encolhem com a cena, viram compactos (sem o papel), os rótulos encolhem junto e o Comando desce para baixo do título', pequena.compacto && pequena.escala != null && pequena.escala < 0.75 && pequena.papel === 'none' && pequena.rotulo && pequena.comandoTop > 50, JSON.stringify(pequena));
+    check('nenhum cartão cobre outro nem cobre um rótulo de sala', await page.evaluate(() => {
+      const caixas = [...document.querySelectorAll('#escOverlay .esc-agente, #escOverlay .esc-sala-rotulo')].filter((e) => e.style.display !== 'none' && getComputedStyle(e).display !== 'none').map((e) => ({ id: e.dataset.agente || e.dataset.sala, r: e.getBoundingClientRect() }));
+      const cruza = (a, b) => a.left < b.right - 2 && b.left < a.right - 2 && a.top < b.bottom - 2 && b.top < a.bottom - 2;
+      const pares = [];
+      for (let i = 0; i < caixas.length; i++) for (let j = i + 1; j < caixas.length; j++) if (cruza(caixas[i].r, caixas[j].r)) pares.push(caixas[i].id + '×' + caixas[j].id);
+      window.__cruzamentos = pares;
+      return pares.length === 0;
+    }), await page.evaluate(() => (window.__cruzamentos || []).join(', ')));
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.waitForFunction(() => !document.getElementById('escOverlay').classList.contains('compacto'), { timeout: 3000 }).catch(() => {});
+    check('de volta à janela grande, os cartões voltam ao tamanho cheio', await page.evaluate(() => !document.getElementById('escOverlay').classList.contains('compacto') && getComputedStyle(document.querySelector('#escOverlay .esc-agente[data-agente="publicador-mpiplus"] .esc-agente-papel')).display !== 'none'));
     check('sem selo de reunião nem câmera automática (pedido de 14/10)', await page.evaluate(() => !document.querySelector('.esc-selo.reuniao') && !/cam\.seguir|cam\.entrada/.test(String(window.hubEscritorioCena.criarCamera))));
     check('o cabeçalho apresenta Odin como orquestrador e a última varredura', await page.evaluate(() => /Odin, o orquestrador/.test(document.querySelector('.home-hi__sub').textContent) && /última varredura/i.test(document.querySelector('.home-hi__sub').textContent)));
     await page.click('#escPaineis');
