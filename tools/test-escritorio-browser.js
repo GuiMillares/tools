@@ -200,6 +200,25 @@ const STUB = `
     await page.waitForFunction(() => window.hubEscritorio.motor && window.hubEscritorio.motor.tipo === '3d', { timeout: 3000 });
     check('e volta para o 3D', await page.evaluate(() => !document.querySelector('#escPalco canvas.esc-canvas-2d') && !!document.querySelector('#escPalco canvas.esc-canvas')));
 
+    console.log('\n=== O mapa de fluxo (ADR-157) ===');
+    await page.click('#escVista');
+    await page.waitForSelector('#escMapaHost svg.esc-mapa-svg', { timeout: 3000 });
+    const mapa = await page.evaluate(() => ({ palcoOculto: document.getElementById('escPalco').hidden, nos: document.querySelectorAll('#escMapaHost .esc-mapa-no').length, linhas: document.querySelectorAll('#escMapaHost .esc-mapa-linha').length, odin: document.querySelector('#escMapaHost [data-no="orquestrador"]').className.baseVal, bragi: document.querySelector('#escMapaHost [data-no="relator"]').className.baseVal, thorBadge: document.querySelector('#escMapaHost [data-no="publicador-mpiplus"] .esc-mapa-badge text').textContent, motorParado: window.hubEscritorio.motor.rodando === false, vista: JSON.parse(localStorage.getItem('hub.escritorio.tela')).vista }));
+    check('"Mapa" esconde o palco, para o motor 3D e desenha Odin + 4 agentes com 4 linhas', mapa.palcoOculto && mapa.nos === 5 && mapa.linhas === 4 && mapa.motorParado && mapa.vista === 'mapa', JSON.stringify(mapa));
+    check('os nós levam o estado: Odin aguardando (pendência sem agente), Bragi standby trabalhando, Thor com 1 tarefa aberta', /est-aguardando/.test(mapa.odin) && /standby est-trabalhando/.test(mapa.bragi) && mapa.thorBadge === '1', JSON.stringify(mapa));
+    await page.evaluate(() => { const s = window.__snap; const t = s.tarefas.find((x) => x.id === '00T3'); t.estado = 'planejada'; t.agente = 'publicador-mpiplus'; });
+    await redesenhar();
+    check('a tarefa encaminhada vira um pulso correndo de Odin ao Thor (o laço roda só enquanto ele corre)', await page.evaluate(() => window.hubEscritorio.mapa.pulsos === 1 && window.hubEscritorio.mapa.rodando === true && document.querySelectorAll('#escMapaHost .esc-mapa-pulso').length === 1));
+    await page.waitForFunction(() => window.hubEscritorio.mapa.pulsos === 0, { timeout: 4000 }).catch(() => {});
+    check('o pulso termina e o laço para', await page.evaluate(() => window.hubEscritorio.mapa.pulsos === 0 && window.hubEscritorio.mapa.rodando === false));
+    await page.evaluate(() => { const s = window.__snap; const t = s.tarefas.find((x) => x.id === '00T3'); t.estado = 'pendente'; t.agente = null; });
+    await page.click('#escMapaHost [data-no="hospedagem"]');
+    check('clicar num nó abre a gaveta do agente', await page.evaluate(() => window.hubEscritorio.ui.gaveta === 'agente:hospedagem'));
+    await page.keyboard.press('Escape');
+    await page.click('#escVista');
+    await page.waitForFunction(() => !document.getElementById('escPalco').hidden, { timeout: 3000 });
+    check('"Escritório" volta à cena e religa o motor', await page.evaluate(() => document.getElementById('escMapaHost').hidden && window.hubEscritorio.motor.rodando === true && JSON.parse(localStorage.getItem('hub.escritorio.tela')).vista === 'cena'));
+
     console.log('\n=== Quem muda de estado anda ===');
     await page.evaluate(() => { const s = window.__snap; s.pendencias.find((p) => p.id === 'P-2').status = 'fechada'; s.agentes.find((a) => a.id === 'hospedagem').estado = 'ocioso'; s.tarefas.find((t) => t.id === '00T1').estado = 'concluida'; s.tarefas.find((t) => t.id === '00T1').rotulo = 'concluída'; const t2 = s.tarefas.find((t) => t.id === '00T2'); t2.estado = 'planejada'; t2.rotulo = 'planejada'; t2.agente = 'publicador-mpiplus'; });
     await redesenhar();

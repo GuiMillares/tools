@@ -15,7 +15,7 @@ passado.
 <!-- indice:inicio (gerado por tools/indice-adr.js; não edite à mão) -->
 ## Índice
 
-157 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
+158 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
 
 - **ADR-001** — Electron puro, sem framework de UI e sem build step
 - **ADR-002** — Toda rede no processo principal; renderer só fala por IPC
@@ -172,6 +172,7 @@ passado.
 - **ADR-154** — O Hub vira Asgard: nome, grafia rúnica na marca e a runa Othala como ícone
 - **ADR-155** — Dívidas pagas de uma vez: OAuth criptografado, GA4 sem duplicata por slot reaproveitado, service workers do painel, notificação de pendência e o resumo "Hoje" do Escritório
 - **ADR-156** — Pacotes clicáveis, suíte a cada push e em paralelo, índice da ADR, e o backlog antigo: fila de PRs persistida, histórico exportado, ID ambíguo escolhido
+- **ADR-157** — O mapa de fluxo: a segunda visão do Escritório, com Odin no centro, os agentes em volta e as tarefas correndo pelas linhas
 - **Pendências conhecidas** (não são decisões — são dívidas)
 - **ADR-146** — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
 <!-- indice:fim -->
@@ -7841,6 +7842,36 @@ esse pré-requisito.
 **Consequências.** `npm test` ganhou `test-fila-prs.js`,
 `test-historico-export.js` e `test-indice-adr.js`, e o navegador cobre o
 pacote (dica e clique). A suíte inteira cai de ~2 min para menos de 1 min.
+
+## ADR-157 — O mapa de fluxo: a segunda visão do Escritório, com Odin no centro, os agentes em volta e as tarefas correndo pelas linhas
+
+**Status:** aceita — bloco 3 do pedido de 14/10/2026.
+
+**Contexto.** O vídeo de referência (ADR-153) tinha, além do escritório
+isométrico, uma tela "SQUAD": um mapa de nós em hexágonos ligados por
+linhas, com cada agente e a função. O escritório mostra *onde* cada um
+está; o mapa mostra *o que corre entre eles*. O Guilherme aprovou a ideia
+na lista de planos (item 7).
+
+**Decisão.** `renderer/escritorio-mapa.js`, SVG puro, sem dependência:
+Odin num hexágono maior no centro; cada agente num hexágono numa roda em
+volta, com a inicial, o nome e o papel (ou a atividade, quando trabalha);
+a cor da borda é a do estado (as mesmas dos losangos); uma linha curva de
+Odin a cada agente, mais grossa quanto mais tarefas abertas ele tem,
+tracejada para quem está em standby; um selo com o número de tarefas
+abertas no nó. **Pulsos**: ao comparar com o snapshot anterior, cada tarefa
+que chega a um agente (planejada, executando ou aguardando confirmação)
+vira um ponto ciano que corre de Odin ao agente; cada uma concluída volta
+verde ao Odin. O laço de quadros só gira enquanto há pulso correndo e para
+com a janela sem foco (ADR-126). Clicar num nó abre a gaveta do agente.
+O botão "Mapa" no rodapé troca a vista (a escolha fica no localStorage);
+no mapa, o palco 3D fica escondido e o motor parado; "Escritório" volta e
+religa o motor. `hubEscritorioSair` para os dois.
+
+**Consequências.** Mais uma visão, nenhuma dependência nova. O teste de
+navegador prova: 5 nós e 4 linhas, o estado nos nós, o palco escondido e o
+motor parado no mapa, o pulso que nasce de um encaminhamento e o laço que
+para quando ele termina, o clique no nó, e a volta ao 3D.
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

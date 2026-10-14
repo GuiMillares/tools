@@ -1630,6 +1630,35 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .esc-sala-rotulo { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-faint); white-space: nowrap; padding: 2px 6px; border-left: 1px solid var(--border-hi); }
 .esc-lugar-n { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--accent-ink); background: var(--accent); border-radius: 8px; padding: 0 6px; line-height: 16px; }
 
+/* O mapa de fluxo (ADR-157), a segunda visão: SVG por cima do palco escondido. */
+.esc-mapa { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); }
+.esc-mapa[hidden] { display: none; }
+.esc-palco[hidden] { display: none; }
+.esc-mapa-svg { width: min(100%, 1500px); height: 100%; max-height: 100%; }
+.esc-mapa-celula { fill: none; stroke: var(--grade, #113128); stroke-opacity: 0.35; }
+.esc-mapa-linha { fill: none; stroke: var(--accent-2); stroke-opacity: 0.35; stroke-linecap: round; }
+.esc-mapa-linha.standby { stroke-dasharray: 4 6; stroke-opacity: 0.25; }
+.esc-mapa-linha.est-trabalhando { stroke-opacity: 0.8; }
+.esc-mapa-linha.est-aguardando { stroke: var(--warning); stroke-opacity: 0.6; }
+.esc-mapa-linha.est-erro { stroke: var(--error); stroke-opacity: 0.6; }
+.esc-mapa-linha.est-desligado { stroke-opacity: 0.12; }
+.esc-mapa-no { cursor: pointer; }
+.esc-mapa-hex { fill: rgba(6, 18, 16, 0.92); stroke-width: 1.5; }
+.esc-mapa-no.est-trabalhando .esc-mapa-hex { filter: drop-shadow(0 0 8px rgba(34, 242, 239, 0.45)); }
+.esc-mapa-no.est-aguardando .esc-mapa-hex { filter: drop-shadow(0 0 8px rgba(242, 193, 85, 0.4)); }
+.esc-mapa-no.standby .esc-mapa-hex { stroke-dasharray: 5 4; }
+.esc-mapa-no.est-desligado { opacity: 0.4; }
+.esc-mapa-no:hover .esc-mapa-hex { stroke-width: 2.5; }
+.esc-mapa-inicial { fill: var(--text); font: 700 20px var(--mono); }
+.esc-mapa-no.orquestrador .esc-mapa-inicial { font-size: 28px; fill: var(--warning); }
+.esc-mapa-nome { fill: var(--text); font: 700 13px var(--sans); }
+.esc-mapa-papel { fill: var(--text-faint); font: 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.esc-mapa-no.est-trabalhando .esc-mapa-papel { fill: var(--accent-2); }
+.esc-mapa-no.est-aguardando .esc-mapa-papel { fill: var(--warning); }
+.esc-mapa-badge circle { fill: var(--accent); }
+.esc-mapa-badge text { fill: var(--accent-ink); font: 700 11px var(--mono); }
+.esc-mapa-pulso { filter: drop-shadow(0 0 6px currentColor); }
+
 /* O HUD. */
 .esc-hud { position: absolute; z-index: 5; }
 .esc-hud-topo { top: 16px; left: 18px; display: flex; align-items: flex-start; gap: 12px; max-width: min(760px, 70vw); }

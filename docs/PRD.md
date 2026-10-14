@@ -751,7 +751,14 @@ toda tela e em todo seletor.
   do caminho uns dos outros para cima ou para o lado, sem cobrir outro
   cartão nem o nome de uma sala; redimensionar a janela reenquadra. Passar
   o mouse num pacote mostra a tarefa (assunto, estado, agente); clicar nele
-  abre o histórico dela (ADR-156). Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
+  abre o histórico dela (ADR-156).
+- **Mapa de fluxo (ADR-157):** o botão "Mapa" do rodapé troca para a
+  segunda visão: Odin no centro, os agentes em hexágonos em volta com a cor
+  do estado e o número de tarefas abertas, linhas de Odin a cada um (mais
+  grossas quanto mais tarefas; tracejadas para o standby). Uma tarefa
+  encaminhada corre como um pulso ciano de Odin ao agente; a concluída
+  volta verde. Clicar num nó abre a gaveta do agente; "Escritório" volta ao
+  3D. Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
   rodapé). O menu do Hub e o topo ficam recolhidos e voltam quando o mouse
   encosta na borda esquerda ou na de cima (ou pelo ☰). O rodapé tem
   "Mostrar/Esconder painéis" (os cartões) e abre, numa gaveta por cima da

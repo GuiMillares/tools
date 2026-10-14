@@ -32,7 +32,8 @@
   const ALTURA_CARTAO = 3.0;  // o cartão, no alto do fio, em metros da planta
   const ALTURA_LOSANGO = 2.1; // o losango com o ícone, logo acima da cabeça
 
-  const ui = { snap: null, carregando: false, erro: '', aba: 'tudo', gaveta: null, historico: null, editando: null, pendenciaAberta: null, timerRefresh: null, ultimaEsperas: '', paineis: true, motorPreferido: '3d', terminal: false };
+  const ui = { snap: null, carregando: false, erro: '', aba: 'tudo', gaveta: null, historico: null, editando: null, pendenciaAberta: null, timerRefresh: null, ultimaEsperas: '', paineis: true, motorPreferido: '3d', terminal: false, vista: 'cena' };
+  let mapa = null; // o mapa de fluxo (ADR-157), montado na primeira vez que é pedido
   let motor = null;          // o motor da cena (3D ou 2D), vive enquanto o Hub estiver aberto
   const cartoes = new Map(); // id da figura → elemento do cartão
   const losangos = new Map(); // id da figura → o losango com o ícone da função
@@ -45,9 +46,10 @@
       const p = JSON.parse(localStorage.getItem(PREFS_CHAVE) || '{}');
       if (typeof p.paineis === 'boolean') ui.paineis = p.paineis;
       if (p.motor === '2d' || p.motor === '3d') ui.motorPreferido = p.motor;
+      if (p.vista === 'mapa' || p.vista === 'cena') ui.vista = p.vista;
     } catch (e) { /* sem armazenamento: fica o padrão */ }
   }
-  function gravarPrefs() { try { localStorage.setItem(PREFS_CHAVE, JSON.stringify({ paineis: ui.paineis, motor: ui.motorPreferido })); } catch (e) {} }
+  function gravarPrefs() { try { localStorage.setItem(PREFS_CHAVE, JSON.stringify({ paineis: ui.paineis, motor: ui.motorPreferido, vista: ui.vista })); } catch (e) {} }
 
   function hora(iso) {
     if (!iso) return '';
@@ -158,6 +160,7 @@
     const app = appEl();
     if (app) app.classList.remove('menu-aberto', 'topo-aberto', 'esc-terminal');
     if (motor) motor.desligar();
+    if (mapa) mapa.desligar();
   };
 
   // ---------- a tela ----------
@@ -175,6 +178,7 @@
     return `
       <div class="esc-cena" id="escCena">
         <div class="esc-palco" id="escPalco"><div class="esc-overlay ${ui.paineis ? '' : 'sem-paineis'}" id="escOverlay"></div></div>
+        <div class="esc-mapa" id="escMapaHost" hidden></div>
         <div class="esc-hud esc-hud-topo" id="escHudTopo"></div>
         <div class="esc-hud esc-hud-comando" id="escHudComando"></div>
         <div class="esc-hud esc-hud-rodape" id="escHudRodape"></div>
@@ -204,6 +208,25 @@
     if (motor && dir) {
       motor.atualizar(dir, { concluidas: new Set(s.tarefas.filter((t) => t.estado === 'concluida').map((t) => t.id)) });
       atualizarContadores(dir);
+    }
+    aplicarVista(cena, s);
+  }
+
+  // A vista: a cena em 3D ou o mapa de fluxo (ADR-157). Só uma roda por vez.
+  function aplicarVista(cena, s) {
+    const palco = cena.querySelector('#escPalco'), host = cena.querySelector('#escMapaHost');
+    if (!palco || !host) return;
+    const noMapa = ui.vista === 'mapa' && !!window.hubEscritorioMapa;
+    palco.hidden = noMapa;
+    host.hidden = !noMapa;
+    if (noMapa) {
+      if (!mapa) mapa = window.hubEscritorioMapa.montar(host, { aoClicarFigura: (id) => { ui.gaveta = 'agente:' + id; desenhar(); } });
+      mapa.atualizar(s);
+      mapa.ligar();
+      if (motor) motor.desligar();
+    } else {
+      if (mapa) mapa.desligar();
+      if (motor) { motor.ligar(); motor.pedirQuadro(); }
     }
   }
 
@@ -276,6 +299,7 @@
       </div>
       <div class="esc-rodape-grupo">
         <button class="esc-rodape-btn" id="escRecentrar" title="Volta ao enquadramento inicial (ou duplo clique na cena)">⌖ Recentrar</button>
+        <button class="esc-rodape-btn ${ui.vista === 'mapa' ? 'active' : ''}" id="escVista" title="${ui.vista === 'mapa' ? 'Voltar ao escritório em 3D' : 'O mapa de fluxo: Odin no centro, os agentes em volta, as tarefas correndo pelas linhas'}">${ui.vista === 'mapa' ? 'Escritório' : 'Mapa'}</button>
         <button class="esc-rodape-btn" id="escMotor" title="${motor && motor.tipo === '3d' ? 'Trocar para a planta em 2D (mais leve)' : 'Tentar o 3D (precisa de WebGL)'}">${motor && motor.tipo === '3d' ? '3D' : '2D'}</button>
       </div>`;
     ligarEventos(cena.querySelector('#escHudTopo'));
@@ -725,6 +749,7 @@
     painel.querySelector('#escTerminal')?.addEventListener('click', alternarTerminal);
     painel.querySelector('#escRecentrar')?.addEventListener('click', () => { if (motor) motor.recentrar(); });
     painel.querySelector('#escMotor')?.addEventListener('click', () => trocarMotor(motor && motor.tipo === '3d' ? '2d' : '3d'));
+    painel.querySelector('#escVista')?.addEventListener('click', () => { ui.vista = ui.vista === 'mapa' ? 'cena' : 'mapa'; gravarPrefs(); desenhar(); });
     painel.querySelector('#escGavetaFechar')?.addEventListener('click', () => { ui.gaveta = null; ui.editando = null; desenhar(); });
     painel.querySelectorAll('[data-gaveta]').forEach((b) => b.addEventListener('click', () => { const g = b.dataset.gaveta; ui.gaveta = ui.gaveta === g ? null : g; ui.editando = null; desenhar(); }));
     painel.querySelectorAll('[data-agente-toggle]').forEach((c) => c.addEventListener('change', (e) => chamar('escritorioLigar', { agente: c.dataset.agenteToggle, valor: e.target.checked })));
@@ -808,5 +833,5 @@
     api().escritorioAtividade({ agente, ligado: !!ligado, detalhe: detalhe || '' }).catch(() => {});
   };
 
-  window.hubEscritorio = { ui, carregar, desenhar, abrir, lerFormRegra, atenderPonte, get motor() { return motor; }, trocarMotor };
+  window.hubEscritorio = { ui, carregar, desenhar, abrir, lerFormRegra, atenderPonte, get motor() { return motor; }, get mapa() { return mapa; }, trocarMotor };
 })();
