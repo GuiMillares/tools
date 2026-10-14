@@ -1,0 +1,37 @@
+# A suíte do Asgard a cada push (ADR-156): os mesmos tools/test-*.js que o
+# `npm test` roda na máquina do Guilherme, num Windows do GitHub. O Chromium
+# do Playwright tem WebGL por SwiftShader, então até a cena 3D do Escritório
+# entra. Nada aqui toca credencial: os testes usam dublês.
+name: testes
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Dependências
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      - name: Chromium do Playwright
+        run: npx playwright install chromium
+      - name: Suíte
+        run: node tools/rodar-testes.js --json resultado-testes.json
+      - name: Resultado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-testes
+          path: resultado-testes.json
+          if-no-files-found: ignore

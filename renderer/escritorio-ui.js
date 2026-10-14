@@ -218,7 +218,7 @@
       return;
     }
     const aoFalhar = (e) => logar(`Escritório: o 3D não abriu (${e && e.message ? e.message : e}); a planta em 2D cobre.`, 'warn');
-    motor = window.hubEscritorioCena.montar(palco, { preferir: ui.motorPreferido, aoClicarFigura: (id) => { ui.gaveta = 'agente:' + id; desenhar(); }, aoViajar: atualizarSelosDeViagem, aoEscalar: aoEscalar, aoFalhar });
+    motor = window.hubEscritorioCena.montar(palco, { preferir: ui.motorPreferido, aoClicarFigura: (id) => { ui.gaveta = 'agente:' + id; desenhar(); }, aoViajar: atualizarSelosDeViagem, aoEscalar: aoEscalar, aoClicarPacote: abrirHistoricoDoPacote, aoApontarPacote: apontarPacote, aoFalhar });
     palco.insertBefore(motor.canvas, palco.firstChild);
     if (ui.motorPreferido === '3d' && motor.tipo === '2d') logar('Escritório: sem WebGL nesta máquina; a planta em 2D cobre.', 'warn');
     motor.ligar();
@@ -308,6 +308,25 @@
   function aoEscalar(e) {
     const overlay = document.getElementById('escOverlay');
     if (overlay) overlay.classList.toggle('compacto', !!(e && e.compacto));
+  }
+  // Os pacotes (as tarefas nas mesas): passar o mouse mostra o assunto; clicar
+  // abre o histórico (ADR-156).
+  let seloDica = null, seloDicaDe = null;
+  function apontarPacote(id) {
+    const overlay = document.getElementById('escOverlay');
+    if (!overlay || !motor) return;
+    if (seloDicaDe && seloDicaDe !== id) { motor.ancorar('dica:' + seloDicaDe, null); seloDicaDe = null; }
+    if (!id) { if (seloDica) { seloDica.remove(); seloDica = null; } return; }
+    const t = ui.snap && ui.snap.tarefas.find((x) => x.id === id);
+    if (!seloDica) { seloDica = document.createElement('div'); seloDica.className = 'esc-selo dica'; overlay.appendChild(seloDica); }
+    seloDica.dataset.pacote = id;
+    seloDica.textContent = t ? `${t.assunto} · ${t.rotulo || t.estado}${t.agenteNome ? ' · ' + t.agenteNome : ''}` : id;
+    seloDicaDe = id;
+    motor.ancorar('dica:' + id, seloDica, 0.7);
+  }
+  async function abrirHistoricoDoPacote(id) {
+    const r = await chamar('escritorioTarefa', { id }, { recarregar: false });
+    if (r.ok) { ui.historico = r.tarefa; desenhar(); }
   }
   // Os selos dos pacotes em viagem: a cena avisa quando o conjunto muda.
   function atualizarSelosDeViagem(ids) {

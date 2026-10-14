@@ -70,6 +70,8 @@ Cola o link de um PR do Bitbucket e mergeia sem passar pela interface web.
 - Estratégia (merge commit / squash / fast forward) e "fechar branch de origem"
   vêm das configurações.
 - Depois de mergeado, o card oferece o comando de deploy daquele domínio.
+- A fila sobrevive ao fechar o Asgard: os links ficam gravados e, ao abrir,
+  cada PR é buscado de novo na API; o mergeado não volta (ADR-156).
 
 Aba **Histórico**: cada tentativa de merge fica registrada — inclusive as que
 falharam, que são as mais úteis de consultar depois. Cada entrada guarda
@@ -77,7 +79,9 @@ repositório, PR, título, autor, branches, aprovações e build **no momento do
 merge**, a estratégia usada, o hash resultante ou o erro, e o trecho do terminal
 daquela operação (ver ADR-014). Dá para filtrar por repositório, título, autor
 ou branch, copiar o log e tirar dali o comando de deploy do domínio. Limpar o
-terminal não apaga nada do histórico.
+terminal não apaga nada do histórico. "Exportar CSV" (para o Excel) e
+"Exportar JSON" (com o trecho do terminal) gravam o histórico inteiro num
+arquivo que você escolhe (ADR-156).
 
 ### 4.2 Comando de deploy — `deploy`
 
@@ -745,7 +749,9 @@ toda tela e em todo seletor.
   os cartões, losangos e rótulos encolhem junto com a cena, os cartões
   (uma linha: avatar, nome · papel) viram compactos (avatar e nome) e saem
   do caminho uns dos outros para cima ou para o lado, sem cobrir outro
-  cartão nem o nome de uma sala; redimensionar a janela reenquadra. Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
+  cartão nem o nome de uma sala; redimensionar a janela reenquadra. Passar
+  o mouse num pacote mostra a tarefa (assunto, estado, agente); clicar nele
+  abre o histórico dela (ADR-156). Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
   rodapé). O menu do Hub e o topo ficam recolhidos e voltam quando o mouse
   encosta na borda esquerda ou na de cima (ou pelo ☰). O rodapé tem
   "Mostrar/Esconder painéis" (os cartões) e abre, numa gaveta por cima da
@@ -872,9 +878,8 @@ Nada aqui está prometido — é a lista do que já se sabe que falta.
 - Renomear a identidade do app no `package.json` (ainda sai como "PR Merge
   Tool"; ver Pendências na ADR).
 - Desfazer/limpar container GTM duplicado que o próprio app detectou.
-- Escolher manualmente qual resultado usar quando a busca por tags existentes é
-  ambígua (hoje só avisa e deixa de fora).
-- Persistir a fila de PRs entre sessões.
-- Exportar o histórico de merges (CSV/JSON) para relatório.
-- Template de GTM próprio para MPI+ (hoje usa o da Busca Cliente).
-- Mover o JSON da service account para fora da pasta do projeto.
+- Template de GTM próprio para MPI+ (hoje usa o da Busca Cliente). Precisa
+  do container exportado do GTM que seja o modelo do MPI+ (ADR-156).
+- Feitos em 14/10/2026 (ADR-155/156): Client Secret no `safeStorage`,
+  escolha do ID ambíguo na tela, fila de PRs persistida, histórico de
+  merges exportado; a service account já morava fora do projeto.

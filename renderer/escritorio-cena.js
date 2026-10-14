@@ -202,6 +202,28 @@
     return cam;
   }
 
+  // Clique e passagem do mouse, iguais nos dois motores: figura abre o agente,
+  // pacote abre a tarefa (ADR-156); passar o mouse num pacote mostra a dica.
+  function ligarCliqueEHover(canvas, cam, laco, alvoEm, opcoes) {
+    cam.ligarMouse(canvas, () => laco.pedir(), (e) => {
+      const a = alvoEm(e);
+      if (!a) return;
+      if (a.figura && opcoes.aoClicarFigura) opcoes.aoClicarFigura(a.figura);
+      else if (a.pacote && opcoes.aoClicarPacote) opcoes.aoClicarPacote(a.pacote);
+    });
+    let ultimoHover = 0, apontado = null;
+    const apontar = (id) => { if (id === apontado) return; apontado = id; if (opcoes.aoApontarPacote) opcoes.aoApontarPacote(id); };
+    canvas.addEventListener('pointermove', (e) => {
+      const t = performance.now();
+      if (t - ultimoHover < 80) return;
+      ultimoHover = t;
+      const a = alvoEm(e);
+      canvas.style.cursor = a ? 'pointer' : 'grab';
+      apontar(a && a.pacote ? a.pacote : null);
+    });
+    canvas.addEventListener('pointerleave', () => apontar(null));
+  }
+
   // Quantos pixels por metro para o piso inteiro caber na tela, com folga.
   function zoomParaCaber(Planta, largura, altura, az, el) {
     const cantos = [[Planta.PISO.x0, Planta.PISO.z0], [Planta.PISO.x1, Planta.PISO.z0], [Planta.PISO.x0, Planta.PISO.z1], [Planta.PISO.x1, Planta.PISO.z1]];
@@ -274,6 +296,7 @@
       if (id.startsWith('sala:')) { const s = Planta.salaPorNumero(id.slice(5)); return s ? { x: s.rotulo.x, y: 0, z: s.rotulo.z } : null; }
       if (id.startsWith('lugar:')) { const d = dirAtual(); const l = d && d.lugares.find((x) => x.lugar === id.slice(6)); return l ? { x: l.x, y: l.y + 0.5, z: l.z } : null; }
       if (id.startsWith('pacote:')) { const p = sim.pacotes.get(id.slice(7)); return p && p.andando ? { x: p.pos.x, y: p.pos.y || 0.76, z: p.pos.z } : null; }
+      if (id.startsWith('dica:')) { const p = sim.pacotes.get(id.slice(5)); return p ? { x: p.pos.x, y: (p.pos.y || 0.76) + 0.3, z: p.pos.z } : null; }
       const losango = id.startsWith('losango:');
       const f = sim.figuras.get(losango ? id.slice(8) : id);
       if (!f || f.opacidade <= 0.02) return null;
@@ -550,7 +573,7 @@
       for (const [id, g] of figurasMesh) if (!sim.figuras.has(id)) { dinamico.remove(g); figurasMesh.delete(id); }
       for (const [id, ent] of sim.pacotes) {
         let m = pacotesMesh.get(id);
-        if (!m) { m = new THREE.Mesh(geo.pacote, materiais.pacote.na_fila); dinamico.add(m); pacotesMesh.set(id, m); }
+        if (!m) { m = new THREE.Mesh(geo.pacote, materiais.pacote.na_fila); m.userData.pacote = id; dinamico.add(m); pacotesMesh.set(id, m); }
         const estado = ent.dados ? ent.dados.estado : 'na_fila';
         const base = materiais.pacote[estado] || materiais.pacote.na_fila;
         if (estado === 'executando') {
@@ -620,16 +643,19 @@
     // Clique numa figura abre o agente (a tela decide o que fazer).
     const raycaster = new THREE.Raycaster();
     const ponteiro = new THREE.Vector2();
-    function figuraEm(e) {
+    // O que está sob o mouse: uma figura ({ figura }) ou um pacote ({ pacote }).
+    function alvoEm(e) {
       const r = canvas.getBoundingClientRect();
       ponteiro.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       raycaster.setFromCamera(ponteiro, camera);
-      const hit = raycaster.intersectObjects(clicaveis.filter((m) => m.parent && m.parent.visible), false)[0];
-      return hit ? hit.object.userData.figura : null;
+      const alvos = clicaveis.filter((m) => m.parent && m.parent.visible).concat([...pacotesMesh.values()]);
+      const hit = raycaster.intersectObjects(alvos, false)[0];
+      if (!hit) return null;
+      if (hit.object.userData.figura) return { figura: hit.object.userData.figura };
+      if (hit.object.userData.pacote) return { pacote: hit.object.userData.pacote };
+      return null;
     }
-    cam.ligarMouse(canvas, () => laco.pedir(), (e) => { const id = figuraEm(e); if (id && opcoes.aoClicarFigura) opcoes.aoClicarFigura(id); });
-    let ultimoHover = 0;
-    canvas.addEventListener('pointermove', (e) => { const t = performance.now(); if (t - ultimoHover < 80) return; ultimoHover = t; canvas.style.cursor = figuraEm(e) ? 'pointer' : 'grab'; });
+    ligarCliqueEHover(canvas, cam, laco, alvoEm, opcoes);
 
     redimensionar();
     return {
@@ -642,6 +668,7 @@
       ligar() { laco.ligar(); },
       desligar() { laco.desligar(); },
       pedirQuadro() { laco.pedir(); },
+      projetarPonto(x, y, z) { return projetar(x, y, z); },
       get rodando() { return laco.rodando; },
       destruir() { laco.destruir(); ancoras.limpar(); renderer.dispose(); if (canvas.parentNode) canvas.parentNode.removeChild(canvas); },
     };
@@ -758,14 +785,17 @@
       ancoras.posicionar(pontoDe, projetar, escala);
       return movendo || camMudou;
     });
-    function figuraEm(e) {
+    function alvoEm(e) {
       const r = canvas.getBoundingClientRect();
       const mx = e.clientX - r.left, my = e.clientY - r.top;
       let melhor = null, dist = 18;
-      for (const f of sim.figuras.values()) { if (f.opacidade < 0.5) continue; const s = projetar(f.pos.x, 1.0, f.pos.z); const d = Math.hypot(s.x - mx, s.y - my); if (d < dist) { dist = d; melhor = f.id; } }
+      for (const f of sim.figuras.values()) { if (f.opacidade < 0.5) continue; const s = projetar(f.pos.x, 1.0, f.pos.z); const d = Math.hypot(s.x - mx, s.y - my); if (d < dist) { dist = d; melhor = { figura: f.id }; } }
+      if (melhor) return melhor;
+      dist = 12;
+      for (const p of sim.pacotes.values()) { const s = projetar(p.pos.x, (p.pos.y || 0.76) + 0.15, p.pos.z); const d = Math.hypot(s.x - mx, s.y - my); if (d < dist) { dist = d; melhor = { pacote: p.id }; } }
       return melhor;
     }
-    cam.ligarMouse(canvas, () => laco.pedir(), (e) => { const id = figuraEm(e); if (id && opcoes.aoClicarFigura) opcoes.aoClicarFigura(id); });
+    ligarCliqueEHover(canvas, cam, laco, alvoEm, opcoes);
     redimensionar();
     return {
       tipo: '2d', canvas,

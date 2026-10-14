@@ -12,6 +12,170 @@ passado.
 
 ---
 
+<!-- indice:inicio (gerado por tools/indice-adr.js; não edite à mão) -->
+## Índice
+
+157 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
+
+- **ADR-001** — Electron puro, sem framework de UI e sem build step
+- **ADR-002** — Toda rede no processo principal; renderer só fala por IPC
+- **ADR-003** — Formato de retorno dos handlers: `{ ok, log[], … }`
+- **ADR-004** — Credenciais do Bitbucket criptografadas; config do Google em texto
+- **ADR-005** — Bitbucket via API Token, não App Password
+- **ADR-006** — Duas identidades no Google, com papéis separados
+- **ADR-007** — Cada etapa da criação roda isolada; falha vira aviso, não parada
+- **ADR-008** — A marca do projeto decide em quais contas do Google mexer
+- **ADR-009** — Commit do `geral.php` pela API do Bitbucket, sem git local
+- **ADR-010** — Dois eixos de cor, e só dois
+- **ADR-011** — O terminal é a superfície principal, não um rodapé de debug
+- **ADR-012** — Verificação visual por screenshot no Chromium
+- **ADR-013** — Sessão do OAuth com refresh token, e expiração legível
+- **ADR-014** — Histórico de merges com o recorte do terminal
+- **ADR-015** — Container do GTM vem de um template exportado, por marca
+- **ADR-016** — Escopo de busca ≠ escopo de criação; e domínio mora no data stream
+- **ADR-017** — Os padrões de marca comparam com o nome da CONTA, nunca com o login
+- **ADR-018** — "Conceder acesso" cobre Tag Manager, não só Analytics
+- **ADR-019** — Ritmo e backoff nas chamadas ao Tag Manager
+- **ADR-020** — A conta principal recebe acesso ao container que a service account cria
+- **ADR-021** — Descoberta de repositório sem a busca global do Bitbucket
+- **ADR-022** — Escopos da service account e do login OAuth são listas distintas
+- **ADR-023** — Envio de e-mail pela caixa do usuário, via Microsoft Graph
+- **ADR-024** — O que entra no pacote, e por que o build não sai daqui
+- **ADR-025** — Triagem por apontamento de DNS antes de pedir suspensão
+- **ADR-026** — Histórico de DNS pela DNS Chronicle (WhoisXML), sob demanda
+- **ADR-027** — Escolher o que criar, com a dependência do GTM explícita
+- **ADR-028** — A propriedade do Search Console precisa de dono humano, por marca
+- **ADR-029** — Erro do Bitbucket tem que dizer o que fazer
+- **ADR-030** — A propriedade do Search Console é a do `www`
+- **ADR-031** — Descobrir workspace do Bitbucket por duas rotas
+- **ADR-032** — Workspace do Bitbucket é por marca
+- **ADR-033** — MPI+ não tem Bitbucket, e o app não finge que tem
+- **ADR-034** — `$idProjetoBusca`: a marca fixa ou a tela pergunta
+- **ADR-035** — Uma conta do Google por marca, não um campo global
+- **ADR-036** — O que a MPI+ tem de diferente (e o que ainda falta)
+- **ADR-037** — Sincronizar a MPI+ no painel, pelo estado do Alpine
+- **ADR-038** — A ordem da publicação da MPI+
+- **ADR-039** — O campo "Key" do painel é meta tag, não arquivo
+- **ADR-040** — A MPI+ verifica pelo Google Analytics
+- **ADR-041** — Rodar de novo reaproveita, não duplica
+- **ADR-042** — Esperar a lista carregar, e dizer o que veio nela
+- **ADR-043** — O campo do painel recebe o que a equipe manda hoje
+- **ADR-044** — Limpar o domínio na entrada, e ler de volta o que o painel guardou
+- **ADR-045** — `saveModal` volta calado, então o app confere depois
+- **ADR-046** — Casar a propriedade pelo domínio do data stream
+- **ADR-047** — Vincular em massa é o mesmo caminho, sem a parte que cria
+- **ADR-048** — O painel tem um terceiro cartão, e ele é obrigatório no cliente legado
+- **ADR-049** — Quem registra a propriedade é quem passa a enxergá-la
+- **ADR-050** — O painel busca o contrato depois de abrir, e apaga o que você gravou
+- **ADR-051** — `op.value` num objeto que só tinha `v`: a causa era minha
+- **ADR-052** — Menos ferramentas, uma por intenção
+- **ADR-053** — A planilha entra como ela é
+- **ADR-054** — Um visual com uma cor de destaque só
+- **ADR-055** — Paleta verde-petróleo, e vidro só onde ele tem função
+- **ADR-056** — Verde é o destaque; cartões voltam, menores
+- **ADR-057** — Ativar SSL é a suspensão com outro pedido
+- **ADR-058** — Publicar MPI+ de ponta a ponta: DNS antes, painel no meio, tags no fim
+- **ADR-059** — Registro.br pela própria API interna do painel deles
+- **ADR-060** — O instalador só leva o que está na lista
+- **ADR-061** — Só mexemos no DNS que é nosso
+- **ADR-062** — Toda publicação vira uma linha na planilha
+- **ADR-063** — O contato técnico também diz de que empresa é o projeto
+- **ADR-064** — Quando não dá para saber, pergunta no terminal
+- **ADR-065** — "Publicar em massa": uma ferramenta que publica e vincula na mesma passada
+- **ADR-066** — O lote também mexe no DNS, com a revisão onde ela importa
+- **ADR-067** — No lote o DNS é só a troca do IP, e a conta do Tag Manager tem superfície
+- **ADR-068** — Escopo novo mora em dois lugares, e o Entra é o que a gente esquece
+- **ADR-069** — Perguntar ao lado de lá antes de agir: o SSL espera o DNS, e a aba vem da planilha
+- **ADR-070** — "Conta obrigatória" segue o login, não o projeto
+- **ADR-071** — A zona nasce na Cloudflare: ela varre, nós completamos e trocamos só o necessário
+- **ADR-072** — Um botão, uma parada: o Publicar MPI+ encadeia, e o lote não pede lista
+- **ADR-073** — "Criar propriedades" entrega o MPI+ ao "Publicar MPI+", em vez de parecer o fim
+- **ADR-074** — Logado não é sessão: o Registro.br é provado pela API antes de qualquer pergunta
+- **ADR-075** — Login no Registro.br: a prova é a API, e CAPTCHA é da pessoa
+- **ADR-076** — CNAME que vira A é o mesmo registro reescrito, nunca um ao lado do outro
+- **ADR-077** — A espera é pelo A da raiz; o NS se pergunta ao pai, não ao cache
+- **ADR-078** — A linha livre da planilha é por conteúdo, não pelo intervalo usado
+- **ADR-079** — Domínio fora do .br: sem Registro.br, confere o apontamento e avisa o analista
+- **ADR-080** — Sair do DNS do Registro.br é transição de até 2h, e o Hub sabe esperar
+- **ADR-081** — "Operação não autorizada" é "não está nesta conta"
+- **ADR-082** — A planilha dos que não estão conosco vai para Músicas\apontamentos, sem perguntar
+- **ADR-083** — O painel nunca espera pelo Registro.br
+- **ADR-084** — Site que redireciona para www: o Hub segue, e a propriedade é o destino
+- **ADR-085** — Raiz e www só ficam com o que a proposta pede; IP do proxy não é IP antigo
+- **ADR-086** — Salesforce pelo aplicativo conectado que já existe, não pela tela
+- **ADR-087** — O lote não republica, e não refaz vínculo que já está feito
+- **ADR-088** — Uma instância por pasta de dados
+- **ADR-089** — Fechar a tarefa do Salesforce: ler a tarefa real antes de escrever a etapa
+- **ADR-090** — Criar a tarefa no caso certo pela coluna "Link do caso" da planilha
+- **ADR-091** — Não copiar para a nossa zona o subdomínio do cliente que está atrás do proxy da Cloudflare
+- **ADR-092** — Chave do Google recusada e aba Publicação lenta não derrubam a rodada em massa
+- **ADR-093** — 403 do Salesforce pede reconexão, e as tarefas que não saíram ficam pendentes
+- **ADR-094** — Rodada em massa não pode travar com a tela bloqueada
+- **ADR-095** — Procurar o domínio nas duas abas antes de perguntar a empresa
+- **ADR-096** — Log em arquivo e rodada em massa que sobrevive ao Windows fechar tudo
+- **ADR-097** — Achar o caso da tarefa V1 -> V2 pelo padrão, sem colar link
+- **ADR-098** — Achar o link do painel pela razão social, confirmado pelo temporário
+- **ADR-099** — invalid_grant na sessão da conta da marca não é API desabilitada
+- **ADR-100** — Search Console depois do SSL de produção
+- **ADR-101** — O SSL está ativo quando o certificado do domínio está no ar
+- **ADR-102** — Parar no meio
+- **ADR-103** — Publicar outro site enquanto um espera a propagação
+- **ADR-104** — A espera do SSL olha o DNS público, e o vigia aparece no log
+- **ADR-105** — Ferramenta "Bloquear contatos" no /doutor
+- **ADR-106** — Medir antes de mexer: a suíte inteira, benchmark, CPU e memória
+- **ADR-107** — Só as 6 APIs do Google, carregadas no primeiro uso
+- **ADR-108** — A linha do grid tem a altura da tela, não a do terminal
+- **ADR-109** — O terminal mostra as últimas 3.000 linhas; o arquivo do dia guarda todas
+- **ADR-110** — /doutor: bloqueio pela chamada AJAX, mapeado ao vivo
+- **ADR-111** — Checador de Ouvidoria / SSL a partir de uma lista de domínios
+- **ADR-112** — /doutor: desbloquear também, e o nome pelo alt (não pela coluna)
+- **ADR-113** — Tela inicial: saudação com o nome e WHOIS/DNS de um domínio
+- **ADR-114** — A moldura v2.4: todas as telas na cara dos mockups
+- **ADR-115** — Redesign v2.4: cada tela na cara do mockup, kanban e terminal com comando
+- **ADR-116** — /doutor: bloquear é esvaziar os telefones e salvar (não o cadeado)
+- **ADR-117** — Ouvidoria: coluna cliente e busca da conta por confiança graduada
+- **ADR-118** — Backup dos contatos: apagado depois do desbloqueio confirmado
+- **ADR-119** — Triagem das tarefas da fila (publicação MPI+ e bloqueio) por regras validadas
+- **ADR-120** — Monitor da fila em 2º plano (motor puro + painel flutuante)
+- **ADR-121** — Bloqueio de contatos MPI+: no painel idealplus, pelas funções de salvar do próprio painel
+- **ADR-122** — Publicação MPI+ automática: a mesma máquina de etapas, sem perguntar
+- **ADR-123** — Conta e empresa pela tarefa → caso, não pelo domínio
+- **ADR-124** — Esperar a previsão do Registro.br antes de conferir (2º plano leve)
+- **ADR-125** — O Hub parado gasta um núcleo: são as animações infinitas, não o DNS
+- **ADR-126** — O Hub parado não desenha: nada pulsa para sempre, e a janela só deixa de desacelerar enquanto algo roda
+- **ADR-127** — Tela inicial sem a grade "Automações & scripts"; a busca do topo abre o módulo
+- **ADR-128** — Git Bash dentro do Hub, e os dois terminais minimizam e fecham
+- **ADR-129** — Git Bash: redimensionar sem duplicar linhas, e a citação do terminal sem esperar a internet
+- **ADR-130** — O `npm run medir` só mostra o parado como consumo com prova de que a janela desenhou
+- **ADR-131** — Busca no Analytics: cache dos data streams, contas novas primeiro, para ao achar
+- **ADR-132** — Publicação Busca One automática: propriedades, geral.php e e-mail de vhost; o resto fica escrito na tarefa
+- **ADR-133** — Busca One: o temporário diz a empresa e o repositório; o domínio real é o outro domínio da tarefa
+- **ADR-134** — Busca One: as chaves saem no terminal, não em comentário no Salesforce
+- **ADR-135** — "Quando publicou": a data pela tarefa concluída no Salesforce, senão pelo commit do geral.php / client.inc.php
+- **ADR-136** — Sessão do Salesforce: 403 no userinfo é token vencido, renova em vez de pedir reconexão
+- **ADR-137** — Suspensão / Ativação SSL: o formulário em uma coluna, como o mockup
+- **ADR-138** — Tela inicial com os indicadores das suas tarefas; o WHOIS vai para o terminal
+- **ADR-139** — Conta da marca com publicação no container novo mesmo sendo admin da conta
+- **ADR-140** — O servidor de produção é o que o painel MPI+ lista; com dois, o Hub pergunta
+- **ADR-141** — O IP de produção do DNS é o do servidor que o painel MPI+ lista; a configuração é reserva
+- **ADR-142** — Publicação automática com o DNS do cliente: anota o domínio como "aguardando o cliente" e segue para a próxima tarefa
+- **ADR-143** — Os indicadores contam como o relatório do painel do Salesforce: só Concluído, e o SLA em dias úteis pela fórmula dele
+- **ADR-144** — Conferir vínculos no painel: a leitura em massa pela planilha de publicações, e o contrato pela URL de produção
+- **ADR-145** — Conferir vínculos: ler depois de o painel carregar, provar pelo HTML do site, repetir o 504, achar por CNPJ e nome parecido, e vincular os incompletos
+- **ADR-147** — Auditoria de contratos: conta pelo domínio (Salesforce, senão AppSheet), status do contrato e link da conta
+- **ADR-148** — Planilha do Relatório: as 19 colunas do painel preenchidas pelo Salesforce, pelo site e pelo Google
+- **ADR-149** — Escritório, fase 1: orquestrador no processo principal, decisão em código antes do modelo, regras aprendidas com aprovação e validação de execução determinística
+- **ADR-150** — Escritório, fase 2: os agentes executam (Tyr e Freyr no processo principal, Thor pela ponte), o painel flutuante é absorvido e os nomes vêm da mitologia nórdica
+- **ADR-151** — Site em subdomínio: a zona da Cloudflare, o Registro.br e os nameservers são do domínio raiz; só o host e o www dele mudam
+- **ADR-152** — Escritório, fase 3: agentes sem modelo (o Gemini é opcional e nasce desligado), Huginn e Ratatoskr executam, e os módulos acionados pela mão aparecem como o agente trabalhando
+- **ADR-153** — Escritório, fases 4 e 5: a tela de tela cheia com o escritório em 3D isométrico, a planta como código, e o menu que volta pela borda
+- **ADR-154** — O Hub vira Asgard: nome, grafia rúnica na marca e a runa Othala como ícone
+- **ADR-155** — Dívidas pagas de uma vez: OAuth criptografado, GA4 sem duplicata por slot reaproveitado, service workers do painel, notificação de pendência e o resumo "Hoje" do Escritório
+- **ADR-156** — Pacotes clicáveis, suíte a cada push e em paralelo, índice da ADR, e o backlog antigo: fila de PRs persistida, histórico exportado, ID ambíguo escolhido
+- **Pendências conhecidas** (não são decisões — são dívidas)
+- **ADR-146** — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
+<!-- indice:fim -->
+
 ## ADR-001 — Electron puro, sem framework de UI e sem build step
 
 **Status:** aceita
@@ -7620,6 +7784,63 @@ recusa sem criptografia, segredo fora da tela, merge do secret em branco),
 `test-analytics-scan.js` cobre o slot reaproveitado (cache confirmado e
 corrigido, validade de criação). A lista de pendências conhecidas perde
 quatro itens.
+
+## ADR-156 — Pacotes clicáveis, suíte a cada push e em paralelo, índice da ADR, e o backlog antigo: fila de PRs persistida, histórico exportado, ID ambíguo escolhido
+
+**Status:** aceita — bloco 2 do pedido de 14/10/2026 (ADR-155 é o bloco 1).
+
+**Contexto.** Depois do bloco de risco, o que deixa o dia a dia mais
+fluido e o projeto mais fácil de manter: o que o backlog do PRD listava
+havia meses, e a prova automática fora da máquina do Guilherme.
+
+**Decisão.**
+
+1. **Pacotes clicáveis no Escritório.** A cena reconhece o cubo de uma
+   tarefa sob o mouse (raycast no 3D; distância projetada no 2D): passar o
+   mouse mostra um selo com o assunto, o estado e o agente (`dica:id`,
+   ancorado ao pacote); clicar abre o histórico daquela tarefa, o mesmo da
+   fila. O motor expõe `projetarPonto` para o teste mirar.
+2. **A suíte roda a cada push** (`.github/workflows/testes.yml`): Windows
+   do GitHub, Node 24, `npm ci` sem baixar o Electron (os testes não o
+   usam), Chromium do Playwright (com WebGL por SwiftShader), e o
+   `resultado-testes.json` fica como artefato. Nada toca credencial: os
+   testes usam dublês. Não há `gh` nesta máquina; conferir o primeiro run é
+   pelo site.
+3. **A suíte roda em paralelo** (`tools/rodar-testes.js`): até 4 testes ao
+   mesmo tempo (`--paralelo N`, `--serial` para o modo antigo), cada um no
+   próprio processo e na própria pasta temporária. O relatório é o mesmo.
+   Também conta como falha a linha ` FALHA ` do `test-gtm-template.js`, que
+   o resumo antigo ignorava (o arquivo saía com código 1 e "0 falhas").
+4. **Índice da ADR** (`tools/indice-adr.js`): um bloco gerado no alto do
+   arquivo, entre marcas, uma linha por ADR na ordem do arquivo; `--conferir`
+   sai com 1 se estiver desatualizado, e `test-indice-adr.js` confere. Rodar
+   depois de escrever uma ADR nova.
+5. **Fila de PRs persistida.** O hub-state guarda `filaPrs` (só os links,
+   sem os mergeados) a cada mudança (entrar, remover, mergear); ao abrir,
+   depois de carregar a credencial do Bitbucket, cada link é buscado de novo
+   na API (`restaurarFilaPrs`), sem repetir quem já está. Sem credencial,
+   os links ficam gravados e nada é buscado.
+6. **Histórico de merges exportado.** `history:export` grava, num arquivo
+   que você escolhe (sugerido em Documentos), um CSV para o Excel (BOM,
+   ponto e vírgula, cabeçalho fixo: quando, repo, PR, título, autor,
+   branches, estratégia, aprovações, build, ok, hash, erro) ou o JSON
+   inteiro (com o trecho do terminal). Botões na aba Histórico.
+7. **ID ambíguo escolhido na tela.** Quando a busca de propriedades traz
+   mais de um G-… ou mais de um GTM-…, em vez de "copie o ID certo à mão"
+   aparece um seletor por tipo; o escolhido entra no `geral.php` e no
+   commit, e "deixar de fora" continua possível.
+8. **Tokens do OAuth migram na abertura** (`migrarSegredosAntigos`): a
+   ADR-155 migrava no primeiro uso; os de relatório podiam ficar em texto
+   por dias. Agora o `.json` que sobrou vira `.enc` quando o Asgard abre.
+
+**Fora deste bloco, e por quê:** o **template de GTM próprio do MPI+**
+(ADR-015) precisa do container exportado do GTM que o Guilherme considera o
+modelo do MPI+; sem ele, qualquer template seria chute. Fica no backlog com
+esse pré-requisito.
+
+**Consequências.** `npm test` ganhou `test-fila-prs.js`,
+`test-historico-export.js` e `test-indice-adr.js`, e o navegador cobre o
+pacote (dica e clique). A suíte inteira cai de ~2 min para menos de 1 min.
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

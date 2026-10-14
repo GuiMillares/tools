@@ -584,6 +584,8 @@ function saveHubState() {
     sslProjeto: state.sslProjeto,
     npSteps: state.npSteps,
     sfTarefasAuto: state.sfTarefasAuto,
+    // A fila de PRs sobrevive ao fechar (ADR-156): só os links, os dados voltam da API.
+    filaPrs: state.queue.filter((q) => q.url && q.status !== 'merged').map((q) => q.url),
   });
 }
 
@@ -3080,6 +3082,7 @@ function attachCardEvents(wrap) {
   wrap.querySelectorAll('[data-action="remove"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.queue = state.queue.filter((q) => q.localId !== btn.dataset.id);
+      salvarFilaPrs();
       renderQueue();
     });
   });
@@ -3136,9 +3139,14 @@ async function addPr() {
   }
 
   input.value = '';
-  // `localId` identifica a linha da fila; `id` (que chega no res.pr) é o número
-  // do PR. Eram a mesma chave, e o spread abaixo sobrescrevia uma pela outra, // com dois PRs #42 de repositórios diferentes na fila, mergear ou remover um
-  // acertava o outro.
+  await adicionarPrNaFila(url);
+}
+
+// Põe um PR na fila e busca os dados dele. `localId` identifica a linha da
+// fila; `id` (que chega no res.pr) é o número do PR. Eram a mesma chave, e o
+// spread sobrescrevia uma pela outra: com dois PRs #42 de repositórios
+// diferentes na fila, mergear ou remover um acertava o outro.
+async function adicionarPrNaFila(url) {
   const localId = genId();
   state.queue.unshift({ localId, url, status: 'loading' });
   renderQueue();
@@ -3152,13 +3160,33 @@ async function addPr() {
     state.queue[idx] = { ...state.queue[idx], status: 'error', error: res.error };
     log(res.error, 'error');
     renderQueue();
+    salvarFilaPrs();
     return;
   }
 
   state.queue[idx] = { ...state.queue[idx], ...res.pr, localId, status: 'ready' };
   log(`PR #${res.pr.id} carregado: "${res.pr.title}" (${res.pr.approvals} aprovação/ões, build: ${res.pr.buildState})`, 'success');
   renderQueue();
+  salvarFilaPrs();
 }
+
+// A fila de PRs sobrevive ao fechar (ADR-156): os links vão no hub-state a
+// cada mudança; ao abrir, cada um é buscado de novo na API.
+function salvarFilaPrs() {
+  try { saveHubState().catch(() => {}); } catch (e) { /* sem hub-state, a fila é só desta sessão */ }
+}
+async function restaurarFilaPrs(urls) {
+  if (!Array.isArray(urls) || !urls.length || !state.creds) return 0;
+  let n = 0;
+  for (const url of urls.slice().reverse()) {
+    if (!url || state.queue.some((q) => q.url === url)) continue;
+    await adicionarPrNaFila(url);
+    n++;
+  }
+  if (n) log(`${n} PR(s) da fila de antes voltaram.`, 'info');
+  return n;
+}
+// (fim: fila de PRs persistida, ADR-156)
 
 async function mergeItem(localId) {
   const idx = state.queue.findIndex((q) => q.localId === localId);
@@ -3208,6 +3236,7 @@ async function mergeItem(localId) {
   const idx2 = state.queue.findIndex((q) => q.localId === localId);
   if (idx2 !== -1) {
     state.queue[idx2] = { ...state.queue[idx2], status: res.ok ? 'merged' : 'ready' };
+    salvarFilaPrs();
   }
   renderQueue();
 }
@@ -3275,6 +3304,8 @@ function renderMergeHistoryTab() {
     </div>
     <div class="history-toolbar">
       <span id="historyCount" class="history-count"></span>
+      <button id="historyExportCsvBtn" class="btn ghost compact" title="Todos os merges, num CSV para o Excel (ADR-156)">Exportar CSV</button>
+      <button id="historyExportJsonBtn" class="btn ghost compact" title="Todos os merges, com o trecho do terminal, em JSON">Exportar JSON</button>
       <button id="historyClearBtn" class="btn danger compact">Limpar histórico</button>
     </div>
     <div id="historyList" class="queue"></div>
@@ -3285,6 +3316,15 @@ function renderMergeHistoryTab() {
     state.historyFilter = search.value.trim().toLowerCase();
     renderHistoryList();
   });
+
+  for (const [id, formato] of [['historyExportCsvBtn', 'csv'], ['historyExportJsonBtn', 'json']]) {
+    document.getElementById(id).addEventListener('click', async () => {
+      if (!state.history.length) { log('Não há merges no histórico para exportar.', 'warn'); return; }
+      const r = await window.api.exportMergeHistory({ formato });
+      if (!r || !r.ok) log(`Não consegui exportar o histórico: ${(r && r.error) || '?'}`, 'error');
+      else if (!r.cancelado) log(`Histórico exportado (${r.total} merge(s)): ${r.caminho}`, 'success');
+    });
+  }
 
   document.getElementById('historyClearBtn').addEventListener('click', async () => {
     if (!state.history.length) return;
@@ -4283,7 +4323,15 @@ function renderNpFindResults() {
   if (!picked.idAnalytics && gaCount > 1) ambiguous.push('Analytics');
   if (!picked.tagmanager && gtm.length > 1) ambiguous.push('Tag Manager');
   const ambiguousHtml = ambiguous.length
-    ? `<p class="hint">Mais de um resultado de ${ambiguous.join(' e de ')}, copie o ID certo à mão. Só o que aparece acima vai no commit.</p>`
+    ? `<p class="hint">Mais de um resultado de ${ambiguous.join(' e de ')}: escolha acima qual vai no geral.php. Só o que estiver escolhido vai no commit.</p>`
+    : '';
+  // Mais de um candidato: você escolhe qual vai no geral.php (ADR-156), em
+  // vez de copiar o ID à mão.
+  const opcoesGa = analytics.flatMap((p) => p.measurementIds.map((m) => ({ id: m.measurementId, rotulo: `${m.measurementId} · ${p.displayName} · ${m.uri || m.displayName || ''}` })));
+  const opcoesGtm = gtm.map((c) => ({ id: c.publicId, rotulo: `${c.publicId} · ${c.name}${(c.domains || []).length ? ' · ' + c.domains.join(', ') : ''}` }));
+  const selecao = (id, opcoes, atual, rotulo) => `<label class="field"><span>${rotulo}</span><select id="${id}"><option value="">— deixar de fora —</option>${opcoes.map((o) => `<option value="${escapeHtml(o.id)}" ${o.id === atual ? 'selected' : ''}>${escapeHtml(o.rotulo)}</option>`).join('')}</select></label>`;
+  const escolhaHtml = opcoesGa.length > 1 || opcoesGtm.length > 1
+    ? `<div class="section-label">Qual vai no geral.php</div><div class="card card--pick"><div class="grid-2">${opcoesGa.length > 1 ? selecao('npEscolhaGa', opcoesGa, picked.idAnalytics, 'Analytics (mais de um G-…)') : ''}${opcoesGtm.length > 1 ? selecao('npEscolhaGtm', opcoesGtm, picked.tagmanager, 'Tag Manager (mais de um GTM-…)') : ''}</div></div>`
     : '';
 
   const reuseHtml =
@@ -4304,7 +4352,12 @@ function renderNpFindResults() {
       </div>`
       : '';
 
-  wrap.innerHTML = gaHtml + gtmHtml + reuseHtml;
+  wrap.innerHTML = gaHtml + gtmHtml + escolhaHtml + reuseHtml;
+
+  for (const [id, campo] of [['npEscolhaGa', 'idAnalytics'], ['npEscolhaGtm', 'tagmanager']]) {
+    const sel = document.getElementById(id);
+    if (sel) sel.addEventListener('change', () => { state.npPicked = { ...state.npPicked, [campo]: sel.value }; renderNpFindResults(); });
+  }
 
   wrap.querySelectorAll('[data-copy-id]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -8893,6 +8946,7 @@ async function init() {
   const hubRes = await window.api.getHubState();
   if (hubRes.ok && hubRes.state) {
     state.recents = hubRes.state.recents || [];
+    state.filaPrsSalva = Array.isArray(hubRes.state.filaPrs) ? hubRes.state.filaPrs : [];
     state.bitbucketWorkspace = hubRes.state.bitbucketWorkspace || '';
     // Só as marcas que existem, sempre string.
     const wss = hubRes.state.bitbucketWorkspaces || {};
@@ -8954,6 +9008,7 @@ async function init() {
   const res = await window.api.loadCreds();
   if (res.ok && res.creds) {
     state.creds = res.creds;
+    restaurarFilaPrs(state.filaPrsSalva).catch(() => {});
     log(`Sessão do Bitbucket carregada para ${res.creds.email}.`, 'info');
   } else {
     log('Nenhuma credencial do Bitbucket configurada ainda. Abra as configurações quando for usar "Mergear PRs".', 'info');

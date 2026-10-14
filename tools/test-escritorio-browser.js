@@ -128,6 +128,18 @@ const STUB = `
     check('Thor ocioso na mesa; Tyr desligado está ausente com a tela apagada; Bragi trabalhando com o ícone girando', cena.thor.alvo === 'mesa' && cena.thor.icone === null && !cena.tyr.presente && cena.tyr.tela === 'desligada' && cena.bragi.icone === 'trabalho' && cena.bragi.tela === 'trabalhando', JSON.stringify([cena.thor, cena.tyr, cena.bragi]));
     check('os pacotes: a planejada na mesa do Thor, as pendentes na mesa de reunião, a aguardando confirmação na mesa do Tyr', JSON.stringify(cena.pacotes.sort()) === JSON.stringify([['00T1', 'sala:02'], ['00T2', 'reuniao'], ['00T3', 'reuniao'], ['00T4', 'sala:04'], ['00T6', 'reuniao']]), JSON.stringify(cena.pacotes));
     check('o laço roda enquanto um ícone de trabalho gira', cena.rodando === true);
+    // Pacotes clicáveis (ADR-156): o cubo da tarefa 00T4, na mesa do Tyr.
+    const alvoPacote = await page.evaluate(() => { const m = window.hubEscritorio.motor; const p = m.sim.pacotes.get('00T4'); const s = m.projetarPonto(p.pos.x, (p.pos.y || 0.76) + 0.15, p.pos.z); const r = m.canvas.getBoundingClientRect(); return { x: r.left + s.x, y: r.top + s.y }; });
+    await page.mouse.move(alvoPacote.x, alvoPacote.y);
+    await page.waitForSelector('#escOverlay .esc-selo.dica[data-pacote="00T4"]', { timeout: 3000 }).catch(() => {});
+    check('passar o mouse num pacote mostra o assunto e o estado da tarefa', await page.evaluate(() => { const s = document.querySelector('#escOverlay .esc-selo.dica'); return !!s && s.dataset.pacote === '00T4' && /BLOQUEIO DE CONTATOS - x\.com\.br · aguardando confirmação/.test(s.textContent) && /translate\(/.test(s.style.transform); }), await page.evaluate(() => { const s = document.querySelector('#escOverlay .esc-selo.dica'); return s ? s.textContent : 'sem dica'; }));
+    await page.mouse.click(alvoPacote.x, alvoPacote.y);
+    await page.waitForSelector('.esc-hist', { timeout: 3000 }).catch(() => {});
+    check('clicar no pacote abre o histórico daquela tarefa', await page.evaluate(() => !!document.querySelector('.esc-hist') && (window.__calls.filter((c) => c.name === 'escritorioTarefa').pop() || { args: [{}] }).args[0].id === '00T4'));
+    await page.click('#escHistFechar');
+    await page.mouse.move(700, 450);
+    await page.waitForFunction(() => !document.querySelector('#escOverlay .esc-selo.dica'), { timeout: 3000 }).catch(() => {});
+    check('tirar o mouse some com a dica', await page.evaluate(() => !document.querySelector('#escOverlay .esc-selo.dica')));
     check('cartões presos às figuras: Thor com nome e papel; Tyr desligado; Bragi em standby trabalhando com o módulo; Odin como orquestrador', await page.evaluate(() => {
       const c = (id) => document.querySelector(`#escOverlay .esc-agente[data-agente="${id}"]`);
       const thor = c('publicador-mpiplus'), tyr = c('bloqueador'), bragi = c('relator'), odin = c('orquestrador');

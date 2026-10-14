@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, clipboard, session, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, clipboard, session, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
@@ -126,6 +126,7 @@ if (!instanciaUnica) {
     // ficou gravado, abre a pendência das tarefas interrompidas e, se o modo
     // automático ficou ligado, volta a ler a fila a cada 5 min.
     iniciarEscritorio();
+    migrarSegredosAntigos();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
@@ -318,6 +319,35 @@ ipcMain.handle('history:add', (event, entry) => {
     entries.unshift(record);
     writeMergeHistory(entries);
     return { ok: true, entry: record };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Exporta o histórico de merges (ADR-156): CSV (Excel, com BOM e ponto e
+// vírgula) ou JSON, num arquivo que você escolhe.
+const HISTORICO_CSV_CAMPOS = ['quando', 'repo', 'prId', 'title', 'author', 'sourceBranch', 'destBranch', 'strategy', 'approvals', 'buildState', 'ok', 'mergedHash', 'error'];
+function historicoParaCsv(entries) {
+  const campo = (e, c) => {
+    if (c === 'quando') return e.when || e.at || e.date || e.mergedAt || e.timestamp || '';
+    if (c === 'ok') return e.ok ? 'sim' : 'não';
+    return e[c];
+  };
+  const celula = (v) => { const s = v == null ? '' : String(v); return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  return [HISTORICO_CSV_CAMPOS.join(';'), ...entries.map((e) => HISTORICO_CSV_CAMPOS.map((c) => celula(campo(e, c))).join(';'))].join('\r\n') + '\r\n';
+}
+ipcMain.handle('history:export', async (event, pedido) => {
+  try {
+    const formato = pedido && pedido.formato === 'json' ? 'json' : 'csv';
+    const entries = readMergeHistory();
+    const r = await dialog.showSaveDialog(janelaPrincipal() || undefined, {
+      title: 'Exportar o histórico de merges',
+      defaultPath: path.join(app.getPath('documents'), `merges-${new Date().toISOString().slice(0, 10)}.${formato}`),
+      filters: [formato === 'json' ? { name: 'JSON', extensions: ['json'] } : { name: 'CSV', extensions: ['csv'] }],
+    });
+    if (!r || r.canceled || !r.filePath) return { ok: true, cancelado: true };
+    fs.writeFileSync(r.filePath, formato === 'json' ? JSON.stringify(entries, null, 2) : '\ufeff' + historicoParaCsv(entries), 'utf-8');
+    return { ok: true, caminho: r.filePath, total: entries.length, formato };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -8469,6 +8499,17 @@ function gravarSegredoJson(encPath, plainPath, dados) {
 }
 function apagarSegredoJson(encPath, plainPath) {
   for (const p of [encPath, plainPath]) { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) { /* o status ainda reporta expirado */ } }
+}
+// Na abertura, o que ainda estiver em texto puro (tokens do OAuth de antes da
+// ADR-155) migra para .enc sem esperar o primeiro uso (ADR-156).
+function migrarSegredosAntigos() {
+  try {
+    const pasta = app.getPath('userData');
+    for (const nome of fs.readdirSync(pasta)) {
+      if (!/^oauth-(config|token(-[a-z0-9_-]+)?)\.json$/i.test(nome)) continue;
+      lerSegredoJson(path.join(pasta, nome.replace(/\.json$/i, '.enc')), path.join(pasta, nome));
+    }
+  } catch (e) { /* sem pasta ainda, ou sem criptografia: fica para a próxima */ }
 }
 function readOauthConfigFile() { return lerSegredoJson(oauthConfigEncPath(), oauthConfigPath()) || {}; }
 // O Client ID e o Secret de um pedido do renderer, ou os gravados: o segredo

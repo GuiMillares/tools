@@ -1612,6 +1612,7 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 /* O selo da tarefa que viaja pelo corredor: o assunto e para quem vai. */
 .esc-selo { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-2); border: 1px solid var(--accent-2-line); background: rgba(6, 18, 16, 0.92); border-radius: 10px; padding: 2px 8px; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4); }
 .esc-selo.viagem { max-width: 320px; overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0.02em; font-size: 10px; }
+.esc-selo.dica { max-width: 360px; overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0.02em; font-size: 10px; color: var(--text); border-color: var(--border-hi); }
 /* O cartão fica no alto do fio: um toco de linha o liga ao fio desenhado na cena. */
 .esc-agente::after { content: ''; position: absolute; left: 50%; top: 100%; width: 1px; height: 6px; background: var(--accent-2-line); }
 /* Tudo que é ancorado encolhe junto com a cena (a cena manda o scale no

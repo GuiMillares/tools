@@ -398,3 +398,18 @@ nórdica (Odin orquestra; Thor publica MPI+; Freyr publica Busca One; Tyr
 bloqueia contatos; Huginn, Ratatoskr, Mímir, Heimdall e Bragi são os
 demais); o papel e os módulos de cada um aparecem ao lado do nome
 (ADR-150).
+
+## 13. Testes
+
+`npm test` (ou `node tools/rodar-testes.js`) roda todos os `tools/test-*.js`,
+até quatro ao mesmo tempo, cada um no próprio processo; `--serial` roda um
+de cada vez e `--paralelo N` escolhe quantos. Os testes de navegador usam o
+Chromium do Playwright (`npx playwright install chromium` na primeira vez).
+Nenhum teste toca credencial ou serviço de verdade: tudo é dublê.
+
+A mesma suíte roda num Windows do GitHub a cada push em `master`
+(`.github/workflows/testes.yml`); o resultado fica na aba Actions do
+repositório, com o `resultado-testes.json` como artefato.
+
+Depois de escrever uma ADR nova, `node tools/indice-adr.js` refaz o índice
+no alto de `docs/ADR.md` (o `test-indice-adr.js` reclama se esquecer).

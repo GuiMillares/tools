@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   addMergeHistory: (entry) => ipcRenderer.invoke('history:add', entry),
   removeMergeHistory: (id) => ipcRenderer.invoke('history:remove', id),
   clearMergeHistory: () => ipcRenderer.invoke('history:clear'),
+  exportMergeHistory: (payload) => ipcRenderer.invoke('history:export', payload),
   getHubState: () => ipcRenderer.invoke('hubstate:get'),
   setHubState: (state) => ipcRenderer.invoke('hubstate:set', state),
   getGoogleConfig: () => ipcRenderer.invoke('google:getConfig'),
