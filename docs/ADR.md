@@ -7512,7 +7512,9 @@ caro), sombra 1024 com PCF simples e **calculada uma vez, só da parte fixa**
 (`shadowMap.autoUpdate = false`; as figuras e os pacotes não projetam
 sombra, o anel no chão faz o papel), pixel ratio até 1,25 e
 `powerPreference: 'high-performance'` (a GPU de baixo consumo deixava a
-cena travada em notebook).
+cena travada em notebook). Em seguida, "dá pra deixar as salas mais
+iluminadas?": luz de hemisfério 1,7 e sol 1,6 (eram 1,0 e 1,25), piso das
+salas, tampos e cadeiras mais claros que o corredor e o fundo, vidro a 12 %.
 
 ## ADR-154 — O Hub vira Asgard: nome, grafia rúnica na marca e a runa Othala como ícone
 

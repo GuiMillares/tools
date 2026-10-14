@@ -25,8 +25,10 @@
   if (window.hubEscritorioCena) return;
 
   const CORES = {
-    fundo: 0x040a0a, piso: 0x07120f, sala: 0x0b1d18, corredor: 0x091713, grade: 0x113128, borda: 0x1e5443,
-    parede: 0x22f2ef, mesa: 0x12302a, mesaTampo: 0x183d33, cadeira: 0x0f2922, monitor: 0x0b1c17, vaso: 0x1b2f2a, folha: 0x2e8a57,
+    // Salas mais iluminadas (pedido de 14/10): piso das salas e tampos mais
+    // claros que o corredor e o fundo, para a divisão entre salas aparecer.
+    fundo: 0x040a0a, piso: 0x0a1a16, sala: 0x14362c, corredor: 0x0c211c, grade: 0x18453a, borda: 0x1e5443,
+    parede: 0x22f2ef, mesa: 0x1a4238, mesaTampo: 0x245a4b, cadeira: 0x163b31, monitor: 0x0e241d, vaso: 0x1b2f2a, folha: 0x3aa86b,
     tela: { ligada: 0x3ee97d, trabalhando: 0x22f2ef, standby: 0x1e5443, desligada: 0x061210 },
     corpo: { auto: 0x1f6b47, standby: 0x2a4a3f, orquestrador: 0x8a6d2a }, cabeca: 0xd9c7a0,
     icone: { trabalho: 0x22f2ef, pergunta: 0xf2c155, erro: 0xff6b6b, fila: 0x3ee97d, ok: 0x3ee97d },
@@ -365,15 +367,15 @@
     const cam = criarCamera(Planta);
     const ancoras = criarAncoras();
 
-    scene.add(new THREE.HemisphereLight(0x3f7a66, 0x04100c, 1.0));
-    const sol = new THREE.DirectionalLight(0xc8ffe4, 1.25);
+    scene.add(new THREE.HemisphereLight(0x5c9c86, 0x0a1f18, 1.7));
+    const sol = new THREE.DirectionalLight(0xd6fff0, 1.6);
     sol.position.set(28, 60, 22);
     sol.castShadow = true;
     sol.shadow.mapSize.set(1024, 1024);
     Object.assign(sol.shadow.camera, { left: -42, right: 42, top: 42, bottom: -42, near: 1, far: 200 });
     sol.shadow.bias = -0.0006;
     scene.add(sol);
-    const luzFria = new THREE.DirectionalLight(0x22f2ef, 0.18);
+    const luzFria = new THREE.DirectionalLight(0x22f2ef, 0.3);
     luzFria.position.set(-30, 20, -10);
     scene.add(luzFria);
 
@@ -382,7 +384,7 @@
       piso: mat(CORES.piso, { roughness: 0.95 }), sala: mat(CORES.sala, { roughness: 0.95 }), corredor: mat(CORES.corredor, { roughness: 0.95 }),
       mesa: mat(CORES.mesa), tampo: mat(CORES.mesaTampo, { roughness: 0.6 }), cadeira: mat(CORES.cadeira), monitor: mat(CORES.monitor, { roughness: 0.5, metalness: 0.2 }),
       vaso: mat(CORES.vaso), folha: mat(CORES.folha, { roughness: 0.9 }),
-      parede: new THREE.MeshStandardMaterial({ color: CORES.parede, transparent: true, opacity: 0.09, roughness: 0.2, metalness: 0, side: THREE.DoubleSide, depthWrite: false }),
+      parede: new THREE.MeshStandardMaterial({ color: CORES.parede, transparent: true, opacity: 0.12, roughness: 0.2, metalness: 0, side: THREE.DoubleSide, depthWrite: false }),
       aresta: new THREE.LineBasicMaterial({ color: CORES.parede, transparent: true, opacity: 0.45 }),
       grade: new THREE.LineBasicMaterial({ color: CORES.grade, transparent: true, opacity: 0.5 }),
       cabeca: mat(CORES.cabeca, { roughness: 0.7 }),
