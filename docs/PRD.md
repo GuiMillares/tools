@@ -634,6 +634,17 @@ Relatório do painel idealplus) preenchida pelo Hub, linha a linha, só leitura
 `tools/relatorio-amostra.js` roda a mesma rodada fora da tela (Electron, com
 as sessões do Hub) para conferir alguns clientes antes da planilha inteira.
 
+Atualização de 14/10/2026: os tipos de site que entram pela regra do
+híbrido são o Híbrido, a **Plataforma** (temas antigos "buscamax 2.x",
+às vezes numa subpasta, palavras em `/<prefixo>/<palavra>`) e os templates
+novos (cartões de `/categorias` ou `/informacoes`), sempre sem as páginas de
+cidade ("big"). O GA4 é procurado também nas contas que só os logins de
+relatório veem, e o G- de um container vem do `gtm.js` público. O ID de quem
+não tem o campo oculto nem o geral.php é o do projeto no **painel da Busca
+Cliente** (não o do idealplus); a busca nele foi feita na sessão do usuário,
+fora da tela. Quem segue sem GA4 pode ganhar uma propriedade criada pela
+convenção do "Criar propriedades", listada na aba **Vincular Analytics**.
+
 ### 4.15 Escritório — `escritorio`
 
 A tela principal do Hub (a primeira da barra lateral e a de abertura): o

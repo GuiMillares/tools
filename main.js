@@ -6624,6 +6624,11 @@ function criarFontesDoHub() {
     // que a service account não administra.
     authPrincipal: async () => { try { return loadUserOauthClient(oauthCfg.clientId, oauthCfg.clientSecret, null, { global: false }); } catch (e) { return null; } },
     cache: { ler: readAnalyticsStreamsCache, gravar: saveAnalyticsStreamsCache },
+    // Os containers do Tag Manager de cada credencial, 7 dias em disco (ADR-148).
+    cacheGtm: {
+      ler: () => { try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'gtm-containers-cache.json'), 'utf-8')) || {}; } catch (e) { return {}; } },
+      gravar: (obj) => { try { fs.writeFileSync(path.join(app.getPath('userData'), 'gtm-containers-cache.json'), JSON.stringify(obj)); } catch (e) { /* cache é conveniência */ } },
+    },
     contasConhecidas: [...Object.values(contas), ...relatorio],
     // O padrão de cada empresa quando nada prova: Analytics da Busca é o
     // bcrelatorios; o Search Console mora no login das tags (bcrelatoriotags).

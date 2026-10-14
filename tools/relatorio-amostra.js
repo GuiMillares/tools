@@ -114,6 +114,8 @@ app.whenReady().then(async () => {
   };
   const cachePath = path.join(userData(), 'analytics-streams-cache.json');
   const cache = { ler: () => lerJson(cachePath) || {}, gravar: (obj) => { try { fs.writeFileSync(cachePath, JSON.stringify(obj)); } catch (e) { /* ok */ } } };
+  const cacheGtmPath = path.join(userData(), 'gtm-containers-cache.json');
+  const cacheGtm = { ler: () => lerJson(cacheGtmPath) || {}, gravar: (obj) => { try { fs.writeFileSync(cacheGtmPath, JSON.stringify(obj)); } catch (e) { /* ok */ } } };
 
   // ---------- Bitbucket ----------
   const creds = lerCifrado(path.join(userData(), 'credentials.enc'));
@@ -123,7 +125,7 @@ app.whenReady().then(async () => {
   if (!bitbucket) log('Bitbucket: sem credencial ou workspace; o geral.php fica de fora.', 'warn');
 
   const fontes = criarFontes({
-    sf, google, authSa, authDoSlot, slots, cache, bitbucket, painel: null,
+    sf, google, authSa, authDoSlot, slots, cache, cacheGtm, bitbucket, painel: null,
     // A sessão principal do Google (oauth-token.json), para ler os acessos
     // das contas em que a service account não administra.
     authPrincipal: () => authDoSlot(''),
@@ -234,6 +236,32 @@ app.whenReady().then(async () => {
   if (!args.includes('--sem-fluxo')) {
     try { tiposFluxo = await carregarTiposFluxo(); } catch (e) { log(`Planilha de fluxo: ${e.message}`, 'warn'); tiposFluxo = {}; }
     fontes.tipoFluxo = async ({ dominio }) => ({ tipo: (tiposFluxo || {})[dominio] || '' });
+  }
+
+  // ---------- --criar-analytics <lista.json>: o GA4 de quem não tem ----------
+  //
+  // lista = [{ chave, dominio, empresa }]. Para cada um, fontes.criarAnalytics:
+  // procura uma existente (nome e data stream, contas da service account e dos
+  // logins) e, não havendo, cria na conta mais vazia da marca. Com --simular,
+  // só diz onde criaria. Grava <saida>.json com o resultado de cada um.
+  const listaCriar = opt('--criar-analytics');
+  if (listaCriar) {
+    const lista = JSON.parse(fs.readFileSync(listaCriar, 'utf-8'));
+    const simular = args.includes('--simular');
+    const res = [];
+    let n = 0;
+    for (const it of lista) {
+      n++;
+      const r = await fontes.criarAnalytics({ dominio: it.dominio, empresa: it.empresa, simular });
+      for (const e of r.log || []) log(e.message, e.type);
+      res.push({ ...it, ...r, log: undefined });
+      log(`[${n}/${lista.length}] ${it.dominio}: ${r.ok ? (r.criada ? `CRIADA ${r.propertyId} ${r.measurementId} em ${r.conta}` : r.reaproveitada ? `já existia ${r.propertyId} em ${r.conta}` : `criaria em ${r.conta}`) : `ERRO ${r.erro}`}`, r.ok ? 'success' : 'error');
+      fs.writeFileSync(`${saida}.json`, JSON.stringify(res, null, 1));
+      if (!r.ok && /quota|rate|429|exceeded/i.test(r.erro || '')) { log('Cota do Google atingida: parei; o que falta fica para depois.', 'warn'); break; }
+    }
+    log(`FIM: ${res.filter((x) => x.criada).length} criada(s), ${res.filter((x) => x.reaproveitada).length} já existiam, ${res.filter((x) => !x.ok).length} erro(s).`, 'success');
+    app.exit(0);
+    return;
   }
 
   // ---------- Os itens ----------

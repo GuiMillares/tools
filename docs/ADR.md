@@ -6902,6 +6902,56 @@ cidade). Decisões:
   Com as "big" de fora, as contagens ficam nas centenas e a aba quase não
   é usada.
 
+**Atualização (14/10/2026): templates novos, GA4 pelos logins, o ID pelo
+painel da Busca Cliente e o GA4 criado.** Pedido de 13/10: telassinop e
+romastands seguem a regra do híbrido; os clientes sem ID têm o ID buscado
+no painel da Busca Cliente (`painel.buscacliente.com.br/projeto/listar`,
+com o login da pessoa no navegador); quem segue sem GA4 ganha uma
+propriedade criada, listada numa aba "Vincular Analytics". Decisões:
+
+- **Templates novos.** telassinop (site novo em React): `/categorias` lista
+  cartões com link relativo e o título num `<h2>`, e as categorias são o 1º
+  nível do `<nav aria-label="Menu de categorias">`. romastands: `/informacoes`
+  lista 200 cartões com o grupo em `data-info-group`, e os grupos são as
+  categorias. `cardsGenericos` e `categoriasDoNav` leem os dois; só entram
+  quando nenhuma fonte clássica achou nada, e o tipo sai **plataforma**
+  (regra do híbrido). telassinop: 6 + 45; romastands: 7 + 200.
+- **GA4 pelos logins.** 171 linhas tinham o G- no site e a propriedade numa
+  conta que a service account não vê: o bcrelatorios2 vê "BC 2", "Busca
+  Cliente" (342533159) e mais três; o bcrelatorios3 vê "BC3" (186
+  propriedades em 6 contas). A busca agora varre também essas contas, com a
+  sessão do login que as vê (`resumoLogins`), e o login vira a conexão.
+- **O G- do container pelo `gtm.js` público.** Listar os containers do Tag
+  Manager pela API custava ~30 min por login (400 contas, a API anda a ~4
+  chamadas por minuto); a rodada de 13/10 gastou 2 h nisso. O arquivo
+  `https://www.googletagmanager.com/gtm.js?id=GTM-…` que o próprio site
+  carrega traz o G- configurado (conferido: GTM-KMVTSPZM → G-CBGCRMQ6H1 e
+  GTM-5KW2PF5L → G-SJQNCYFZL6, iguais aos da API), sem API nem permissão;
+  ele vem primeiro, a API fica de reserva, e a listagem da API passa a ficar
+  em disco por 7 dias (`gtm-containers-cache.json`).
+- **O ID é o do painel da Busca Cliente, não o do idealplus.** A reserva
+  "busca no painel" da tela usava o `painel:acharContrato` (idealplus, o
+  painel da MPI+), cujo ID de cliente não é o `$idProjetoBusca`; ela saiu da
+  tela, e a linha sem campo oculto nem geral.php fica "sem ID". A busca no
+  painel da Busca Cliente foi feita fora do Hub, na sessão do usuário no
+  navegador: `GET /projeto/listar?pesquisar=true&pesquisa=<termo>` devolve a
+  tabela (ID, Empresa, Site, …); a escada é o domínio, o nome do domínio sem
+  a extensão (com o site igual, subdomínio dele, ou um único site parecido),
+  e a razão social (um único site entre os achados); vários projetos com o
+  mesmo site ficam com o de ID maior, e os outros vão para o diagnóstico.
+  Quem não aparece sai "sem ID" na coluna, como pedido. ~7 s por pesquisa no
+  painel; 4 de cada vez.
+- **Criar o GA4 de quem não tem** (`criarAnalytics`, modo
+  `--criar-analytics` do script de amostra): a convenção do "Criar
+  propriedades" do Hub (ADR-016/041/046), replicada nas fontes porque roda
+  fora do Hub: nome = domínio, conta mais vazia da marca ("Busca Cliente NN"
+  ou "MPI Solutions"), preferindo uma que um login de relatório veja,
+  fuso de São Paulo, BRL e um data stream web; antes, procura uma
+  existente pelo nome e pelo domínio do data stream nas contas da service
+  account e dos logins, e não cria se achar. Ficam de fora os sites fora do
+  ar e os MPI+. A aba **Vincular Analytics** lista conta, propriedade, G-,
+  login, a tag que está hoje no site e onde pôr o G- novo.
+
 ---
 
 ## ADR-149 — Escritório, fase 1: orquestrador no processo principal, decisão em código antes do modelo, regras aprendidas com aprovação e validação de execução determinística

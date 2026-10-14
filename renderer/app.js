@@ -2559,11 +2559,10 @@ function relDeps() {
     site: (p) => window.api.relatorioSite(p),
     geralPhp: (p) => window.api.relatorioGeralPhp(p),
     google: (p) => window.api.relatorioGoogle(p),
-    // O ID pela busca no painel (ADR-098): a primeira coluna da lista de clientes.
-    painelId: async ({ razao, dominio }) => {
-      const r = await window.api.acharContratoNoPainel({ razao, dominio });
-      return { ok: !!(r && r.ok), cliente: r && r.ok && r.contrato ? String(r.contrato.cliente || '') : '', erro: r && r.error, log: (r && r.log) || [] };
-    },
+    // Sem busca de ID no painel idealplus: o ID desta planilha é o do projeto
+    // no painel da Busca Cliente (painel.buscacliente.com.br), não o do
+    // cliente no idealplus (ADR-148, 13/10/2026). Sem o campo oculto nem o
+    // geral.php, a linha sai "sem ID".
     tipoFluxo: async ({ dominio }) => ({ tipo: (relEstado.tipos || {})[dominio] || '' }),
   };
 }
