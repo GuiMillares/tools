@@ -50,6 +50,9 @@ function arquivosDoCommit(ref) {
 let ref = 'HEAD';
 let arquivos = arquivosDoCommit(ref);
 if (arquivos.every((a) => /^package(-lock)?\.json$/.test(a))) { ref = 'HEAD~1'; arquivos = arquivosDoCommit(ref); }
+// Arquivo apagado no commit tem que estar FORA do asar, não dentro (ADR-159
+// apagou a cena 3D e este script cobrava a presença dela).
+const apagados = new Set(execSync(`git show --name-status --diff-filter=D --format= ${ref}`, { cwd: RAIZ, encoding: 'utf-8' }).split(/\r?\n/).map((l) => l.replace(/^D\s+/, '').trim()).filter(Boolean));
 const cobre = (a) => pkg.build.files.some((f) => {
   if (f.startsWith('!')) return false;
   const base = f.replace(/\/\*\*.*$/, '').replace(/\/\*$/, '');
@@ -61,6 +64,7 @@ console.log(`\nÚltimo commit de trabalho (${ref}): ${arquivos.length} arquivo(s
 for (const a of fora) aviso(`${a} não vai para o instalador (fora de build.files) — esperado para docs, tools e testes`);
 // Os que entram têm que estar no asar com o conteúdo do repositório.
 for (const a of dentro) {
+  if (apagados.has(a)) { if (lista.includes('/' + a)) falha(`${a} foi apagado no commit e ainda está no asar`); else ok(`${a} apagado no commit, e fora do asar`); continue; }
   if (!lista.includes('/' + a)) { falha(`${a} deveria estar no asar e não está`); continue; }
   // O leitor do asar separa o caminho pelo separador do sistema: com barra
   // normal, "lib/escritorio/catalogo.js" (dois níveis) não é achado no Windows.
