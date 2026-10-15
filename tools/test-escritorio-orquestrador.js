@@ -1,6 +1,6 @@
 // ADR-149: o orquestrador do Escritório com fila, modelo e executor falsos.
-// Prova a ordem de decisão (regra → triagem → modelo → pendência), o
-// agrupamento das pendências, o aprendizado (resposta → regra → reanálise),
+// Prova a ordem de decisão (triagem em código → modelo → pendência, ADR-161),
+// o agrupamento das pendências, as respostas (encaminhar, tentar de novo…),
 // a validação de execução, os estados da execução (fase 2, com executor
 // falso) e o que a tela recebe. Sem rede e sem Electron.
 //
@@ -26,6 +26,9 @@ const BLOQ = sf('00T-BLQ', 'BLOQUEIO DE CONTATOS - bc.com.br');
 const SSL1 = sf('00T-SSL1', 'Ativação de SSL - a.com.br', 'por favor ativar');
 const SSL2 = sf('00T-SSL2', 'Ativação de SSL - b.com.br', 'ativar também');
 const REUNIAO = sf('00T-REU', 'Reunião de alinhamento com o cliente');
+// Tarefa que a triagem em código não reconhece (vira pendência para você).
+const DESC1 = sf('00T-DESC1', 'Solicitação do cliente - a.com.br', 'por favor ajustar');
+const DESC2 = sf('00T-DESC2', 'Solicitação do cliente - b.com.br', 'ajustar também');
 
 function montar({ tarefas = [], ia = 'padrao', executar = undefined, ctx = undefined } = {}) {
   const pasta = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-orq-'));
@@ -89,19 +92,19 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
 
   console.log('\n=== Modelo: pergunta, ignorar, plano, standby, falhas ===');
   {
-    const m = montar({ tarefas: [SSL1, SSL2, REUNIAO] });
-    m.respostasIa.push({ ok: true, dados: { decisao: 'pergunta', motivo: 'não sei o que é SSL aqui', confianca: 0.2, pergunta: 'Ativação de SSL vai para quem?' }, uso: { entrada: 1, saida: 1 }, modelo: 'pro' });
-    m.respostasIa.push({ ok: true, dados: { decisao: 'pergunta', motivo: 'idem', confianca: 0.2, pergunta: 'Ativação de SSL vai para quem?' }, uso: { entrada: 1, saida: 1 }, modelo: 'pro' });
+    const m = montar({ tarefas: [DESC1, DESC2, REUNIAO] });
+    m.respostasIa.push({ ok: true, dados: { decisao: 'pergunta', motivo: 'não sei o que o cliente quer', confianca: 0.2, pergunta: 'Solicitação do cliente vai para quem?' }, uso: { entrada: 1, saida: 1 }, modelo: 'pro' });
+    m.respostasIa.push({ ok: true, dados: { decisao: 'pergunta', motivo: 'idem', confianca: 0.2, pergunta: 'Solicitação do cliente vai para quem?' }, uso: { entrada: 1, saida: 1 }, modelo: 'pro' });
     m.respostasIa.push({ ok: true, dados: { decisao: 'ignorar', motivo: 'reunião não é operação', confianca: 0.95 }, uso: { entrada: 1, saida: 1 }, modelo: 'pro' });
     await m.orq.varrer({ manual: true });
     const pend = m.loja.pendenciasAbertas();
-    check('duas tarefas do mesmo tipo → UMA pendência com as duas', pend.length === 1 && pend[0].tarefas.join() === '00T-SSL1,00T-SSL2' && pend[0].pergunta === 'Ativação de SSL vai para quem?' && pend[0].padrao === 'ativacao de ssl - {dominio}', JSON.stringify(pend));
-    check('as duas tarefas ficam pendentes apontando para a pendência', m.loja.tarefa('00T-SSL1').estado === T.PENDENTE && m.loja.tarefa('00T-SSL2').pendenciaId === pend[0].id);
+    check('duas tarefas do mesmo tipo → UMA pendência com as duas', pend.length === 1 && pend[0].tarefas.join() === '00T-DESC1,00T-DESC2' && pend[0].pergunta === 'Solicitação do cliente vai para quem?' && pend[0].padrao === 'solicitacao do cliente - {dominio}', JSON.stringify(pend));
+    check('as duas tarefas ficam pendentes apontando para a pendência', m.loja.tarefa('00T-DESC1').estado === T.PENDENTE && m.loja.tarefa('00T-DESC2').pendenciaId === pend[0].id);
     check('reunião → ignorada pelo modelo, com o motivo no histórico', m.loja.tarefa('00T-REU').estado === T.IGNORADA && /reunião não é operação/.test(m.loja.tarefa('00T-REU').historico.slice(-1)[0].motivo));
-    check('o modelo recebeu o pedido de triagem com a tarefa e o catálogo', m.chamadasIa.length === 3 && /Assunto: Ativação de SSL - a\.com\.br/.test(m.chamadasIa[0].conteudo) && /publicador-mpiplus/.test(m.chamadasIa[0].sistema) && m.chamadasIa[0].papel === 'orquestrador');
-    check('a decisão do modelo entrou no histórico com o uso', m.loja.tarefa('00T-SSL1').historico.some((h) => h.tipo === 'decisao' && h.origem === 'modelo' && h.decisao === 'pergunta' && h.uso.entrada === 1));
+    check('o modelo recebeu o pedido de triagem com a tarefa e o catálogo', m.chamadasIa.length === 3 && /Assunto: Solicitação do cliente - a\.com\.br/.test(m.chamadasIa[0].conteudo) && /publicador-mpiplus/.test(m.chamadasIa[0].sistema) && m.chamadasIa[0].papel === 'orquestrador');
+    check('a decisão do modelo entrou no histórico com o uso', m.loja.tarefa('00T-DESC1').historico.some((h) => h.tipo === 'decisao' && h.origem === 'modelo' && h.decisao === 'pergunta' && h.uso.entrada === 1));
     // Plano do modelo para um agente auto.
-    m.fila.tarefas.push(sf('00T-SUSP', 'Suspensão de site - c.com.br', 'suspender por inadimplência'));
+    m.fila.tarefas.push(sf('00T-SUSP', 'Desativar site - c.com.br', 'cliente inadimplente'));
     m.respostasIa.push({ ok: true, dados: { decisao: 'plano', motivo: 'é suspensão', confianca: 0.9, agente: 'hospedagem', parametros: [{ nome: 'dominios', valor: 'c.com.br' }, { nome: 'acao', valor: 'suspensao' }] }, uso: {}, modelo: 'pro' });
     await m.orq.varrer({ manual: true });
     const ts = m.loja.tarefa('00T-SUSP');
@@ -151,7 +154,7 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     const pend = m.loja.pendenciasAbertas();
     check('mesmo assunto, pedidos diferentes → DUAS pendências, não uma', pend.length === 2 && pend.every((p) => p.tarefas.length === 1), JSON.stringify(pend.map((p) => [p.tipo, p.padrao, p.tarefas])));
     const ph = pend.find((p) => p.tipo === 'humano'); const pq = pend.find((p) => p.tipo === 'pergunta');
-    check('"avisar" vira pendência para você, com a leitura e o motivo', ph && ph.tarefas[0] === '00T-AJ1' && /Precisa de você: Republicar o site Busca One/.test(ph.pergunta) && /subdiretório/.test(ph.pergunta) && ph.contexto.trechoChave === 'republicar o site novamente' && t1.estado === T.PENDENTE, ph && ph.pergunta);
+    check('"avisar" vira pendência para você, com a leitura e o motivo', ph && ph.tarefas[0] === '00T-AJ1' && /Precisa de você: Republicar o site Busca One/.test(ph.pergunta) && /subdiretório/.test(ph.pergunta) && t1.estado === T.PENDENTE, ph && ph.pergunta);
     check('a pergunta leva a leitura do comentário e agrupa por categoria', pq && /o comentário pede: Trocar o DNS/.test(pq.pergunta) && pq.padrao === 'ajuste site mpi - {dominio}:trocar-dns', pq && pq.padrao);
     check('o log avisa que precisa de você', temLog(m.logs, /adetech\.com\.br: precisa de você/));
     // Mais uma tarefa do primeiro tipo entra na mesma pendência; de outro tipo, não.
@@ -159,102 +162,66 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     m.respostasIa.push({ ok: true, dados: { leitura: 'Republicar site em subdiretório', categoria: 'republicar-site-subdiretorio', trechoChave: 'republicar o site novamente', decisao: 'avisar', motivo: 'idem', confianca: 0.8 }, uso: {}, modelo: 'pro' });
     await m.orq.varrer({ manual: true });
     check('tarefa do mesmo tipo (pela categoria) entra na pendência existente', m.loja.pendencia(ph.id).tarefas.join() === '00T-AJ1,00T-AJ3' && m.loja.pendenciasAbertas().length === 2);
-    // "Avisar sempre": regra pelo assunto + trecho do comentário; aprovada, a
-    // pendência fica aberta para você tratar e as próximas entram nela sem modelo.
-    let r = await m.orq.responder(ph.id, { acao: 'avisar-sempre' });
-    check('avisar-sempre propõe regra com assunto começa com + comentário contém o trecho', r.ok && r.pendencia.proposta.regra.quando.length === 2 && r.pendencia.proposta.regra.quando[1].campo === 'descricao' && r.pendencia.proposta.regra.quando[1].valor === 'republicar o site novamente' && r.pendencia.proposta.regra.entao.acao === 'avisar', JSON.stringify(r.pendencia.proposta));
-    r = await m.orq.aprovarRegra(ph.id);
-    const pa = m.loja.pendencia(ph.id);
-    check('aprovada: a regra existe e a pendência segue aberta, para você, com as duas tarefas', r.ok && m.loja.listarRegras().length === 1 && pa.status === 'aberta' && pa.tipo === 'humano' && pa.tarefas.join() === '00T-AJ1,00T-AJ3' && t1.estado === T.PENDENTE, JSON.stringify([pa.status, pa.tipo, pa.tarefas]));
-    const antesIa = m.chamadasIa.length;
+    // Mais uma do mesmo tipo entra na mesma pendência (pela categoria que o modelo leu).
     m.fila.tarefas.push(sf('00T-AJ4', 'Ajuste Site MPI - mais.com.br', 'Cliente pede para republicar o site novamente, sumiu do ar'));
+    m.respostasIa.push({ ok: true, dados: { leitura: 'Republicar site em subdiretório', categoria: 'republicar-site-subdiretorio', decisao: 'avisar', motivo: 'idem', confianca: 0.8 }, uso: {}, modelo: 'pro' });
     await m.orq.varrer({ manual: true });
-    check('a próxima do mesmo tipo entra na pendência pela regra, sem chamar o modelo, com a leitura do começo do comentário', m.chamadasIa.length === antesIa && m.loja.pendencia(ph.id).tarefas.join() === '00T-AJ1,00T-AJ3,00T-AJ4' && /Cliente pede para republicar/.test(m.loja.tarefa('00T-AJ4').leitura) && m.loja.listarRegras()[0].usos === 1);
-    r = await m.orq.responder(ph.id, { acao: 'tratada' });
+    check('a terceira do mesmo tipo entra na mesma pendência', m.loja.pendencia(ph.id).tarefas.join() === '00T-AJ1,00T-AJ3,00T-AJ4');
+    let r = await m.orq.responder(ph.id, { acao: 'tratada' });
     check('"tratada" conclui as três e fecha a pendência', r.ok && ['00T-AJ1', '00T-AJ3', '00T-AJ4'].every((id) => m.loja.tarefa(id).estado === T.CONCLUIDA) && m.loja.pendencia(ph.id).status === 'fechada');
+    check('resposta de regra ("ignorar sempre", texto) é recusada: as regras saíram (ADR-161)', !(await m.orq.responder(pq.id, { acao: 'ignorar-sempre' })).ok && /ADR-161/.test((await m.orq.responder(pq.id, { acao: 'texto', texto: 'x' })).erro));
     check('snapshot leva leitura e categoria da tarefa', m.orq.snapshot().tarefas.find((x) => x.id === '00T-AJ2').leitura === 'Trocar o DNS do cliente2.com.br para o servidor novo' && m.orq.snapshot().tarefas.find((x) => x.id === '00T-AJ2').categoria === 'trocar-dns');
     m.limpar();
   }
 
   console.log('\n=== Sem modelo configurado ===');
   {
-    const m = montar({ tarefas: [SSL1, MPI], ia: null });
+    const m = montar({ tarefas: [DESC1, MPI], ia: null });
     await m.orq.varrer({ manual: true });
     check('conhecida pela triagem segue sem modelo', m.loja.tarefa('00T-MPI').estado === T.PLANEJADA);
     const p = m.loja.pendenciasAbertas()[0];
-    check('desconhecida vira pendência dizendo que o modelo não está configurado, com a leitura do começo do comentário', p && /modelo não está configurado/.test(p.pergunta) && /Ignorar sempre, Avisar sempre ou Encaminhar sempre/.test(p.pergunta) && m.loja.tarefa('00T-SSL1').estado === T.PENDENTE && m.loja.tarefa('00T-SSL1').leitura === 'por favor ativar', p && p.pergunta);
+    check('desconhecida vira pendência para você (encaminhar, tratar ou ignorar; a regra vai para a ADR), com a leitura do começo do comentário', p && /Não reconheci/.test(p.pergunta) && /Encaminhe para um agente, marque como tratada ou ignore/.test(p.pergunta) && /ADR/.test(p.pergunta) && m.loja.tarefa('00T-DESC1').estado === T.PENDENTE && m.loja.tarefa('00T-DESC1').leitura === 'por favor ajustar', p && p.pergunta);
     // Modelo com chave mas DESLIGADO (ADR-152): mesma coisa, sem chamada.
     {
-      const m2 = montar({ tarefas: [SSL1] });
+      const m2 = montar({ tarefas: [DESC1] });
       m2.orq.trocarIa({ configurada: false, temChave: true, ligada: false, modeloDo: () => 'pro', gerarJson: async () => { throw new Error('não era para chamar'); } });
       await m2.orq.varrer({ manual: true });
       const p2 = m2.loja.pendenciasAbertas()[0];
       check('modelo desligado: pendência diz que está desligado e nada é chamado', p2 && /o modelo está desligado/.test(p2.pergunta) && m2.orq.snapshot().modelo.ligado === false && m2.orq.snapshot().modelo.temChave === true, p2 && p2.pergunta);
-      // "Encaminhar sempre" com preset (Huginn · SSL): a regra leva o parâmetro.
-      const r2 = await m2.orq.responder(p2.id, { acao: 'encaminhar', agente: 'hospedagem', parametros: { acao: 'ssl' } });
-      check('encaminhar com preset: regra para o Huginn com acao=ssl', r2.ok && r2.pendencia.proposta.regra.entao.agente === 'hospedagem' && r2.pendencia.proposta.regra.entao.parametros.acao === 'ssl');
-      const r3 = await m2.orq.aprovarRegra(p2.id);
-      const t2 = m2.loja.tarefa('00T-SSL1');
-      check('aprovada: planejada para o Huginn com os domínios da tarefa e a ação do preset', r3.ok && t2.estado === T.PLANEJADA && t2.plano.agente === 'hospedagem' && t2.plano.parametros.acao === 'ssl' && t2.plano.parametros.dominios.join() === 'a.com.br', JSON.stringify(t2.plano));
+      // Encaminhar com preset (Huginn · SSL): só estas tarefas, via operador.
+      const r3 = await m2.orq.encaminhar(p2.id, { agente: 'hospedagem', parametros: { acao: 'ssl' } });
+      const t2 = m2.loja.tarefa('00T-DESC1');
+      check('encaminhar com preset: planejada para o Huginn via operador, com os domínios da tarefa e a ação do preset; pendência fechada', r3.ok && t2.estado === T.PLANEJADA && t2.plano.agente === 'hospedagem' && t2.plano.origem === 'operador' && t2.plano.parametros.acao === 'ssl' && t2.plano.parametros.dominios.join() === 'a.com.br' && m2.loja.pendencia(p2.id).status === 'fechada', JSON.stringify(t2.plano));
       m2.limpar();
     }
     const r = await m.orq.responder(p.id, { acao: 'texto', texto: 'manda para a hospedagem' });
-    check('resposta em texto sem modelo: proposta vazia com aviso para montar à mão', r.ok && r.pendencia.status === 'respondida' && r.pendencia.proposta.regra === null && /sem modelo/.test(r.pendencia.proposta.erros[0]));
+    check('resposta em texto não existe mais: recusada com o motivo', !r.ok && /desconhecida/.test(r.erro) && m.loja.pendencia(p.id).status === 'aberta');
     const snap = m.orq.snapshot();
     check('snapshot diz que o modelo não está configurado', snap.modelo.configurado === false);
     m.limpar();
   }
 
-  console.log('\n=== Aprender: resposta → regra → reanálise ===');
+  console.log('\n=== Triagem em código no lugar das regras (ADR-161) ===');
   {
-    const m = montar({ tarefas: [SSL1, SSL2] });
+    const m = montar({ tarefas: [SSL1, SSL2, sf('00T-FORA', 'Site fora do ar - q.com.br', 'caiu'), sf('00T-MPI3', 'Publicação MPI+ - www.nv.com.br', 'temporário nv.mpitemporario.com.br')], ia: null });
     await m.orq.varrer({ manual: true });
-    let p = m.loja.pendenciasAbertas()[0];
-    // ignorar-sempre: regra rápida pelo prefixo, sem modelo.
-    let r = await m.orq.responder(p.id, { acao: 'ignorar-sempre' });
-    check('ignorar-sempre: proposta de regra pelo prefixo do assunto', r.ok && r.pendencia.proposta.regra.quando[0].valor === 'Ativação de SSL' && r.pendencia.proposta.regra.entao.acao === 'ignorar' && r.pendencia.proposta.erros.length === 0 && m.chamadasIa.length === 2);
-    r = await m.orq.aprovarRegra(p.id);
-    check('aprovar grava a regra com a origem e fecha a pendência', r.ok && /^R-/.test(r.regra.id) && /pendência P-1/.test(r.regra.origem) && m.loja.pendencia(p.id).status === 'fechada' && m.loja.listarRegras().length === 1);
-    check('as duas tarefas foram reanalisadas e ignoradas pela regra, que contou 2 usos', m.loja.tarefa('00T-SSL1').estado === T.IGNORADA && m.loja.tarefa('00T-SSL2').estado === T.IGNORADA && m.loja.listarRegras()[0].usos === 2 && m.loja.tarefa('00T-SSL1').historico.some((h) => h.tipo === 'decisao' && h.origem === 'regra'));
-    check('nenhuma chamada nova ao modelo na reanálise', m.chamadasIa.length === 2);
-    // Nova tarefa do mesmo tipo: a regra manda, direto.
-    m.fila.tarefas.push(sf('00T-SSL3', 'Ativação de SSL - z.com.br'));
-    await m.orq.varrer({ manual: true });
-    check('tarefa nova do mesmo tipo é ignorada pela regra sem modelo', m.loja.tarefa('00T-SSL3').estado === T.IGNORADA && m.chamadasIa.length === 2);
-    // Texto livre: o modelo propõe uma regra de encaminhar; aprovada com edição.
-    m.loja.apagarRegra(m.loja.listarRegras()[0].id);
-    m.fila.tarefas.push(sf('00T-SSL4', 'Ativação de SSL - w.com.br'));
-    await m.orq.varrer({ manual: true });
-    p = m.loja.pendenciasAbertas()[0];
-    check('sem a regra, a pendência volta (nova, com padrão igual)', p && p.tarefas.join() === '00T-SSL4');
-    m.respostasIa.push({ ok: true, dados: { descricao: 'SSL vai para a hospedagem', quando: [{ campo: 'assunto', op: 'comeca', valor: 'Ativação de SSL' }], acao: 'encaminhar', agente: 'hospedagem', parametros: [{ nome: 'acao', valor: 'ssl' }], justificativa: 'o operador disse' }, uso: {}, modelo: 'pro' });
-    r = await m.orq.responder(p.id, { acao: 'texto', texto: 'é sempre a hospedagem, ação ssl' });
-    check('texto livre: o modelo recebeu a resposta e propôs a regra', r.ok && /RESPOSTA DO OPERADOR: é sempre a hospedagem/.test(m.chamadasIa.slice(-1)[0].conteudo) && r.pendencia.proposta.regra.entao.agente === 'hospedagem' && r.pendencia.proposta.justificativa === 'o operador disse');
-    const editada = { ...r.pendencia.proposta.regra, descricao: 'SSL → hospedagem (editada)', entao: { ...r.pendencia.proposta.regra.entao, parametros: { acao: 'ssl', dominios: 'do assunto' } } };
-    r = await m.orq.aprovarRegra(p.id, editada);
-    const t4 = m.loja.tarefa('00T-SSL4');
-    check('regra editada aprovada: tarefa planejada via regra, parâmetros da regra por cima', r.ok && r.regra.descricao === 'SSL → hospedagem (editada)' && t4.estado === T.PLANEJADA && t4.plano.origem === 'regra' && t4.plano.regraId === r.regra.id && t4.plano.parametros.acao === 'ssl' && t4.plano.parametros.dominios === 'do assunto', JSON.stringify(t4.plano));
-    // Regra inválida não entra.
-    r = await m.orq.aprovarRegra(p.id, { quando: [], entao: { acao: 'ignorar' } });
-    check('regra inválida é recusada com os erros', !r.ok && /condição/.test(r.erro));
-    // Edição direta pela tela.
-    r = m.orq.salvarRegra({ ...m.loja.listarRegras()[0], ativa: false });
-    check('salvarRegra pela tela (desligar) mantém o id', r.ok && r.regra.ativa === false && m.loja.listarRegras().length === 1);
-    check('apagarRegra', m.orq.apagarRegra(r.regra.id).ok && m.loja.listarRegras().length === 0);
+    const s1 = m.loja.tarefa('00T-SSL1');
+    check('Ativação de SSL vai ao Huginn pela triagem, com acao=ssl e os domínios, sem modelo nem pendência', s1.estado === T.PLANEJADA && s1.plano.agente === 'hospedagem' && s1.plano.origem === 'triagem' && s1.plano.parametros.acao === 'ssl' && s1.plano.parametros.dominios.join() === 'a.com.br' && m.loja.tarefa('00T-SSL2').estado === T.PLANEJADA, JSON.stringify(s1.plano));
+    check('"Site fora do ar" é ignorado de vez pela triagem (ADR), sem pendência', m.loja.tarefa('00T-FORA').estado === T.IGNORADA && m.loja.tarefa('00T-FORA').historico.some((h) => h.tipo === 'decisao' && h.origem === 'triagem' && h.decisao === 'ignorar') && m.loja.pendenciasAbertas().length === 0);
+    check('publicação com o temporário MPI+ no comentário e assunto fora do padrão vai ao Thor', m.loja.tarefa('00T-MPI3').estado === T.PLANEJADA && m.loja.tarefa('00T-MPI3').plano.agente === 'publicador-mpiplus');
+    check('o orquestrador não tem mais regras aprendidas (sem aprovarRegra/salvarRegra; snapshot sem regras)', typeof m.orq.aprovarRegra === 'undefined' && typeof m.orq.salvarRegra === 'undefined' && m.orq.snapshot().regras === undefined && !('regraId' in (m.orq.snapshot().tarefas[0].plano || {})));
     m.limpar();
   }
 
-  console.log('\n=== Regra manda antes da triagem; outras respostas ===');
+  console.log('\n=== Encaminhar e as outras respostas ===');
   {
-    const m = montar({ tarefas: [MPI, SSL1] });
-    m.orq.salvarRegra({ descricao: 'MPI+ da fila BC é ignorado', quando: [{ campo: 'tipo', op: 'igual', valor: 'publicacao' }, { campo: 'fila', op: 'igual', valor: 'bc' }], entao: { acao: 'ignorar' } });
+    const m = montar({ tarefas: [MPI, DESC1] });
     await m.orq.varrer({ manual: true });
-    check('regra aprendida vence a triagem', m.loja.tarefa('00T-MPI').estado === T.IGNORADA);
+    check('a triagem planeja o MPI+; a desconhecida vira pergunta', m.loja.tarefa('00T-MPI').estado === T.PLANEJADA && m.loja.tarefa('00T-DESC1').estado === T.PENDENTE);
     const p = m.loja.pendenciasAbertas()[0];
-    let r = await m.orq.responder(p.id, { acao: 'encaminhar', agente: 'hospedagem' });
-    check('encaminhar: proposta de regra para o agente escolhido', r.ok && r.pendencia.proposta.regra.entao.agente === 'hospedagem' && r.pendencia.proposta.regra.entao.acao === 'encaminhar');
-    r = await m.orq.aplicarSemRegra(p.id, { agente: 'hospedagem', parametros: { dominios: 'a.com.br', acao: 'ssl' } });
-    check('aplicar só desta vez: planejada via operador, pendência fechada, sem regra nova', r.ok && m.loja.tarefa('00T-SSL1').estado === T.PLANEJADA && m.loja.tarefa('00T-SSL1').plano.origem === 'operador' && m.loja.pendencia(p.id).status === 'fechada' && m.loja.listarRegras().length === 1);
+    let r = await m.orq.encaminhar(p.id, { agente: 'hospedagem', parametros: { dominios: 'a.com.br', acao: 'ssl' } });
+    check('encaminhar: planejada via operador, pendência fechada', r.ok && m.loja.tarefa('00T-DESC1').estado === T.PLANEJADA && m.loja.tarefa('00T-DESC1').plano.origem === 'operador' && m.loja.pendencia(p.id).status === 'fechada');
+    check('encaminhar para agente desconhecido é recusado', !(await m.orq.encaminhar(p.id, { agente: 'ninguem' })).ok);
     // ignorar-estas e tratada
     m.fila.tarefas.push(sf('00T-X1', 'Cobrança - h.com.br'), sf('00T-X2', 'Cobrança - i.com.br'));
     await m.orq.varrer({ manual: true });
@@ -263,13 +230,13 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     check('ignorar-estas: as tarefas ficam ignoradas e a pendência fecha', r.ok && m.loja.tarefa('00T-X1').estado === T.IGNORADA && m.loja.tarefa('00T-X2').estado === T.IGNORADA && m.loja.pendencia(p2.id).status === 'fechada');
     check('responder pendência fechada é recusado', !(await m.orq.responder(p2.id, { acao: 'texto', texto: 'x' })).ok);
     // Tarefa mudou no Salesforce enquanto ignorada: reanalisa.
-    m.fila.tarefas = m.fila.tarefas.map((t) => (t.id === '00T-X1' ? { ...t, descricao: 'agora é ativação de SSL', alterada: '2' } : t));
+    m.fila.tarefas = m.fila.tarefas.map((t) => (t.id === '00T-X1' ? { ...t, descricao: 'agora é um pedido novo', alterada: '2' } : t));
     m.respostasIa.push({ ok: true, dados: { decisao: 'ignorar', motivo: 'continua cobrança', confianca: 0.9 }, uso: {}, modelo: 'pro' });
     await m.orq.varrer({ manual: true });
-    check('tarefa que mudou no Salesforce foi reanalisada', m.loja.tarefa('00T-X1').historico.some((h) => h.tipo === 'fila' && /mudou no Salesforce/.test(h.motivo)) && m.chamadasIa.slice(-1)[0].conteudo.includes('agora é ativação de SSL'));
+    check('tarefa que mudou no Salesforce foi reanalisada', m.loja.tarefa('00T-X1').historico.some((h) => h.tipo === 'fila' && /mudou no Salesforce/.test(h.motivo)) && m.chamadasIa.slice(-1)[0].conteudo.includes('agora é um pedido novo'));
     // reanalisar
-    r = await m.orq.reanalisar('00T-SSL1');
-    check('reanalisar limpa o plano e decide de novo', r.ok && m.loja.tarefa('00T-SSL1').plano === null || m.loja.tarefa('00T-SSL1').plano.origem !== 'operador');
+    r = await m.orq.reanalisar('00T-DESC1');
+    check('reanalisar limpa o plano e decide de novo', r.ok && (m.loja.tarefa('00T-DESC1').plano === null || m.loja.tarefa('00T-DESC1').plano.origem !== 'operador'));
     m.limpar();
   }
 
@@ -304,12 +271,18 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     await m.orq.varrer();
     check('segunda varredura tenta de novo', b2.tentativas === 2 && b2.estado === T.FALHOU);
     await m.orq.varrer();
-    check('terceira falha: escalada com pendência', b2.estado === T.ESCALADA && m.loja.pendenciasAbertas().some((p) => p.tarefas.includes('00T-BL2') && /falhou 3 vezes/.test(p.pergunta)));
+    const pEsc = m.loja.pendenciasAbertas().find((p) => p.tarefas.includes('00T-BL2'));
+    check('terceira falha: pendência "para você" com o motivo e "Tentar de novo"; a tarefa fica pendente, sem transição inválida (ADR-161)', !!pEsc && pEsc.tipo === 'humano' && /falhou 3 vezes/.test(pEsc.pergunta) && /Tentar de novo/.test(pEsc.pergunta) && b2.estado === T.PENDENTE && b2.historico.some((h) => h.tipo === 'estado' && h.de === T.ESCALADA && h.para === T.PENDENTE) && !temLog(m.logs, /transição inválida/), JSON.stringify([pEsc && pEsc.tipo, b2.estado]));
+    respostas['bc.com.br'] = { ok: false, aguardando: true, motivo: 'esperando o DNS' };
+    await m.orq.responder(pEsc.id, { acao: 'tentar-de-novo' });
+    check('tentar de novo: zera as tentativas, fecha a pendência e replaneja', b2.tentativas === 0 && m.loja.pendencia(pEsc.id).status === 'fechada' && b2.estado === T.PLANEJADA, b2.estado);
+    await m.orq.varrer();
+    check('na varredura seguinte o agente executa de novo (aqui, responde aguardando)', b2.estado === T.AGUARDANDO_EXTERNO && b2.tentativas === 0, b2.estado);
     // desistir de primeira
     m.fila.tarefas.push(sf('00T-BL3', 'BLOQUEIO DE CONTATOS - bc.com.br', '', { id: '00T-BL3' }));
     respostas['bc.com.br'] = { ok: false, desistir: true, motivo: 'contrato não achado' };
     await m.orq.varrer();
-    check('desistir: escalada de primeira', m.loja.tarefa('00T-BL3').estado === T.ESCALADA && m.loja.tarefa('00T-BL3').tentativas === 1);
+    check('desistir: escalada de primeira, que vira pendência "para você" dizendo que desistiu', m.loja.tarefa('00T-BL3').estado === T.PENDENTE && m.loja.tarefa('00T-BL3').tentativas === 1 && m.loja.pendenciasAbertas().some((p) => p.tarefas.includes('00T-BL3') && p.tipo === 'humano' && /desistiu/.test(p.pergunta)));
     // Agente desligado: espera.
     m.orq.ligar({ agente: 'bloqueador', valor: false });
     m.fila.tarefas.push(sf('00T-BL4', 'BLOQUEIO DE CONTATOS - bc.com.br', '', { id: '00T-BL4' }));
@@ -337,7 +310,7 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     check('agente em standby com o módulo rodando pela mão aparece trabalhando, com o módulo', sa.find((a) => a.id === 'relator').estado === 'trabalhando' && sa.find((a) => a.id === 'relator').atividade === 'Planilha do Relatório' && sa.find((a) => a.id === 'auditor').estado === 'standby');
     check('o snapshot leva os presets do Huginn', sa.find((a) => a.id === 'hospedagem').presets.map((p) => p.id).join() === 'ssl,suspensao');
     const snap = m.orq.snapshot();
-    check('snapshot: agentes com estado, tarefas, pendências, regras, contadores', snap.agentes.length === 8 && snap.agentes.find((a) => a.id === 'relator').estado === 'standby' && snap.agentes.find((a) => a.id === 'bloqueador').estado === 'aguardando' && snap.tarefas.length >= 7 && snap.pendencias.length >= 3 && Array.isArray(snap.regras) && typeof snap.contadores.chamadas === 'number' && snap.ligado.geral === true);
+    check('snapshot: agentes com estado, tarefas, pendências, regras, contadores', snap.agentes.length === 8 && snap.agentes.find((a) => a.id === 'relator').estado === 'standby' && snap.agentes.find((a) => a.id === 'bloqueador').estado === 'aguardando' && snap.tarefas.length >= 7 && snap.pendencias.length >= 3 && snap.regras === undefined && typeof snap.contadores.chamadas === 'number' && snap.ligado.geral === true);
     check('snapshot: tarefa leva plano com validação e o último evento', snap.tarefas.find((x) => x.id === '00T-MPI').plano.validacao.ok === true && snap.tarefas.find((x) => x.id === '00T-MPI').ultimo.tipo === 'estado');
     m.limpar();
   }

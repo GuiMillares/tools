@@ -1,6 +1,7 @@
-// Escritório (ADR-149, ADR-159) — a tela do orquestrador e dos agentes, em
-// HTML puro: o Comando, os cartões dos agentes, as abas de pendências, fila,
-// regras e concluídas, e o histórico de cada tarefa. A tela em 3D de tela
+// Escritório (ADR-149, ADR-159, ADR-161) — a tela do orquestrador e dos
+// agentes, em HTML puro: o Comando, os cartões dos agentes, as abas de
+// pendências, fila e concluídas, e o histórico de cada tarefa. As regras
+// aprendidas (aba e formulários) saíram na ADR-161: o aprendizado é por ADR. A tela em 3D de tela
 // cheia (ADR-153/157) saiu em 15/10/2026 por peso; o Início voltou a ser a
 // abertura e esta tela é a segunda da barra lateral.
 // Carregado por <script> DEPOIS do app.js, como o automacao-ui.js:
@@ -22,11 +23,9 @@
   const logar = (m, t) => { try { if (typeof log === 'function') log(m, t, { arquivo: false }); } catch (e) { console.log('[escritório]', m); } };
   const api = () => window.api || {};
 
-  const CAMPOS = ['assunto', 'descricao', 'fila', 'tipo', 'plataforma', 'dominio', 'temporario', 'marca', 'elegivel', 'dono', 'prioridade', 'relativoTipo'];
-  const OPS = [['igual', '='], ['diferente', '≠'], ['contem', 'contém'], ['naoContem', 'não contém'], ['comeca', 'começa com'], ['termina', 'termina com'], ['regex', 'bate com (regex)'], ['vazio', 'está vazio'], ['naoVazio', 'não está vazio']];
   const ESTADO_AGENTE = { ocioso: ['ocioso', 'neutral'], standby: ['standby', 'neutral'], trabalhando: ['trabalhando', 'run'], aguardando: ['aguardando você', 'warn'], erro: ['com erro', 'err'], desligado: ['desligado', 'off'] };
 
-  const ui = { snap: null, carregando: false, erro: '', aba: 'tudo', historico: null, editando: null, pendenciaAberta: null, timerRefresh: null, ultimaEsperas: '' };
+  const ui = { snap: null, carregando: false, erro: '', aba: 'tudo', historico: null, pendenciaAberta: null, timerRefresh: null, ultimaEsperas: '' };
 
   function hora(iso) {
     if (!iso) return '';
@@ -46,7 +45,7 @@
       const r = await api().escritorioEstado();
       // Só um snapshot inteiro serve: resposta pela metade (um preload antigo,
       // um erro no meio) vira "indisponível", nunca uma tela quebrada.
-      const inteiro = !!(r && r.ok && r.ligado && r.modelo && r.contadores && Array.isArray(r.agentes) && Array.isArray(r.tarefas) && Array.isArray(r.pendencias) && Array.isArray(r.regras));
+      const inteiro = !!(r && r.ok && r.ligado && r.modelo && r.contadores && Array.isArray(r.agentes) && Array.isArray(r.tarefas) && Array.isArray(r.pendencias));
       if (inteiro) { ui.snap = r; ui.erro = ''; } else { ui.snap = null; ui.erro = (r && (r.error || r.erro)) || 'o Escritório não respondeu com o estado completo'; }
     } catch (e) { ui.snap = null; ui.erro = e.message; }
     ui.carregando = false;
@@ -137,14 +136,14 @@
         <div class="esc-switches">
           <label class="esc-switch ${s.ligado.geral ? 'on' : ''}"><input type="checkbox" id="escGeral" ${s.ligado.geral ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Modo automático</b><small>lê a fila a cada 5 min e encaminha sozinho</small></span></label>
           <label class="esc-switch ${s.ligado.observacao ? 'on' : ''}"><input type="checkbox" id="escObs" ${s.ligado.observacao ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Modo observação</b><small>só anota o que faria; nada executa</small></span></label>
-          <label class="esc-switch ${s.modelo.ligado ? 'on' : ''}" title="${s.modelo.temChave ? 'Ligado, o que a triagem não reconhece vai ao Gemini (custa tokens). Desligado, vira pendência e você ensina pela regra.' : 'Sem chave do Gemini gravada: ligar não chama nada. Configure em Configurações › Escritório & IA.'}"><input type="checkbox" id="escModelo" ${s.modelo.ligado ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Perguntar ao Gemini</b><small>${s.modelo.ligado ? (s.modelo.temChave ? 'o que a triagem não reconhece vai ao modelo' : 'ligado, mas sem chave: não chama') : 'desligado: sem custo; o desconhecido vira pendência'}</small></span></label>
+          <label class="esc-switch ${s.modelo.ligado ? 'on' : ''}" title="${s.modelo.temChave ? 'Ligado, o que a triagem não reconhece vai ao Gemini (custa tokens). Desligado, vira pendência para você.' : 'Sem chave do Gemini gravada: ligar não chama nada. Configure em Configurações › Escritório & IA.'}"><input type="checkbox" id="escModelo" ${s.modelo.ligado ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Perguntar ao Gemini</b><small>${s.modelo.ligado ? (s.modelo.temChave ? 'o que a triagem não reconhece vai ao modelo' : 'ligado, mas sem chave: não chama') : 'desligado: sem custo; o desconhecido vira pendência'}</small></span></label>
           <div class="esc-stat"><b>${s.contadores.chamadas}</b><small>chamadas ao modelo hoje</small></div>
           <div class="esc-stat"><b>${fmtK(s.contadores.tokensEntrada + s.contadores.tokensSaida + s.contadores.tokensPensamento)}</b><small>tokens hoje</small></div>
           <div class="esc-stat"><b>${abertas.length}</b><small>tarefa(s) em aberto</small></div>
-          <div class="esc-stat"><b>${s.regras.filter((r) => r.ativa !== false).length}</b><small>regra(s) ativa(s)</small></div>
+          <div class="esc-stat"><b>${s.tarefas.filter((t) => t.estado === 'aguardando_externo').length}</b><small>aguardando externo (DNS)</small></div>
         </div>
         ${linhaEsperas()}
-        ${!s.modelo.configurado ? '<p class="hint mt8">Sem modelo: tarefa que a triagem não reconhece vira pendência, e você decide uma vez (Ignorar sempre, Avisar sempre, Encaminhar sempre). Os agentes não usam modelo nunca.</p>' : ''}
+        ${!s.modelo.configurado ? '<p class="hint mt8">Sem modelo: tarefa que a triagem não reconhece vira pendência para você (encaminhar, tratar ou ignorar). Para ela entrar sozinha da próxima vez, a regra vai para a ADR e para o código de triagem. Os agentes não usam modelo nunca.</p>' : ''}
       </div>
 
       <div class="home-sec-title anim-in">Agentes <span class="r">${s.agentes.filter((a) => a.modo === 'auto').length} automáticos · ${s.agentes.filter((a) => a.modo === 'standby').length} em standby</span></div>
@@ -152,9 +151,9 @@
       ${htmlResumo(s)}
 
       <div class="esc-tabs anim-in">
-        ${[['tudo', `Pendências <span class="n">${pendAbertas.length}</span>`], ['fila', `Fila de tarefas <span class="n">${abertas.length}</span>`], ['regras', `Regras aprendidas <span class="n">${s.regras.length}</span>`], ['historico', 'Concluídas e ignoradas']].map(([id, nome]) => `<button class="esc-tab ${ui.aba === id ? 'active' : ''}" data-aba="${id}">${nome}</button>`).join('')}
+        ${[['tudo', `Pendências <span class="n">${pendAbertas.length}</span>`], ['fila', `Fila de tarefas <span class="n">${abertas.length}</span>`], ['historico', 'Concluídas e ignoradas']].map(([id, nome]) => `<button class="esc-tab ${ui.aba === id ? 'active' : ''}" data-aba="${id}">${nome}</button>`).join('')}
       </div>
-      <div id="escCorpo" class="anim-in">${ui.aba === 'tudo' ? htmlPendencias(pendAbertas) : ui.aba === 'fila' ? htmlFila(abertas) : ui.aba === 'regras' ? htmlRegras(s.regras) : htmlFila(s.tarefas.filter((t) => ['concluida', 'ignorada'].includes(t.estado)), true)}</div>
+      <div id="escCorpo" class="anim-in">${ui.aba === 'tudo' ? htmlPendencias(pendAbertas) : ui.aba === 'fila' ? htmlFila(abertas) : htmlFila(s.tarefas.filter((t) => ['concluida', 'ignorada'].includes(t.estado)), true)}</div>
       ${ui.historico ? htmlHistorico(ui.historico) : ''}
     `;
     ligarEventos(painel);
@@ -162,7 +161,7 @@
   const fmtK = (n) => (n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n || 0));
   // "Thor · Publicador MPI+ · Publicar MPI+ / Publicação em Massa", para os seletores.
   const rotuloAg = (a) => `${a.nome}${a.papel ? ' · ' + a.papel : ''}${a.modulosNomes ? ' · ' + a.modulosNomes : ''}`;
-  // As opções do "Encaminhar sempre": um agente, ou um agente com um preset
+  // As opções do "Encaminhar": um agente, ou um agente com um preset
   // (Huginn · Ativação de SSL / Huginn · Suspensão). Valor "agente|preset".
   function opcoesEncaminhar(agentes, selecionado) {
     const out = [];
@@ -225,89 +224,29 @@
       const tarefas = p.tarefas.map((id) => s.tarefas.find((t) => t.id === id)).filter(Boolean);
       const aberta = ui.pendenciaAberta === p.id;
       const agentesAuto = s.agentes.filter((a) => a.modo === 'auto');
-      return `<div class="sec esc-pend tipo-${esc(p.tipo)} ${p.status === 'respondida' ? 'respondida' : ''}" data-pend="${esc(p.id)}">
-        <div class="sec-head"><span class="sec-title">${esc(p.id)} · ${p.tipo === 'retomar' ? 'retomar?' : p.tipo === 'sugestao' ? 'sugestão' : p.tipo === 'humano' ? 'para você' : p.status === 'respondida' ? 'proposta de regra' : 'pergunta'}</span><span class="sec-meta">${hora(p.criadaEm)} · ${tarefas.length} tarefa(s)${p.agente ? ' · ' + esc((s.agentes.find((a) => a.id === p.agente) || { nome: p.agente }).nome) : ''}${p.contexto && p.contexto.categoria ? ' · ' + esc(p.contexto.categoria) : ''}</span></div>
+      const encaminhar = (sel) => `<span class="esc-encaminhar"><select data-agente-sel>${opcoesEncaminhar(agentesAuto, sel)}</select><button class="btn compact ghost" data-acao="encaminhar" title="Manda estas tarefas para o agente escolhido (só estas; para o tipo entrar sozinho, a regra vai para a ADR)">Encaminhar</button></span>`;
+      return `<div class="sec esc-pend tipo-${esc(p.tipo)}" data-pend="${esc(p.id)}">
+        <div class="sec-head"><span class="sec-title">${esc(p.id)} · ${p.tipo === 'retomar' ? 'retomar?' : p.tipo === 'sugestao' ? 'sugestão' : p.tipo === 'humano' ? 'para você' : 'pergunta'}</span><span class="sec-meta">${hora(p.criadaEm)} · ${tarefas.length} tarefa(s)${p.agente ? ' · ' + esc((s.agentes.find((a) => a.id === p.agente) || { nome: p.agente }).nome) : ''}${p.contexto && p.contexto.categoria ? ' · ' + esc(p.contexto.categoria) : ''}</span></div>
         <p class="esc-pergunta">${esc(p.pergunta)}</p>
         <div class="esc-pend-tarefas">${tarefas.slice(0, 8).map((t) => `<div class="esc-pend-tarefa" title="${esc(t.id)}"><span class="esc-chip">${esc(t.assunto)}</span>${t.leitura ? `<span class="esc-leitura">${esc(t.leitura)}</span>` : ''}${t.link ? `<button class="text-btn" data-link="${esc(t.link)}">abrir</button>` : ''}</div>`).join('')}${tarefas.length > 8 ? `<span class="dim">+${tarefas.length - 8}</span>` : ''}</div>
-        ${p.status === 'respondida' ? htmlProposta(p) : `
         <div class="esc-pend-acoes">
           ${p.tipo === 'retomar' ? `<button class="btn compact primary" data-acao="retomar">Retomar</button><button class="btn compact ghost" data-acao="descartar">Descartar</button>` : ''}
           ${p.tipo === 'sugestao' ? `<button class="btn compact primary" data-acao="tratada">Marcar como tratada</button><button class="btn compact ghost" data-acao="ignorar-estas">Ignorar estas</button>` : ''}
           ${p.tipo === 'humano' ? `
             <button class="btn compact primary" data-acao="tratada" title="Você fez à mão: conclui as tarefas e fecha">Marcar como tratada</button>
-            <input type="text" class="esc-resposta" placeholder="Ou diga o que fazer com pedidos assim (o modelo propõe a regra)" data-texto>
-            <button class="btn compact ghost" data-acao="texto">Responder</button>
-            ${!p.regraId ? '<button class="btn compact ghost" data-acao="avisar-sempre" title="Propõe uma regra: pedidos assim sempre vêm para você, sem passar pelo modelo">Avisar sempre</button>' : ''}
-            <span class="esc-encaminhar"><select data-agente-sel>${opcoesEncaminhar(agentesAuto, '')}</select>
-            <button class="btn compact ghost" data-acao="encaminhar" title="Propõe uma regra para encaminhar sempre">Encaminhar sempre</button>
-            <button class="btn compact ghost" data-acao="so-desta-vez" title="Encaminha só estas, sem regra">Só desta vez</button></span>
-            <button class="btn compact ghost" data-acao="ignorar-estas" title="Só estas tarefas">Ignorar estas</button>` : ''}
-          ${p.tipo === 'pergunta' ? `
-            <input type="text" class="esc-resposta" placeholder="Responda em texto (o modelo propõe a regra) ou use os botões" data-texto>
-            <button class="btn compact primary" data-acao="texto">Responder</button>
+            <button class="btn compact ghost" data-acao="tentar-de-novo" title="A causa foi resolvida: zera as tentativas e o agente tenta de novo">Tentar de novo</button>
+            ${encaminhar(p.agente || '')}
             <button class="btn compact ghost" data-acao="ignorar-estas" title="Só estas tarefas">Ignorar estas</button>
-            <button class="btn compact ghost" data-acao="ignorar-sempre" title="Propõe uma regra para ignorar sempre tarefas assim">Ignorar sempre</button>
-            <button class="btn compact ghost" data-acao="avisar-sempre" title="Propõe uma regra: pedidos assim sempre vêm para você, sem passar pelo modelo">Avisar sempre</button>
-            <span class="esc-encaminhar"><select data-agente-sel>${opcoesEncaminhar(agentesAuto, p.agente || '')}</select>
-            <button class="btn compact ghost" data-acao="encaminhar" title="Propõe uma regra para encaminhar sempre">Encaminhar sempre</button>
-            <button class="btn compact ghost" data-acao="so-desta-vez" title="Encaminha só estas, sem regra">Só desta vez</button></span>
             <button class="btn compact ghost" data-acao="descartar" title="Fecha a pendência e ignora as tarefas">Descartar</button>` : ''}
-        </div>`}
+          ${p.tipo === 'pergunta' ? `
+            ${encaminhar(p.agente || '')}
+            <button class="btn compact ghost" data-acao="tratada" title="Você fez à mão: conclui as tarefas e fecha">Marcar como tratada</button>
+            <button class="btn compact ghost" data-acao="ignorar-estas" title="Só estas tarefas">Ignorar estas</button>
+            <button class="btn compact ghost" data-acao="descartar" title="Fecha a pendência e ignora as tarefas">Descartar</button>` : ''}
+        </div>
+        ${p.tipo === 'pergunta' ? '<p class="hint esc-aprender">Para tarefas assim entrarem sozinhas, diga a regra ao Claude: ela vira código de triagem, com a decisão na ADR (ADR-161).</p>' : ''}
       </div>`;
     }).join('');
-  }
-
-  function htmlProposta(p) {
-    const prop = p.proposta || {};
-    const regra = ui.editando && ui.editando.pendenciaId === p.id ? ui.editando.regra : (prop.regra || { quando: [{ campo: 'assunto', op: 'comeca', valor: (p.contexto && p.contexto.assuntoExemplo) || '' }], entao: { acao: 'encaminhar', agente: p.agente || '', parametros: {} }, descricao: '' });
-    return `<div class="esc-proposta">
-      <div class="esc-proposta-head">${prop.regra ? `<b>Regra proposta</b> ${prop.justificativa ? '<span class="dim">· ' + esc(prop.justificativa) + '</span>' : ''}` : `<b>Monte a regra</b> <span class="dim">· ${esc((prop.erros || []).join('; ') || 'o modelo não propôs')}</span>`}</div>
-      ${formRegra(regra, 'pend-' + p.id)}
-      <div class="esc-pend-acoes">
-        <button class="btn compact primary" data-acao="aprovar-regra">Aprovar e gravar a regra</button>
-        <button class="btn compact ghost" data-acao="descartar-proposta">Descartar proposta</button>
-        <button class="btn compact ghost" data-acao="descartar">Fechar e ignorar as tarefas</button>
-      </div>
-    </div>`;
-  }
-
-  // O formulário de regra: condições (campo, operador, valor), ação, agente,
-  // parâmetros fixos (chave=valor por linha) e descrição.
-  function formRegra(r, idBase) {
-    const s = ui.snap;
-    const conds = Array.isArray(r.quando) && r.quando.length ? r.quando : [{ campo: 'assunto', op: 'contem', valor: '' }];
-    const entao = r.entao || {};
-    const params = Object.entries(entao.parametros || {}).map(([k, v]) => `${k}=${v}`).join('\n');
-    return `<div class="esc-regra-form" data-form="${esc(idBase)}" ${r.id ? `data-regra-id="${esc(r.id)}"` : ''}>
-      <div class="esc-conds">${conds.map((c, i) => linhaCond(c, i)).join('')}</div>
-      <button class="text-btn" data-add-cond>+ condição</button>
-      <div class="esc-regra-entao">
-        <label>então <select data-acao-sel>${[['encaminhar', 'encaminhar para'], ['avisar', 'avisar você (o Hub não faz)'], ['ignorar', 'ignorar']].map(([v, n]) => `<option value="${v}" ${entao.acao === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-        <select data-agente-regra ${entao.acao !== 'encaminhar' ? 'disabled' : ''}>${s.agentes.map((a) => `<option value="${esc(a.id)}" ${entao.agente === a.id ? 'selected' : ''}>${esc(rotuloAg(a))}${a.modo === 'standby' ? ' (standby: vira sugestão)' : ''}</option>`).join('')}</select>
-      </div>
-      <div class="grid-2">
-        <label class="field"><span>Parâmetros fixos (chave=valor, um por linha; o resto vem da tarefa)</span><textarea rows="2" data-params>${esc(params)}</textarea></label>
-        <label class="field"><span>Descrição (uma linha; em branco, o Hub escreve)</span><input type="text" data-descricao value="${esc(r.descricao || '')}"></label>
-      </div>
-    </div>`;
-  }
-  function linhaCond(c, i) {
-    return `<div class="esc-cond" data-cond="${i}">
-      <select data-campo>${CAMPOS.map((k) => `<option value="${k}" ${c.campo === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
-      <select data-op>${OPS.map(([v, n]) => `<option value="${v}" ${c.op === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
-      <input type="text" data-valor value="${esc(c.valor || '')}" placeholder="valor" ${['vazio', 'naoVazio'].includes(c.op) ? 'disabled' : ''}>
-      <button class="text-btn danger" data-del-cond title="Tirar esta condição">×</button>
-    </div>`;
-  }
-  function lerFormRegra(form) {
-    const quando = [...form.querySelectorAll('[data-cond]')].map((l) => ({ campo: l.querySelector('[data-campo]').value, op: l.querySelector('[data-op]').value, valor: l.querySelector('[data-valor]').value }));
-    const acao = form.querySelector('[data-acao-sel]').value;
-    const parametros = {};
-    for (const linha of form.querySelector('[data-params]').value.split(/\r?\n/)) {
-      const m = linha.match(/^\s*([^=\s]+)\s*=\s*(.*?)\s*$/);
-      if (m) parametros[m[1]] = m[2];
-    }
-    return { id: form.dataset.regraId || null, quando, entao: { acao, agente: acao !== 'encaminhar' ? '' : form.querySelector('[data-agente-regra]').value, parametros }, descricao: form.querySelector('[data-descricao]').value.trim() };
   }
 
   function htmlFila(lista, fechadas = false) {
@@ -325,20 +264,6 @@
           ${!['executando', 'concluida'].includes(t.estado) ? `<button class="text-btn" data-reanalisar="${esc(t.id)}">reanalisar</button>` : ''}
           ${t.link ? `<button class="text-btn" data-link="${esc(t.link)}">abrir</button>` : ''}
         </td>
-      </tr>`).join('')}
-    </tbody></table></div>`;
-  }
-
-  function htmlRegras(regras) {
-    const form = ui.editando && !ui.editando.pendenciaId ? `<div class="sec"><div class="sec-head"><span class="sec-title">${ui.editando.regra.id ? 'Editar regra' : 'Nova regra'}</span></div>${formRegra(ui.editando.regra, 'regra')}<div class="esc-pend-acoes"><button class="btn compact primary" data-acao="salvar-regra">Salvar</button><button class="btn compact ghost" data-acao="cancelar-regra">Cancelar</button></div></div>` : `<div class="esc-pend-acoes"><button class="btn compact ghost" data-acao="nova-regra">+ Nova regra</button></div>`;
-    if (!regras.length) return form + '<div class="empty-state"><p><strong>Nenhuma regra aprendida.</strong> Elas nascem das pendências que você responde.</p></div>';
-    return form + `<div class="table-wrap"><table class="table esc-tabela"><thead><tr><th>Regra</th><th>Ativa</th><th>Usos</th><th>Origem</th><th></th></tr></thead><tbody>
-      ${regras.map((r) => `<tr class="${r.ativa === false ? 'inativa' : ''}" data-regra="${esc(r.id)}">
-        <td title="${esc(r.id)}"><span class="esc-assunto">${esc(r.descricao)}</span></td>
-        <td><label class="esc-mini-switch"><input type="checkbox" data-regra-toggle="${esc(r.id)}" ${r.ativa !== false ? 'checked' : ''}><span></span></label></td>
-        <td>${r.usos || 0}</td>
-        <td class="faint">${esc(r.origem || '')}${r.criadaEm ? ' · ' + hora(r.criadaEm) : ''}</td>
-        <td class="esc-tarefa-acoes"><button class="text-btn" data-editar-regra="${esc(r.id)}">editar</button><button class="text-btn danger" data-apagar-regra="${esc(r.id)}">apagar</button></td>
       </tr>`).join('')}
     </tbody></table></div>`;
   }
@@ -394,37 +319,14 @@
     painel.querySelectorAll('[data-reanalisar]').forEach((b) => b.addEventListener('click', () => chamar('escritorioReanalisar', { id: b.dataset.reanalisar })));
     painel.querySelectorAll('[data-confirmar]').forEach((b) => b.addEventListener('click', () => chamar('escritorioConfirmar', { id: b.dataset.confirmar })));
     painel.querySelectorAll('[data-link]').forEach((b) => b.addEventListener('click', () => { if (api().abrirLink) api().abrirLink({ url: b.dataset.link }); }));
-    painel.querySelectorAll('[data-regra-toggle]').forEach((c) => c.addEventListener('change', (e) => { const r = ui.snap.regras.find((x) => x.id === c.dataset.regraToggle); if (r) chamar('escritorioRegraSalvar', { regra: { ...r, ativa: e.target.checked } }); }));
-    painel.querySelectorAll('[data-editar-regra]').forEach((b) => b.addEventListener('click', () => { const r = ui.snap.regras.find((x) => x.id === b.dataset.editarRegra); if (r) { ui.editando = { regra: JSON.parse(JSON.stringify(r)) }; desenhar(); } }));
-    painel.querySelectorAll('[data-apagar-regra]').forEach((b) => b.addEventListener('click', () => { if (confirm('Apagar esta regra?')) chamar('escritorioRegraApagar', { id: b.dataset.apagarRegra }); }));
-
-    // Formulários de regra (nas pendências e na aba de regras): condições.
-    painel.querySelectorAll('[data-form]').forEach((form) => {
-      form.querySelector('[data-add-cond]')?.addEventListener('click', () => { const r = lerFormRegra(form); r.quando.push({ campo: 'assunto', op: 'contem', valor: '' }); guardarEdicao(form, r); desenhar(); });
-      form.querySelectorAll('[data-del-cond]').forEach((b) => b.addEventListener('click', () => { const r = lerFormRegra(form); const i = Number(b.closest('[data-cond]').dataset.cond); r.quando.splice(i, 1); guardarEdicao(form, r); desenhar(); }));
-      form.querySelector('[data-acao-sel]')?.addEventListener('change', () => { const r = lerFormRegra(form); guardarEdicao(form, r); desenhar(); });
-      form.querySelectorAll('[data-op]').forEach((sel) => sel.addEventListener('change', () => { const r = lerFormRegra(form); guardarEdicao(form, r); desenhar(); }));
-    });
-
     painel.querySelectorAll('[data-acao]').forEach((b) => b.addEventListener('click', async () => {
       const acao = b.dataset.acao;
       const pendEl = b.closest('[data-pend]');
       const id = pendEl ? pendEl.dataset.pend : null;
-      if (acao === 'nova-regra') { ui.editando = { regra: { quando: [{ campo: 'assunto', op: 'contem', valor: '' }], entao: { acao: 'encaminhar', agente: ui.snap.agentes[0].id, parametros: {} }, descricao: '' } }; desenhar(); return; }
-      if (acao === 'cancelar-regra') { ui.editando = null; desenhar(); return; }
-      if (acao === 'salvar-regra') { const form = painel.querySelector('[data-form="regra"]'); const r = await chamar('escritorioRegraSalvar', { regra: lerFormRegra(form) }); if (r.ok) ui.editando = null; else guardarEdicao(form, lerFormRegra(form)); desenhar(); return; }
       if (!id) return;
-      if (acao === 'texto') { const texto = pendEl.querySelector('[data-texto]').value.trim(); if (!texto) { logar('Escreva a resposta antes de enviar.', 'warn'); return; } b.disabled = true; b.textContent = 'enviando…'; await chamar('escritorioResponder', { id, resposta: { acao: 'texto', texto } }); return; }
-      if (['ignorar-estas', 'ignorar-sempre', 'avisar-sempre', 'tratada', 'retomar', 'descartar'].includes(acao)) { await chamar('escritorioResponder', { id, resposta: { acao } }); return; }
-      if (acao === 'encaminhar') { const e = lerEncaminhar(pendEl.querySelector('[data-agente-sel]'), ui.snap.agentes); await chamar('escritorioResponder', { id, resposta: { acao: 'encaminhar', agente: e.agente, parametros: e.parametros } }); return; }
-      if (acao === 'so-desta-vez') { const e = lerEncaminhar(pendEl.querySelector('[data-agente-sel]'), ui.snap.agentes); await chamar('escritorioAplicarSemRegra', { id, agente: e.agente, parametros: e.parametros }); return; }
-      if (acao === 'aprovar-regra') { const form = pendEl.querySelector('[data-form]'); const regra = lerFormRegra(form); const r = await chamar('escritorioAprovarRegra', { id, regra }); if (!r.ok) { guardarEdicao(form, regra, id); desenhar(); } else ui.editando = null; return; }
-      if (acao === 'descartar-proposta') { ui.editando = null; await chamar('escritorioResponder', { id, resposta: { acao: 'descartar' } }); return; }
+      if (['ignorar-estas', 'tratada', 'retomar', 'descartar', 'tentar-de-novo'].includes(acao)) { b.disabled = true; await chamar('escritorioResponder', { id, resposta: { acao } }); return; }
+      if (acao === 'encaminhar') { const e = lerEncaminhar(pendEl.querySelector('[data-agente-sel]'), ui.snap.agentes); b.disabled = true; await chamar('escritorioEncaminhar', { id, agente: e.agente, parametros: e.parametros }); return; }
     }));
-  }
-  function guardarEdicao(form, regra, pendenciaId) {
-    const pend = form.closest('[data-pend]');
-    ui.editando = { regra, pendenciaId: pendenciaId || (pend ? pend.dataset.pend : null) };
   }
 
   // ---------- início ----------
@@ -467,5 +369,5 @@
     api().escritorioAtividade({ agente, ligado: !!ligado, detalhe: detalhe || '' }).catch(() => {});
   };
 
-  window.hubEscritorio = { ui, carregar, desenhar, abrir, lerFormRegra, atenderPonte };
+  window.hubEscritorio = { ui, carregar, desenhar, abrir, atenderPonte };
 })();

@@ -2604,6 +2604,10 @@ ipcMain.handle('publicacao:clearEmpresa', (event, { empresa, campos }) => {
 const DNS_HOSTS_COMUNS = [
   'www', 'mail', 'webmail', 'smtp', 'pop', 'pop3', 'imap', 'ftp', 'cpanel', 'webdisk',
   'autodiscover', 'autoconfig', 'painel', 'blog', 'loja', 'app', 'api', 'cdn', 'intranet', 'sistema',
+  // Hosts que a Cloudflare não consegue proxiar ou que costumam ficar fora
+  // do proxy: é por eles que o IP real do servidor aparece (ADR-163).
+  'whm', 'direct', 'direct-connect', 'origin', 'server', 'srv', 'host', 'mx', 'mx1', 'mx2', 'email', 'correio',
+  'admin', 'portal', 'vpn', 'remote', 'dev', 'staging', 'old', 'web', 'ns1', 'ns2',
 ];
 const DNS_TXT_COMUNS = ['_dmarc', 'default._domainkey', 'mail._domainkey', 'google._domainkey', 'selector1._domainkey', 'selector2._domainkey', 'k1._domainkey'];
 const DNS_SRV_COMUNS = ['_autodiscover._tcp', '_sip._tls', '_sipfederationtls._tcp'];
@@ -2670,8 +2674,12 @@ async function fotografarDns(dominio, hostsExtras = [], push = () => {}) {
     if (tag) registros.push({ type: 'CAA', name: dominio, content: `${c.critical || 0} ${tag} "${c[tag]}"` });
   }
 
+  // O alvo do MX dentro da zona (mail.cliente.com.br, mx.cliente.com.br…)
+  // entra na foto mesmo fora da lista: é o host de e-mail de verdade, e a
+  // Cloudflare não proxia e-mail, então o A dele é o IP real (ADR-163).
+  const mxDentro = (mx || []).map((x) => String(x.exchange || '').toLowerCase().replace(/\.$/, '')).filter((x) => x.endsWith('.' + dominio)).map((x) => x.slice(0, -(dominio.length + 1)));
   // Hosts, TXT de e-mail (DKIM, DMARC) e SRV: três listas, uma passada só.
-  const hosts = [...new Set([...DNS_HOSTS_COMUNS, ...hostsExtras.map((h) => String(h || '').trim().toLowerCase().replace(new RegExp(`\\.${dominio.replace(/\./g, '\\.')}$`), '')).filter(Boolean)])];
+  const hosts = [...new Set([...DNS_HOSTS_COMUNS, ...mxDentro, ...hostsExtras.map((h) => String(h || '').trim().toLowerCase().replace(new RegExp(`\\.${dominio.replace(/\./g, '\\.')}$`), '')).filter(Boolean)])];
   await Promise.all([
     mapLimit(hosts, 10, (h) => addA(`${h}.${dominio}`)),
     mapLimit(DNS_TXT_COMUNS, 6, async (h) => {
@@ -5145,7 +5153,7 @@ ipcMain.handle('registrobr:trocarNs', async (event, { empresa, dominio: bruto, n
       const d = r.json;
       return {
         ok: true, status: d.Status, canEditDNS: !!d.CanEditDNS, hosts: (d.Hosts || []).map(h => h.Hostname), dsSet: d.DSSet || d.dss || [],
-        contato: { adm: d.AdmHandle, tec: d.TecHandle }, freeDNS: d.FreeDNSStatus,
+        contato: { adm: d.AdmHandle, tec: d.TecHandle }, freeDNS: d.FreeDNSStatus, chaves: Object.keys(d),
         // Saindo do DNS do próprio Registro.br, a troca fica "em transição" por
         // até 2h: Hosts continua com os antigos, FreednsHosts guarda os novos,
         // CanEditDNS vira false até publicar (ADR-080).
@@ -5170,6 +5178,15 @@ ipcMain.handle('registrobr:trocarNs', async (event, { empresa, dominio: bruto, n
     }
     if (!antes.canEditDNS) {
       const handle = String((readPublicacaoConfig().registrobrHandles || {})[empresa] || '').toUpperCase();
+      // Domínio recém-registrado (status "Novo"): o Registro.br está publicando
+      // o registro e não aceita troca de DNS até terminar. Não é erro, é
+      // espera: quem chamou (o vigia da lista de espera) tenta de novo depois
+      // (ADR-162).
+      if (/^novo$/i.test(String(antes.status || '')) && antes.contato && String(antes.contato.tec || '').toUpperCase() === handle) {
+        push(`${dominio} é novo no Registro.br (status Novo, ainda em publicação): ele não deixa trocar o DNS até publicar. Tento de novo mais tarde.`, 'warn');
+        return { ok: false, dominioNovo: true, error: `o domínio é novo no Registro.br (status Novo, ainda em publicação) e ele não deixa trocar o DNS até publicar`, log, antes: antes.hosts };
+      }
+      push(`Registro.br respondeu: status ${antes.status}, FreeDNSStatus ${antes.freeDNS || '?'}, transição ${antes.transicao ? 'sim' : 'não'}; campos: ${(antes.chaves || []).join(', ')}`, 'info');
       throw new Error(`a conta de ${brandName(empresa)} (${handle}) não pode alterar o DNS de ${dominio}: o Registro.br respondeu CanEditDNS=false. Contatos do domínio: técnico ${antes.contato.tec}, administrativo ${antes.contato.adm}.`);
     }
     if (antes.freeDNS && antes.freeDNS !== 'not-using') {
@@ -9889,7 +9906,7 @@ ipcMain.handle('ia:setConfig', (event, { config, apiKey } = {}) => {
 });
 
 // Liga ou desliga o modelo (ADR-152): desligado, nenhuma chamada sai; a
-// tarefa desconhecida vira pendência e você ensina pela regra.
+// tarefa desconhecida vira pendência; o aprendizado é por ADR (ADR-161).
 ipcMain.handle('ia:usarModelo', (event, { ligar } = {}) => {
   try {
     const cfg = EscritorioIa.normalizarConfig({ ...readIaConfig(), usarModelo: !!ligar });
@@ -9933,10 +9950,7 @@ ipcMain.handle('escritorio:estado', comOrquestrador(() => ({ ok: true, ...escrit
 ipcMain.handle('escritorio:ligar', comOrquestrador((p) => { const r = escritorio.orq.ligar(p); revisarTimerEscritorio(); return r; }));
 ipcMain.handle('escritorio:rodar', comOrquestrador(() => escritorioVarrer(true)));
 ipcMain.handle('escritorio:responder', comOrquestrador(({ id, resposta }) => escritorio.orq.responder(id, resposta || {})));
-ipcMain.handle('escritorio:aprovarRegra', comOrquestrador(({ id, regra }) => escritorio.orq.aprovarRegra(id, regra)));
-ipcMain.handle('escritorio:aplicarSemRegra', comOrquestrador(({ id, agente, parametros }) => escritorio.orq.aplicarSemRegra(id, { agente, parametros })));
-ipcMain.handle('escritorio:regraSalvar', comOrquestrador(({ regra }) => escritorio.orq.salvarRegra(regra)));
-ipcMain.handle('escritorio:regraApagar', comOrquestrador(({ id }) => escritorio.orq.apagarRegra(id)));
+ipcMain.handle('escritorio:encaminhar', comOrquestrador(({ id, agente, parametros }) => escritorio.orq.encaminhar(id, { agente, parametros })));
 ipcMain.handle('escritorio:reanalisar', comOrquestrador(({ id }) => escritorio.orq.reanalisar(id)));
 ipcMain.handle('escritorio:confirmar', comOrquestrador(async ({ id }) => { await atualizarCredenciaisDoEscritorio(); return escritorio.orq.confirmar(id); }));
 ipcMain.handle('escritorio:tarefa', comOrquestrador(({ id }) => escritorio.orq.historico(id)));

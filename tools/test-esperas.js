@@ -13,7 +13,7 @@ const recorta = (fonte, a, b) => { const i = fonte.indexOf(a); const f = fonte.i
 let falhas = 0;
 const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falhas++; console.log(`  FALHOU  ${n}${d ? ` (${d})` : ''}`); } };
 
-function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = () => ({ ok: true }), tarefa = () => ({ ok: true, comentado: { pessoa: 'Julia Rocha' }, log: [] }), pubInicial = null } = {}) {
+function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = () => ({ ok: true }), tarefa = () => ({ ok: true, comentado: { pessoa: 'Julia Rocha' }, log: [] }), pubInicial = null, trocarNs = async () => ({ ok: true, log: [] }) } = {}) {
   const ordem = [];
   const guardado = {};
   const corpo = `
@@ -30,9 +30,11 @@ function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = (
     const conferidos = [];
     const conferirApontamentoDeProducao = async (d, ip) => { conferidos.push({ d, ip }); return apontamentos[d] || { pronto: false, motivo: 'ainda não resolve' }; };
     const verificarScERelatorio = async () => { ordem.push('sc'); return sc(); };
+    const logTudo = (res) => { if (res && res.log) for (const x of res.log) log(x.message, x.type); };
     const window = { api: {
       publicarPainel: async (o) => { ordem.push('ssl:' + o.dominio); return ssl(o); },
       salesforceFecharTarefa: async (o) => { ordem.push('tarefa:' + o.link); return tarefa(o); },
+      registrobrTrocarNs: async (o) => { ordem.push('ns:' + o.dominio); return trocarNs(o); },
     } };
     ${recorta(app, '// ----- Sites esperando a propagação (ADR-103) -----', '// A espera adiada: até o fim')}
     return {
@@ -40,7 +42,7 @@ function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = (
       ESPERA_CLIENTE_PASSO_MS,
       get esperas() { return esperas; }, set esperas(v) { esperas = v; }, get pub() { return pub; },
     };`;
-  const M = new Function('apontamentos', 'ssl', 'sc', 'tarefa', 'ordem', 'guardado', 'pubInicial', corpo)(apontamentos, ssl, sc, tarefa, ordem, guardado, pubInicial);
+  const M = new Function('apontamentos', 'ssl', 'sc', 'tarefa', 'ordem', 'guardado', 'pubInicial', 'trocarNs', corpo)(apontamentos, ssl, sc, tarefa, ordem, guardado, pubInicial, trocarNs);
   return { M, ordem, guardado };
 }
 
@@ -119,7 +121,7 @@ function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = (
     await M.vigiarEsperas({ agora: true });
   }
 
-  console.log('\n=== DNS do cliente: aguardando sem prazo, conferido a cada 30 min (ADR-142) ===');
+  console.log('\n=== DNS do cliente: aguardando sem prazo, conferido de hora em hora (ADR-142, ADR-162) ===');
   {
     const MIN = 60 * 1000;
     // O caso de 05/10: wveletrica.com.br publicado no .60, DNS do cliente ainda
@@ -134,23 +136,23 @@ function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = (
     M.pubMandarParaEspera({ cliente: true });
     const e = M.esperas[0];
     check('entrou como aguardando o cliente, com o IP de produção e o que falta', e && e.cliente === true && e.ip === '149.18.102.60' && e.falta.join(' | ') === 'o SSL de produção | o Search Console e o relatório do painel | fechar a tarefa do Salesforce', JSON.stringify(e));
-    check('a primeira conferência fica para daqui a 30 min (não há previsão do Registro.br)', e.ate >= antes + M.ESPERA_CLIENTE_PASSO_MS - 1000 && e.ate <= Date.now() + M.ESPERA_CLIENTE_PASSO_MS, String(e.ate - antes));
+    check('a primeira conferência fica para daqui a 1 h (não há previsão do Registro.br)', e.ate >= antes + M.ESPERA_CLIENTE_PASSO_MS - 1000 && e.ate <= Date.now() + M.ESPERA_CLIENTE_PASSO_MS, String(e.ate - antes));
     check('o detalhe é o motivo do SSL pendente', /ainda aponta para 149\.18\.102\.39/.test(e.detalhe), e.detalhe);
-    check('o log diz que o DNS é do cliente, o IP e a cadência, e que pode publicar outro', M.logs.some((l) => /wveletrica\.com\.br foi para a lista de espera: o DNS é do cliente e ainda aponta para 149\.18\.102\.39.*precisa apontar para 149\.18\.102\.60.*confiro a cada 30 min.*Pode publicar outro site/.test(l.m)), M.logs.map((l) => l.m).join(' | '));
+    check('o log diz que o DNS é do cliente, o IP e a cadência, e que pode publicar outro', M.logs.some((l) => /wveletrica\.com\.br foi para a lista de espera: o DNS é do cliente e ainda aponta para 149\.18\.102\.39.*precisa apontar para 149\.18\.102\.60.*confiro de hora em hora.*Pode publicar outro site/.test(l.m)), M.logs.map((l) => l.m).join(' | '));
     check('a tela ficou livre (mesma empresa)', M.pub.dominio === '' && M.pub.empresa === 'mpisolutions');
     check('guardou sem segredo', /wveletrica/.test(JSON.stringify(guardado)) && !/SEGREDO/.test(JSON.stringify(guardado)));
     // Encerra o vigia que o pubMandarParaEspera acordou (ele dorme até o ate).
     e.status = 'concluido'; await M.vigiarEsperas({ agora: true }); e.status = 'esperando';
 
     // O vigia confere com o IP do site e, não apontando, só remarca para
-    // daqui a 30 min — nunca "falhou", por mais tempo que passe.
+    // daqui a 1 h — nunca "falhou", por mais tempo que passe.
     e.ate = Date.now() - 3 * 24 * 60 * MIN; // três dias atrasado
     const t0 = Date.now();
     await M.vigiarUma(e);
     check('confere o apontamento com o IP que o site recebeu', M.conferidos.some((c) => c.d === 'wveletrica.com.br' && c.ip === '149.18.102.60'), JSON.stringify(M.conferidos));
     check('não aponta: continua esperando (não vira "falta algo"), nada chamado', e.status === 'esperando' && ordem.length === 0 && /ainda não resolve/.test(e.detalhe), JSON.stringify(e));
-    check('a próxima conferência é daqui a 30 min', e.ate >= t0 + M.ESPERA_CLIENTE_PASSO_MS - 1000 && e.ate <= Date.now() + M.ESPERA_CLIENTE_PASSO_MS, String(e.ate - t0));
-    check('o aviso diz que confere de novo em 30 min', M.logs.some((l) => /Aguardando wveletrica\.com\.br: ainda não resolve\. Confiro de novo em 30 min\./.test(l.m)), M.logs.map((l) => l.m).join(' | '));
+    check('a próxima conferência é daqui a 1 h (ADR-162)', M.ESPERA_CLIENTE_PASSO_MS === 60 * MIN && e.ate >= t0 + M.ESPERA_CLIENTE_PASSO_MS - 1000 && e.ate <= Date.now() + M.ESPERA_CLIENTE_PASSO_MS, String(e.ate - t0));
+    check('o aviso diz que confere de novo em 1 h', M.logs.some((l) => /Aguardando wveletrica\.com\.br: ainda não resolve\. Confiro de novo em 1 h\./.test(l.m)), M.logs.map((l) => l.m).join(' | '));
 
     // Cliente apontou: o vigia termina SSL, Search Console e a tarefa.
     const { M: M2, ordem: ordem2 } = montar({ apontamentos: { 'wveletrica.com.br': { pronto: true, ip: '149.18.102.60' } } });
@@ -203,6 +205,32 @@ function montar({ apontamentos = {}, ssl = () => ({ ok: true, log: [] }), sc = (
     check('aponta, porque os públicos já veem o IP novo', r.ok && r.apontando === true, JSON.stringify(r).slice(0, 200));
     check('mostra que veio dos públicos, não do local', !r.vistoEm.includes('local') && r.vistoEm.includes('8.8.8.8'), JSON.stringify(r.vistoEm));
     check('junta os IPs de todas as fontes', r.raiz.includes('149.18.102.39') && r.raiz.includes('200.1.1.9'), JSON.stringify(r.raiz));
+  }
+
+  console.log('\n=== Domínio novo no Registro.br: os nameservers ficam com o vigia (ADR-162) ===');
+  {
+    const MIN = 60 * 1000;
+    const pubNovoDom = { empresa: 'bc', dominio: 'novo.com.br', painelUrl: 'u', sfTarefa: 't-n', dnsNosso: true, sslAdiado: null, sslPendente: 'o Registro.br ainda está publicando o domínio novo; os nameservers vão quando ele liberar', ipProducao: '149.18.102.60', scPendente: true, feitas: {}, nsPendente: { empresa: 'bc', nameservers: ['a.ns.cloudflare.com', 'b.ns.cloudflare.com'] }, v: { siteUrl: 'x' } };
+    const trocas = [];
+    let resposta = { ok: false, dominioNovo: true, error: 'o domínio é novo no Registro.br' };
+    const { M } = montar({ pubInicial: pubNovoDom, trocarNs: async (o) => { trocas.push(o); return resposta; } });
+    M.pubMandarParaEspera({ ate: Date.now() + 60 * MIN }); // prazo futuro: o vigia de fundo dorme, e o teste chama vigiarUma à mão
+    const e = M.esperas[0];
+    check('entrou com os nameservers pendentes na frente do que falta', e && e.nsPendente && e.nsPendente.nameservers.join() === 'a.ns.cloudflare.com,b.ns.cloudflare.com' && e.falta[0] === 'trocar os nameservers no Registro.br' && !e.cliente, JSON.stringify(e && e.falta));
+    check('o log diz que o Registro.br ainda publica o domínio e que o vigia tenta a cada 30 min', M.logs.some((l) => /novo\.com\.br foi para a lista de espera: o Registro\.br ainda está publicando o domínio novo.*a cada 30 min/.test(l.m)), M.logs.map((l) => l.m).join(' | '));
+    e.status = 'concluido'; await M.vigiarEsperas({ agora: true }); e.status = 'esperando';
+    e.ate = Date.now() - 1000;
+    const t0 = Date.now();
+    await M.vigiarUma(e);
+    check('o vigia tenta a troca com a empresa e os nameservers; sem sucesso, remarca para 30 min e não confere o apontamento', trocas.length === 1 && trocas[0].empresa === 'bc' && trocas[0].dominio === 'novo.com.br' && trocas[0].nameservers.length === 2 && !!e.nsPendente && e.ate >= t0 + 30 * MIN - 1000 && /domínio novo ainda em publicação/.test(e.detalhe) && M.conferidos.length === 0, JSON.stringify([trocas, e.detalhe]));
+    resposta = { ok: true, emTransicao: true, transicaoSegundos: 7200, transicaoTempo: '1h58m', log: [] };
+    await M.vigiarUma(e);
+    check('quando o Registro.br aceita (em transição), os nameservers saem do que falta e a espera vira a da transição', !e.nsPendente && e.falta[0] === 'o SSL de produção' && e.ate >= Date.now() + 7200 * 1000 - 5000 && /nameservers trocados; o Registro\.br publica/.test(e.detalhe) && M.logs.some((l) => /novo\.com\.br: nameservers trocados no Registro\.br/.test(l.m)), JSON.stringify(e));
+    // Um dia sem o Registro.br liberar: "falta algo", com o motivo.
+    const e2 = { id: 'n2', dominio: 'velho.com.br', painelUrl: 'u', sfTarefa: '', ate: Date.now(), cliente: false, ip: '149.18.102.60', scPendente: false, v: null, sslFeito: false, falta: ['trocar os nameservers no Registro.br', 'o SSL de produção'], status: 'esperando', detalhe: '', desde: Date.now() - 25 * 60 * MIN, nsPendente: { empresa: 'bc', nameservers: ['a', 'b'] } };
+    resposta = { ok: false, dominioNovo: true, error: 'ainda novo' };
+    await M.vigiarUma(e2);
+    check('depois de um dia sem liberar, vira "falta algo" com o motivo', e2.status === 'falhou' && /não liberou a troca de nameservers em um dia/.test(e2.detalhe), e2.detalhe);
   }
 
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');

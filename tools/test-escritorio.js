@@ -1,7 +1,8 @@
-// ADR-149: as peças puras do Escritório — estados, regras aprendidas e de
-// execução, loja em disco (escrita atômica), triagem pelo modelo (pedido e
-// leitura da resposta) e o adaptador do Gemini com cliente falso. Sem rede e
-// sem Electron.
+// ADR-149 / ADR-161: as peças puras do Escritório — estados, a triagem em
+// código (o que eram regras aprendidas), validação de plano e de execução,
+// loja em disco (escrita atômica), triagem pelo modelo (pedido e leitura da
+// resposta) e o adaptador do Gemini com cliente falso. Sem rede e sem
+// Electron.
 //
 //     node tools/test-escritorio.js
 
@@ -42,6 +43,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     check('histórico tem teto', h.historico.length === Estados.HISTORICO_MAX && h.historico[0].i === 50);
     check('rótulo e tom para todo estado', Object.values(T).every((e) => Estados.ROTULOS[e] && Estados.TOM[e]));
     check('estaAberta: pendente sim, ignorada não', Estados.estaAberta({ estado: T.PENDENTE }) && !Estados.estaAberta({ estado: T.IGNORADA }));
+    check('escalada → pendente (ADR-161) e aguardando externo → em análise (ADR-160)', Estados.podeIr(T.ESCALADA, T.PENDENTE) && Estados.podeIr(T.AGUARDANDO_EXTERNO, T.EM_ANALISE));
   }
 
   console.log('\n=== Catálogo ===');
@@ -64,29 +66,22 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     check('catálogo para o modelo não leva funções nem canais', cm.every((a) => !a.ferramentas && !a.regrasExecucao && Array.isArray(a.regras) && typeof a.descricao === 'string'));
   }
 
-  console.log('\n=== Regras aprendidas ===');
+  console.log('\n=== Triagem em código no lugar das regras aprendidas (ADR-161) ===');
   {
-    const fato = Regras.fatoDaTarefa({ assunto: 'Ativação de SSL - cliente.com.br', descricao: 'por favor', empresaFila: 'bc', dono: 'Fila' }, Triagem.triar({ assunto: 'Ativação de SSL - cliente.com.br' }));
-    check('fato: assunto, fila, tipo ignorar', fato.assunto === 'Ativação de SSL - cliente.com.br' && fato.fila === 'bc' && fato.tipo === 'ignorar');
-    check('contem sem acento e sem caixa', Regras.testarCondicao({ campo: 'assunto', op: 'contem', valor: 'ATIVACAO DE SSL' }, fato));
-    check('comeca', Regras.testarCondicao({ campo: 'assunto', op: 'comeca', valor: 'Ativação' }, fato) && !Regras.testarCondicao({ campo: 'assunto', op: 'comeca', valor: 'SSL' }, fato));
-    check('regex inválida não casa (e não estoura)', !Regras.testarCondicao({ campo: 'assunto', op: 'regex', valor: '(' }, fato));
-    check('vazio / naoVazio', Regras.testarCondicao({ campo: 'dominio', op: 'vazio' }, fato) && Regras.testarCondicao({ campo: 'fila', op: 'naoVazio' }, fato));
-    check('campo desconhecido não casa', !Regras.testarCondicao({ campo: 'senha', op: 'igual', valor: 'x' }, fato));
-    check('regra sem condição nunca casa', !Regras.regraCasa({ ativa: true, quando: [], entao: { acao: 'ignorar' } }, fato));
-    const regras = [
-      { id: 'a', ativa: true, criadaEm: '2026-10-01', quando: [{ campo: 'assunto', op: 'contem', valor: 'ssl' }], entao: { acao: 'encaminhar', agente: 'hospedagem', parametros: { acao: 'ssl' } } },
-      { id: 'b', ativa: true, criadaEm: '2026-09-01', prioridade: 5, quando: [{ campo: 'assunto', op: 'contem', valor: 'ssl' }, { campo: 'fila', op: 'igual', valor: 'bc' }], entao: { acao: 'ignorar' } },
-      { id: 'c', ativa: false, criadaEm: '2026-08-01', prioridade: 9, quando: [{ campo: 'assunto', op: 'contem', valor: 'ssl' }], entao: { acao: 'ignorar' } },
-    ];
-    check('casa a de maior prioridade; inativa não conta', Regras.casarRegra(regras, fato).id === 'b');
-    check('sem a fila, casa a outra', Regras.casarRegra(regras, { ...fato, fila: 'mpisolutions' }).id === 'a');
-    check('nada casa → null', Regras.casarRegra(regras, { ...fato, assunto: 'Outra coisa' }) === null);
-    const v = Regras.validarRegra({ quando: [{ campo: 'assunto', op: 'comeca', valor: 'Ativação de SSL' }], entao: { acao: 'encaminhar', agente: 'hospedagem', parametros: { acao: 'ssl' } } });
-    check('validarRegra normaliza e descreve', v.ok && v.regra.ativa === true && /Quando assunto começa com "Ativação de SSL" → Huginn \(Hospedagem & E-mails\) com acao=ssl/.test(v.regra.descricao), v.regra.descricao);
-    const v2 = Regras.validarRegra({ quando: [{ campo: 'x', op: 'igual', valor: '' }], entao: { acao: 'encaminhar', agente: 'ninguem' } });
-    check('validarRegra acusa campo, valor e agente inválidos', !v2.ok && v2.erros.length === 3, v2.erros.join(' | '));
-    check('validarRegra: regra vazia falha', !Regras.validarRegra({}).ok);
+    const triSsl = Triagem.triar({ assunto: 'Ativação de SSL - s.com.br', descricao: 'por favor' });
+    const pSsl = Catalogo.parametrosDaTriagem(triSsl, { assunto: 'Ativação de SSL - s.com.br', descricao: 'por favor' });
+    check('Ativação de SSL → Huginn, acao=ssl, domínios da tarefa', triSsl.tipo === 'ssl' && triSsl.elegivel && Catalogo.agentePorTriagem(triSsl).id === 'hospedagem' && pSsl.acao === 'ssl' && pSsl.dominios.join() === 's.com.br', JSON.stringify([triSsl, pSsl]));
+    check('SSL só no comentário também vale (regra que foi aprovada 2 vezes na tela)', Triagem.triar({ assunto: 'Solicitação - t.com.br', descricao: 'favor ativar o SSL do site' }).tipo === 'ssl');
+    const triSus = Triagem.triar({ assunto: 'Suspensão de site - u.com.br', descricao: 'inadimplente' });
+    check('Suspensão → Huginn com acao=suspensao; "suspender" só no comentário não vale', triSus.tipo === 'suspensao' && Catalogo.parametrosDaTriagem(triSus, {}).acao === 'suspensao' && Triagem.triar({ assunto: 'Ajuste - v.com.br', descricao: 'pode suspender o anúncio' }).tipo === 'ignorar');
+    check('sem domínio no SSL: reconhecido, mas não elegível (vira pergunta específica)', Triagem.triar({ assunto: 'Ativação de SSL', descricao: 'do site do cliente' }).elegivel === false);
+    const fora = Triagem.triar({ assunto: 'Site fora do ar - w.com.br', descricao: 'caiu' });
+    check('"Site fora do ar" é ignorado de vez pela triagem (ADR), sem agente', fora.tipo === 'ignorar' && fora.ignorar === true && /ADR-161/.test(fora.motivo) && Catalogo.agentePorTriagem(fora) === null);
+    check('tarefa desconhecida continua "ignorar" sem a marca (vira pendência para você)', Triagem.triar({ assunto: 'Ligar para o cliente' }).ignorar === undefined);
+    const solto = Triagem.triar({ assunto: 'Publicação MPI+ - www.nv.com.br', descricao: 'temporário nv.mpitemporario.com.br' });
+    check('assunto fora do padrão com o temporário MPI+ no comentário → publicação MPI+ (regra aprovada 23 vezes)', solto.tipo === 'publicacao' && solto.plataforma === 'mpiplus' && solto.dominio === 'nv.com.br' && solto.temporario === 'nv.mpitemporario.com.br' && solto.elegivel);
+    check('assunto que não fala de publicação nem DNS, mesmo com temporário, não é publicação (pergunta)', Triagem.triar({ assunto: 'Ajuste Site MPI - x.com.br', descricao: 'ver x.mpitemporario.com.br' }).tipo === 'ignorar');
+    check('o módulo de regras só tem validação de plano e de execução (sem casarRegra/validarRegra)', typeof Regras.validarPlano === 'function' && typeof Regras.validarExecucao === 'function' && typeof Regras.casarRegra === 'undefined' && typeof Regras.validarRegra === 'undefined' && Regras.normalizar('Ação Ç') === 'acao c');
   }
 
   console.log('\n=== Validação de plano e de execução ===');
@@ -152,15 +147,13 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     check('a mesma tarefa de novo não é nova, e nota que mudou', !r2.nova && r2.mudou && r2.tarefa.descricao === 'd2');
     const p = loja.criarPendencia({ padrao: 'x', pergunta: 'q?', tarefas: ['00T1'] });
     check('pendência com id sequencial', p.id === 'P-1' && loja.pendenciaAbertaPorPadrao('x') === p);
-    const rg = loja.salvarRegra({ descricao: 'r', quando: [{ campo: 'assunto', op: 'contem', valor: 'a' }], entao: { acao: 'ignorar' } });
-    check('regra ganha id e criadaEm', /^R-/.test(rg.id) && rg.criadaEm === agora());
     loja.registrarChamada({ entrada: 100, saida: 10, pensamento: 5 });
     loja.salvar();
-    check('arquivos gravados, sem .tmp sobrando', fs.existsSync(loja.arquivo) && fs.existsSync(loja.arquivoRegras) && !fs.existsSync(loja.arquivo + '.tmp'));
-    // Reabre: tudo volta, inclusive a pendência e a regra.
+    check('arquivo gravado, sem .tmp sobrando; sem arquivo de regras (ADR-161)', fs.existsSync(loja.arquivo) && !fs.existsSync(loja.arquivo + '.tmp') && loja.arquivoRegras === undefined && typeof loja.listarRegras === 'undefined');
+    // Reabre: tudo volta, inclusive a pendência.
     const loja2 = criarLoja({ pasta, agora });
     loja2.carregar();
-    check('reabrir devolve tarefa, pendência, regra e contadores', loja2.tarefa('00T1').descricao === 'd2' && loja2.pendencia('P-1').pergunta === 'q?' && loja2.listarRegras().length === 1 && loja2.contadores().chamadas === 1 && loja2.contadores().tokensEntrada === 100);
+    check('reabrir devolve tarefa, pendência e contadores', loja2.tarefa('00T1').descricao === 'd2' && loja2.pendencia('P-1').pergunta === 'q?' && loja2.contadores().chamadas === 1 && loja2.contadores().tokensEntrada === 100);
     // Tarefa executando ao fechar vira interrompida.
     Estados.transicionar(loja2.tarefa('00T1'), 'em_analise'); Estados.transicionar(loja2.tarefa('00T1'), 'planejada'); Estados.transicionar(loja2.tarefa('00T1'), 'executando');
     loja2.salvar();
@@ -173,7 +166,6 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     // Poda: concluída há mais de 30 dias sai.
     Estados.transicionar(loja3.tarefa('00T1'), 'concluida', 'fim', {}, () => '2026-08-01T00:00:00.000Z');
     check('poda tira concluída antiga', loja3.podar() === 1 && loja3.tarefa('00T1') === null);
-    check('apagarRegra', loja3.apagarRegra(rg.id) === true && loja3.listarRegras().length === 0 && loja3.apagarRegra('nada') === false);
     // Arquivo estragado não trava: começa do zero com aviso.
     fs.writeFileSync(loja.arquivo, '{ isso não é json', 'utf-8');
     const loja4 = criarLoja({ pasta, agora });
@@ -185,33 +177,22 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
   console.log('\n=== Triagem pelo modelo (pedido e resposta) ===');
   {
     check('padrão do assunto troca domínio e números', TriagemIa.padraoDoAssunto('Ativação de SSL - cliente.com.br (caso 00087159)') === 'ativacao de ssl - {dominio} (caso #)', TriagemIa.padraoDoAssunto('Ativação de SSL - cliente.com.br (caso 00087159)'));
-    check('prefixo do assunto para a regra rápida', TriagemIa.prefixoDoAssunto('Ativação de SSL - cliente.com.br') === 'Ativação de SSL' && TriagemIa.prefixoDoAssunto('Trocar DNS cliente.com.br') === 'Trocar DNS');
     const tarefa = { id: '00T5', assunto: 'Ativação de SSL - cliente.com.br', descricao: 'Por favor ativar. Senha: segredo', empresaFila: 'bc', dono: 'Fila BC', donoTipo: 'Queue' };
     const tri = Triagem.triar(tarefa);
-    const pedido = TriagemIa.montarPedidoTriagem({ tarefa, tri, contexto: { razao: 'CLIENTE LTDA', empresa: 'bc' }, regras: [{ ativa: true, descricao: 'Quando x → y' }, { ativa: false, descricao: 'desligada' }] });
+    const pedido = TriagemIa.montarPedidoTriagem({ tarefa, tri, contexto: { razao: 'CLIENTE LTDA', empresa: 'bc' } });
     check('pedido: sistema com as regras inegociáveis e o catálogo', /Nunca chute/.test(pedido.sistema) && /publicador-mpiplus/.test(pedido.sistema) && !/testar/.test(pedido.sistema));
-    check('pedido: conteúdo com a tarefa, a triagem, o contexto e só as regras ativas', /Assunto: Ativação de SSL/.test(pedido.conteudo) && /"tipo":"ignorar"/.test(pedido.conteudo) && /CLIENTE LTDA/.test(pedido.conteudo) && /Quando x → y/.test(pedido.conteudo) && !/desligada/.test(pedido.conteudo));
+    check('pedido: conteúdo com a tarefa, a triagem e o contexto; sem lista de regras (ADR-161)', /Assunto: Ativação de SSL/.test(pedido.conteudo) && /"tipo":"ssl"/.test(pedido.conteudo) && /CLIENTE LTDA/.test(pedido.conteudo) && !/REGRAS APRENDIDAS/.test(pedido.conteudo) && !pedido.schema.properties.trechoChave);
     check('pedido: schema de decisão com enum (plano, pergunta, avisar, ignorar) e a leitura do comentário obrigatória', pedido.schema.properties.decisao.enum.join() === 'plano,pergunta,avisar,ignorar' && pedido.schema.required.includes('decisao') && pedido.schema.required.includes('leitura') && pedido.schema.required.includes('categoria'));
     check('pedido: o sistema manda ler o comentário e explica "avisar"', /pedido de verdade está no COMENTÁRIO/.test(pedido.sistema) && /"avisar" é para pedido que é operação real/.test(pedido.sistema));
-    const da = TriagemIa.interpretarDecisao({ leitura: 'Republicar o site em subdiretório que sumiu', categoria: 'Republicar Site (Subdiretório)!', trechoChave: 'republicar o site novamente', decisao: 'avisar', motivo: 'o Hub não publica subdiretório', confianca: 0.8 });
-    check('decisão avisar: leitura, categoria em slug e trecho do comentário', da.decisao === 'avisar' && da.leitura === 'Republicar o site em subdiretório que sumiu' && da.categoria === 'republicar-site-subdiretorio' && da.trechoChave === 'republicar o site novamente', JSON.stringify(da));
+    const da = TriagemIa.interpretarDecisao({ leitura: 'Republicar o site em subdiretório que sumiu', categoria: 'Republicar Site (Subdiretório)!', decisao: 'avisar', motivo: 'o Hub não publica subdiretório', confianca: 0.8 });
+    check('decisão avisar: leitura e categoria em slug', da.decisao === 'avisar' && da.leitura === 'Republicar o site em subdiretório que sumiu' && da.categoria === 'republicar-site-subdiretorio' && da.trechoChave === undefined, JSON.stringify(da));
     check('slug tira acento e pontuação', TriagemIa.slug('Troca de DNS: cliente') === 'troca-de-dns-cliente' && TriagemIa.slug('') === '');
-    const ra = Regras.validarRegra(TriagemIa.interpretarRegra({ descricao: 'subdiretório → avisar', quando: [{ campo: 'assunto', op: 'comeca', valor: 'Ajuste Site MPI' }, { campo: 'descricao', op: 'contem', valor: 'republicar o site' }], acao: 'avisar', justificativa: 'j' }));
-    check('regra "avisar" passa sem agente e descreve como avisar você', ra.ok && ra.regra.entao.acao === 'avisar' && /avisar você/.test(Regras.descreverRegra(ra.regra)), ra.erros.join());
-    const rt = Regras.validarRegra(TriagemIa.regraRapida({ assuntoExemplo: 'Ajuste Site MPI - cliente.com.br', trechoChave: 'republicar o site novamente', acao: 'avisar', origem: 'P-3' }));
-    check('regra rápida com trecho do comentário: assunto começa com + comentário contém, ação avisar', rt.ok && rt.regra.quando.length === 2 && rt.regra.quando[1].campo === 'descricao' && rt.regra.quando[1].op === 'contem' && rt.regra.quando[1].valor === 'republicar o site novamente' && rt.regra.entao.acao === 'avisar', JSON.stringify(rt.regra.quando));
     const d = TriagemIa.interpretarDecisao({ decisao: 'plano', motivo: 'é SSL', confianca: 0.9, agente: ' hospedagem ', parametros: [{ nome: 'dominios', valor: 'cliente.com.br' }, { nome: 'acao', valor: 'ssl' }], etapas: [{ agente: 'hospedagem', acao: 'enviar', parametros: [{ nome: 'a', valor: 'b' }] }, { agente: '' }], sugestaoStandby: 'auditor' });
     check('decisão plano: pares viram objeto, agente sem espaços, etapas limpas', d.decisao === 'plano' && d.agente === 'hospedagem' && d.parametros.dominios === 'cliente.com.br' && d.parametros.acao === 'ssl' && d.etapas.length === 1 && d.etapas[0].parametros.a === 'b' && d.sugestaoStandby === 'auditor');
     const d2 = TriagemIa.interpretarDecisao({ decisao: 'sei lá', confianca: 7 });
     check('decisão desconhecida vira pergunta; confiança limitada a 1', d2.decisao === 'pergunta' && d2.confianca === 1);
     check('resposta vazia vira pergunta', TriagemIa.interpretarDecisao(null).decisao === 'pergunta');
-    const pr = TriagemIa.montarPedidoRegra({ pendencia: { pergunta: 'q?', padrao: 'p' }, resposta: 'sempre mandar para a hospedagem', tarefas: [tarefa] });
-    check('pedido de regra leva pergunta, resposta e exemplos; schema com campos e operadores', /RESPOSTA DO OPERADOR: sempre mandar/.test(pr.conteudo) && /Assunto: Ativação/.test(pr.conteudo) && pr.schema.properties.quando.items.properties.campo.enum.includes('assunto') && pr.schema.properties.quando.items.properties.op.enum.includes('contem'));
-    const rr = TriagemIa.interpretarRegra({ descricao: 'SSL → hospedagem', quando: [{ campo: 'assunto', op: 'comeca', valor: 'Ativação de SSL' }], acao: 'encaminhar', agente: 'hospedagem', parametros: [{ nome: 'acao', valor: 'ssl' }], justificativa: 'j' }, { origem: 'P-1' });
-    const vr = Regras.validarRegra(rr);
-    check('regra do modelo passa pela validação', vr.ok && vr.regra.entao.agente === 'hospedagem' && vr.regra.entao.parametros.acao === 'ssl' && vr.regra.origem === 'P-1', vr.erros.join());
-    const rq = Regras.validarRegra(TriagemIa.regraRapida({ assuntoExemplo: 'Ativação de SSL - cliente.com.br', acao: 'ignorar', origem: 'P-2' }));
-    check('regra rápida "ignorar sempre" pelo prefixo do assunto', rq.ok && rq.regra.quando[0].op === 'comeca' && rq.regra.quando[0].valor === 'Ativação de SSL' && rq.regra.entao.acao === 'ignorar');
+    check('a triagem pelo modelo não propõe mais regra (ADR-161)', typeof TriagemIa.montarPedidoRegra === 'undefined' && typeof TriagemIa.interpretarRegra === 'undefined' && typeof TriagemIa.regraRapida === 'undefined' && TriagemIa.SCHEMA_REGRA === undefined);
     check('textoTarefa corta comentário longo', TriagemIa.textoTarefa({ id: 'x', descricao: 'a'.repeat(5000) }).length < 4300);
   }
 

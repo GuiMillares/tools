@@ -6528,8 +6528,13 @@ const ESPERAS_CHAVE = 'hub.esperasPropagacao.v1';
 const ESPERA_FOLGA_MS = 30 * 60 * 1000;   // depois da previsão do Registro.br
 const ESPERA_PASSO_MS = 60 * 1000;
 // Site cujo DNS é do cliente (ADR-142): não há previsão nem prazo — o cliente
-// aponta quando aponta. Confere a cada 30 min, sem nunca dar por "falhou".
-const ESPERA_CLIENTE_PASSO_MS = 30 * 60 * 1000;
+// aponta quando aponta. Confere de hora em hora (ADR-162), sem nunca dar por
+// "falhou".
+const ESPERA_CLIENTE_PASSO_MS = 60 * 60 * 1000;
+// Domínio novo no Registro.br, que ainda não deixa trocar os nameservers
+// (ADR-162): o vigia tenta a troca a cada 30 min, por até um dia.
+const ESPERA_NS_PASSO_MS = 30 * 60 * 1000;
+const ESPERA_NS_TETO_MS = 24 * 60 * 60 * 1000;
 let esperas = [];
 let vigiaRodando = false;
 let vigiaTimer = null;
@@ -6572,10 +6577,13 @@ function carregarEsperas() {
 // (ADR-103, ADR-142): o Registro.br publica a troca de DNS daqui a horas
 // (`ate` é a previsão dele; depois dela o vigia confere a cada minuto, com 30
 // min de folga) ou o DNS é do cliente (`cliente: true`: sem previsão nem
-// prazo, o vigia confere a cada 30 min e nunca dá por falhado — o cliente
+// prazo, o vigia confere de hora em hora e nunca dá por falhado — o cliente
 // aponta quando aponta). `ate` explícito serve para a espera sem previsão.
+// Com `pub.nsPendente` (domínio novo no Registro.br, ADR-162), o vigia troca
+// os nameservers primeiro e só depois espera a propagação.
 function pubMandarParaEspera({ cliente = false, ate } = {}) {
   const falta = ['o SSL de produção'];
+  if (pub.nsPendente) falta.unshift('trocar os nameservers no Registro.br');
   if (pub.scPendente) falta.push('o Search Console e o relatório do painel');
   if (pub.sfTarefa) falta.push('fechar a tarefa do Salesforce');
   const agora = Date.now();
@@ -6587,6 +6595,7 @@ function pubMandarParaEspera({ cliente = false, ate } = {}) {
     sfTarefa: pub.sfTarefa || '',
     ate: ate != null ? ate : cliente ? agora + ESPERA_CLIENTE_PASSO_MS : (pub.sslAdiado && pub.sslAdiado.ate) || agora,
     cliente: !!cliente,
+    nsPendente: pub.nsPendente ? { empresa: pub.nsPendente.empresa, nameservers: [...pub.nsPendente.nameservers] } : null,
     ip,
     scPendente: !!pub.scPendente,
     sslFeito: false,
@@ -6601,7 +6610,9 @@ function pubMandarParaEspera({ cliente = false, ate } = {}) {
   salvarEsperas();
   const hora = new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   if (cliente) {
-    log(`${e.dominio} foi para a lista de espera: o DNS é do cliente e ${e.detalhe}${ip ? ` (precisa apontar para ${ip})` : ''}. Falta ${falta.join(', ')}; confiro a cada 30 min (a próxima ~${hora}) e termino sozinho quando apontar. Pode publicar outro site.`, 'success');
+    log(`${e.dominio} foi para a lista de espera: o DNS é do cliente e ${e.detalhe}${ip ? ` (precisa apontar para ${ip})` : ''}. Falta ${falta.join(', ')}; confiro de hora em hora (a próxima ~${hora}) e termino sozinho quando apontar. Pode publicar outro site.`, 'success');
+  } else if (e.nsPendente) {
+    log(`${e.dominio} foi para a lista de espera: o Registro.br ainda está publicando o domínio novo e não deixa trocar os nameservers. Tento a troca a cada 30 min (por até um dia) e, quando entrar, espero a propagação e termino o resto. Pode publicar outro site.`, 'success');
   } else {
     log(`${e.dominio} foi para a lista de espera: o Registro.br publica a troca de DNS por volta de ${hora}. Falta ${falta.join(', ')}; faço sozinho quando o DNS apontar. Pode publicar outro site.`, 'success');
   }
@@ -6624,7 +6635,7 @@ function renderEsperas() {
   for (const e of [...esperas].sort((a, b) => a.ate - b.ate)) {
     const [cls, texto] = e.cliente && e.status === 'esperando' ? ['neutral', 'aguardando o cliente'] : (badge[e.status] || badge.esperando);
     const hora = new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const quando = e.status !== 'esperando' ? '' : e.cliente ? `DNS do cliente${e.ip ? `, precisa apontar para ${e.ip}` : ''} · confiro ~${hora} · ` : `previsto ~${hora} · `;
+    const quando = e.status !== 'esperando' ? '' : e.nsPendente ? `domínio novo no Registro.br · tento os nameservers ~${hora} · ` : e.cliente ? `DNS do cliente${e.ip ? `, precisa apontar para ${e.ip}` : ''} · confiro ~${hora} · ` : `previsto ~${hora} · `;
     const sub = e.status === 'concluido' ? (e.detalhe || 'tudo feito') : `${quando}falta ${e.falta.join(', ')}${e.detalhe ? ` · ${e.detalhe}` : ''}`;
     html += `<div class="row ${e.status === 'concluido' ? 'is-ok' : e.status === 'falhou' ? 'is-err' : e.status === 'rodando' ? 'is-running' : ''}">
       <div class="row__main"><div class="row__title">${escapeHtml(e.dominio)}</div><div class="row__sub">${escapeHtml(sub)}</div></div>
@@ -6719,6 +6730,7 @@ async function vigiarEsperas({ agora = false } = {}) {
 let vigiaAcordar = null;
 
 async function vigiarUma(e) {
+  if (e.nsPendente) { await vigiarNameservers(e); return; }
   // O IP é o que o site recebeu quando foi publicado (ADR-141); sem ele, a
   // conferência cai na reserva.
   const ap = await conferirApontamentoDeProducao(e.dominio, e.ip || undefined);
@@ -6730,14 +6742,14 @@ async function vigiarUma(e) {
   const mudou = e.ultimoMotivo !== ap.motivo;
   const cadaAviso = e.cliente ? 2 * 60 * 60 * 1000 : 10 * 60 * 1000;
   if (!ap.pronto && (mudou || !e.ultimoAviso || agora - e.ultimoAviso > cadaAviso)) {
-    log(`Aguardando ${e.dominio}: ${ap.motivo}. Confiro de novo em ${e.cliente ? '30 min' : '1 min'}.`, 'info');
+    log(`Aguardando ${e.dominio}: ${ap.motivo}. Confiro de novo em ${e.cliente ? '1 h' : '1 min'}.`, 'info');
     e.ultimoAviso = agora;
   }
   e.ultimoMotivo = ap.motivo;
   if (!ap.pronto) {
     if (e.cliente) {
       // Sem prazo: o cliente aponta quando aponta. Só marca a próxima
-      // conferência, daqui a 30 min.
+      // conferência, daqui a uma hora (ADR-162).
       e.ate = agora + ESPERA_CLIENTE_PASSO_MS;
       e.detalhe = ap.motivo;
       return;
@@ -6762,6 +6774,37 @@ async function vigiarUma(e) {
   });
   if (r.ok) log(`${e.dominio}: ${r.detalhe}.`, 'success');
   else log(`${e.dominio}: ${r.detalhe}. Use "Tentar de novo" na lista de espera quando quiser.`, 'warn');
+}
+
+// Domínio novo no Registro.br (ADR-162): a troca de nameservers ficou
+// pendente porque ele ainda estava publicando o registro. Tenta de novo; quando
+// entra, a espera vira a de sempre (previsão da transição ou propagação).
+async function vigiarNameservers(e) {
+  const agora = Date.now();
+  const ns = e.nsPendente;
+  const r = await window.api.registrobrTrocarNs({ empresa: ns.empresa, dominio: e.dominio, nameservers: ns.nameservers }).catch((err) => ({ ok: false, error: err.message }));
+  if (r && r.ok) {
+    logTudo(r);
+    delete e.nsPendente;
+    e.falta = e.falta.filter((f) => f !== 'trocar os nameservers no Registro.br');
+    e.ate = r.emTransicao ? agora + (Number(r.transicaoSegundos) || 7200) * 1000 : agora;
+    e.detalhe = r.emTransicao ? `nameservers trocados; o Registro.br publica em ~${r.transicaoTempo || '2 h'}` : 'nameservers trocados; esperando a propagação';
+    log(`${e.dominio}: nameservers trocados no Registro.br (${ns.nameservers.join(' e ')}). ${r.emTransicao ? `Publica em ~${r.transicaoTempo || '2 h'}; ` : ''}agora espero a propagação e termino o resto.`, 'success');
+    salvarEsperas();
+    renderEsperas();
+    return;
+  }
+  if (agora - e.desde > ESPERA_NS_TETO_MS) {
+    e.status = 'falhou';
+    e.detalhe = `o Registro.br não liberou a troca de nameservers em um dia (${(r && r.error) || 'sem resposta'})`;
+    log(`${e.dominio}: ${e.detalhe}. Confira o domínio no Registro.br e use "Tentar de novo" na lista de espera.`, 'warn');
+    return;
+  }
+  e.ate = agora + ESPERA_NS_PASSO_MS;
+  e.detalhe = r && r.dominioNovo ? 'domínio novo ainda em publicação no Registro.br; tento a troca de nameservers de novo em 30 min' : `a troca de nameservers não entrou (${(r && r.error) || 'sem resposta'}); tento de novo em 30 min`;
+  const mudou = e.ultimoMotivo !== e.detalhe;
+  if (mudou || !e.ultimoAviso || agora - e.ultimoAviso > 2 * 60 * 60 * 1000) { log(`Aguardando ${e.dominio}: ${e.detalhe}.`, 'info'); e.ultimoAviso = agora; }
+  e.ultimoMotivo = e.detalhe;
 }
 
 // O que falta, na ordem, com a regra de sempre: a tarefa só fecha com tudo
@@ -7076,6 +7119,18 @@ async function pubEtapaRegistro() {
     return;
   }
   if (res && !res.manual) logTudo(res);
+  if (res && res.dominioNovo) {
+    // Domínio recém-registrado: o Registro.br publica o registro em até
+    // algumas horas e só depois aceita a troca. Não trava a publicação: o
+    // resto segue (aprovar, publicar, tags, planilha) e o site vai para a
+    // lista de espera com os nameservers pendentes; o vigia troca quando
+    // entrar e termina SSL, Search Console e tarefa (ADR-162).
+    pub.nsPendente = { empresa: pub.empresa, nameservers: ns };
+    pub.sslPendente = 'o Registro.br ainda está publicando o domínio novo; os nameservers vão quando ele liberar';
+    log(`${pub.dominio}: o Registro.br ainda está publicando o domínio novo e não deixa trocar os nameservers agora. Sigo com o resto; a troca fica com o vigia da lista de espera.`, 'warn');
+    pubAvancar('registro', true, 'adiada: domínio novo no Registro.br, ainda em publicação; os nameservers vão quando ele liberar', { pulada: true });
+    return;
+  }
   // Ainda sem automação do Registro.br: o passo fica manual, com o que colar.
   await window.api.copyToClipboard(ns.join('\n'));
   // Os nameservers são do domínio raiz: de um subdomínio, o que se abre no Registro.br é a zona (ADR-151).
@@ -7101,6 +7156,15 @@ const ADIAR_A_PARTIR_DE_MS = 5 * 60 * 1000;
 async function pubEtapaPropagacao() {
   const ns = pub.cloudflare?.nameservers || [];
   const ipNovo = pub.zona?.ipNovo;
+  if (pub.nsPendente) {
+    // Sem os nameservers no Registro.br não há propagação a esperar: tags e
+    // planilha agora; propagação, SSL e o resto ficam com o vigia (ADR-162).
+    pub.feitas.propagacao = { ok: true, pulada: true, detalhe: 'adiada: os nameservers ainda vão para o Registro.br (domínio novo)' };
+    pub.feitas.ssl = { ok: true, pulada: true, detalhe: 'adiado para depois dos nameservers e da propagação' };
+    pub.etapa = 'tags';
+    renderPubEtapas();
+    return;
+  }
   if (pub.transicaoAte && pub.transicaoAte - Date.now() > ADIAR_A_PARTIR_DE_MS && !pub.sslAdiado) {
     const min = Math.ceil((pub.transicaoAte - Date.now()) / 60000);
     pub.sslAdiado = { ate: pub.transicaoAte };

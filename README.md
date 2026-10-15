@@ -373,8 +373,9 @@ A chave fica criptografada nesta máquina, como a do Bitbucket, e nunca volta pa
 
 O Escritório (o segundo item da barra lateral, logo abaixo do Início, ADR-149
 e ADR-159) usa o Gemini para o que a
-triagem do Asgard e as regras aprendidas não resolvem. Sem chave ele funciona
-igual, só que toda tarefa desconhecida vira pendência.
+triagem em código do Asgard não resolve. Sem chave ele funciona igual, só
+que toda tarefa desconhecida vira pendência para você; para um tipo de tarefa
+entrar sozinho, a regra vira código de triagem com a decisão na ADR (ADR-161).
 
 1. Crie uma chave em [Google AI Studio](https://aistudio.google.com/api-keys).
 2. **Vincule uma conta de faturamento ao projeto da chave** e pré-pague

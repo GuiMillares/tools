@@ -78,6 +78,12 @@
     ].join('\n');
   }
 
+  // Mensagens de etapa que não mudam tentando de novo (ADR-162).
+  const ERROS_SEM_SAIDA = [
+    /n[ãa]o vai passar/i,            // verificação do Search Console: o site redireciona ou não tem a tag
+    /CanEditDNS=false/i,             // a conta não pode editar o DNS (não é domínio novo, que é espera)
+    /driver desconhecido/i,
+  ];
   window.hubPublicarTarefaAuto = async function hubPublicarTarefaAuto(payload) {
     const p = payload || {};
     // const/let de topo do app.js (PUB_ETAPAS, pub, state…) não viram window.X,
@@ -200,6 +206,10 @@
         // no painel, ADR-140): repetir não resolve, desiste de primeira.
         if (pub.semSaida) return { ok: false, desistir: true, motivo: `${etapa.nome}: ${pub.semSaida}` };
         if (!f || f.ok) return { ok: false, motivo: `parou em "${etapa.nome}"` };
+        // Erro que não muda tentando de novo (o site redireciona para outro
+        // domínio, a conta não pode editar o DNS…): desiste de primeira, em
+        // vez de três tentativas iguais (ADR-162).
+        if (ERROS_SEM_SAIDA.some((re) => re.test(String(f.detalhe || '')))) return { ok: false, desistir: true, motivo: `${etapa.nome} falhou e repetir não resolve: ${f.detalhe}` };
         return { ok: false, motivo: `${etapa.nome} falhou: ${f.detalhe || 'sem detalhe'}` };
       }
       if (pub.sslAdiado) {

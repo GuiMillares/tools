@@ -3,7 +3,7 @@
 //     node tools/test-zona.js
 
 const path = require('path');
-const { montarZonaProposta, planejarAplicacao, unirRegistros, ehIpCloudflare } = require(path.join(__dirname, '..', 'lib', 'zona'));
+const { montarZonaProposta, planejarAplicacao, unirRegistros, ehIpCloudflare, descobrirIpOrigem } = require(path.join(__dirname, '..', 'lib', 'zona'));
 
 let falhas = 0;
 const check = (n, c, d) => { if (c) console.log(`  ok   ${n}`); else { falhas++; console.log(`  FALHOU  ${n}${d ? ` (${d})` : ''}`); } };
@@ -318,6 +318,41 @@ console.log('\n=== Subdomínio do cliente atrás do proxy da Cloudflare NÃO é 
   check('avisou sobre o subdomínio no proxy', z.avisos.some((a) => /loja\..*proxy da Cloudflare/.test(a)), z.avisos.join(' | '));
   check('copiou normalmente o subdomínio no servidor real', z.registros.some((r) => r.name === `erp.${D}` && r.content === '200.100.50.25'), JSON.stringify(z.registros));
   check('CNAME de subdomínio segue copiado', z.registros.some((r) => r.name === `blog.${D}` && r.type === 'CNAME'), JSON.stringify(z.registros));
+}
+
+console.log('\n=== O caso libelulaexpress: raiz no proxy, IP real descoberto pelos hosts de e-mail e pelo SPF (ADR-163) ===');
+{
+  const D = 'libelula.com.br';
+  const REAL = '158.69.27.204';
+  const snapshot = { registros: [
+    { type: 'A', name: D, content: '172.67.210.38' },
+    { type: 'A', name: D, content: '104.21.23.93' },
+    { type: 'AAAA', name: D, content: '2606:4700:3037::6815:175d' },
+    { type: 'CNAME', name: `www.${D}`, content: D },
+    { type: 'A', name: `mail.${D}`, content: REAL },
+    { type: 'A', name: `ftp.${D}`, content: REAL },
+    { type: 'A', name: `pop.${D}`, content: '172.67.210.38' },
+    { type: 'AAAA', name: `pop.${D}`, content: '2606:4700:3034::ac43:d226' },
+    { type: 'A', name: `erp.${D}`, content: '200.100.50.25' },
+    { type: 'MX', name: D, content: `mail.${D}`, priority: 10 },
+    { type: 'TXT', name: D, content: `v=spf1 ip4:${REAL} include:_spf.google.com ~all` },
+    { type: 'CNAME', name: `webmail.${D}`, content: D },
+  ] };
+  const o = descobrirIpOrigem(snapshot.registros, D, NOVO);
+  check('descobre o IP real pelos hosts de e-mail/ftp e pelo SPF, com as evidências', o && o.ip === REAL && o.evidencias.join(' | ') === `A de mail.${D} | A de ftp.${D} | ip4 do SPF`, JSON.stringify(o));
+  check('o erp (um voto só) não ganha do servidor de e-mail; proxy e servidor novo nunca entram', o.pontos === 8 && !descobrirIpOrigem([{ type: 'A', name: `x.${D}`, content: '104.21.23.93' }, { type: 'A', name: `y.${D}`, content: NOVO }], D, NOVO));
+  check('um subdomínio qualquer sozinho não é evidência (só host de e-mail/acesso ou SPF)', !descobrirIpOrigem([{ type: 'A', name: `erp.${D}`, content: '200.100.50.25' }, { type: 'A', name: `loja.${D}`, content: '200.100.50.25' }], D, NOVO) && !!descobrirIpOrigem([{ type: 'TXT', name: D, content: 'v=spf1 ip4:200.100.50.25 -all' }], D, NOVO));
+  const z = montarZonaProposta({ dominio: D, snapshot, ipNovo: NOVO });
+  check('o IP antigo é o real descoberto', z.ipAntigo === REAL, z.ipAntigo);
+  check('o aviso da raiz diz que descobriu o IP real e por quê', z.avisos.some((a) => /raiz apontava para o proxy/.test(a) && /IP real do servidor antigo foi descoberto/.test(a) && /A de mail\./.test(a) && /ip4 do SPF/.test(a)), z.avisos.join(' | '));
+  check('pop (que estava no proxy) é copiado como A para o IP real, sem proxy, com aviso para conferir', acha(z, 'A', `pop.${D}`)[0]?.content === REAL && acha(z, 'A', `pop.${D}`)[0]?.proxied === false && z.avisos.some((a) => /pop\..*apontava para o proxy.*copiei com o IP real/.test(a)), JSON.stringify(acha(z, 'A', `pop.${D}`)));
+  check('o AAAA do pop continua descartado', acha(z, 'AAAA', `pop.${D}`).length === 0);
+  check('webmail (CNAME para a raiz) virou A para o IP real', acha(z, 'A', `webmail.${D}`)[0]?.content === REAL);
+  check('MX e mail seguem no IP real', acha(z, 'MX', D)[0]?.content === `mail.${D}` && acha(z, 'A', `mail.${D}`)[0]?.content === REAL);
+  check('nada com proxy', z.registros.every((r) => r.proxied === false));
+  // Sem evidência nenhuma: o comportamento antigo (aviso, nada copiado).
+  const z2 = montarZonaProposta({ dominio: D, ipNovo: NOVO, snapshot: { registros: [{ type: 'A', name: D, content: '172.67.210.38' }, { type: 'A', name: `pop.${D}`, content: '104.21.23.93' }] } });
+  check('sem host fora do proxy nem SPF: sem IP antigo, pop não é copiado e o aviso diz que nada revelou o IP', z2.ipAntigo === null && acha(z2, 'A', `pop.${D}`).length === 0 && z2.avisos.some((a) => /nenhum host fora do proxy/.test(a)), z2.avisos.join(' | '));
 }
 
 console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');

@@ -15,7 +15,7 @@ passado.
 <!-- indice:inicio (gerado por tools/indice-adr.js; não edite à mão) -->
 ## Índice
 
-161 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
+164 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
 
 - **ADR-001** — Electron puro, sem framework de UI e sem build step
 - **ADR-002** — Toda rede no processo principal; renderer só fala por IPC
@@ -176,6 +176,9 @@ passado.
 - **ADR-158** — A identidade do app vira Asgard de vez: nome e appId novos, a pasta de dados copiada na primeira abertura e a instalação antiga trocada pela nova
 - **ADR-159** — O Escritório volta ao HTML: a cena 3D de tela cheia e o mapa saem por peso, o Início volta a ser a abertura, e a automação fica como está
 - **ADR-160** — Reanalisar uma tarefa que espera o DNS: a transição existe, e o reanalisar confere antes de mexer na tarefa
+- **ADR-161** — O aprendizado é pela ADR: as regras aprendidas saem, o que o Asgard sabe vira código de triagem, e a falha de agente é pendência "para você" com "Tentar de novo"
+- **ADR-162** — Esperas sem interferência: o cliente é conferido de hora em hora, o domínio novo no Registro.br espera a publicação e troca os nameservers pelo vigia, e erro que repetir não resolve desiste de primeira
+- **ADR-163** — O IP real atrás do proxy da Cloudflare: descoberto pelos hosts que a Cloudflare não proxia e pelo SPF, usado como IP antigo e para os subdomínios proxiados
 - **Pendências conhecidas** (não são decisões — são dívidas)
 - **ADR-146** — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
 <!-- indice:fim -->
@@ -7124,8 +7127,10 @@ propriedade criada, listada numa aba "Vincular Analytics". Decisões:
 
 ## ADR-149 — Escritório, fase 1: orquestrador no processo principal, decisão em código antes do modelo, regras aprendidas com aprovação e validação de execução determinística
 
-**Status:** aceita — fase 1 de 5 (núcleo). Nenhum agente executa ainda: o
-plano fica guardado e o log diz "executaria". A automação da fila da ADR-120
+**Status:** aceita — fase 1 de 5 (núcleo); as regras aprendidas (itens 3a e
+5) saíram na ADR-161, que leva o aprendizado para o código de triagem e para
+a ADR. Nenhum agente executava ainda: o plano ficava guardado e o log dizia
+"executaria". A automação da fila da ADR-120
 (painel flutuante) continua como está até a fase 2, quando os agentes
 Bloqueador, Publicador MPI+ e Publicador Busca One passam a executar pelo
 Escritório e o painel é absorvido.
@@ -8036,6 +8041,196 @@ sem transição inválida) e a recusa limpa para a concluída. As duas tarefas
 do dia (anrservicos.com.br e preventsolucoes.com.br) continuam em aguardando
 externo, com o plano certo; o que falta nelas é o cliente apontar o DNS,
 não uma reanálise.
+
+## ADR-161 — O aprendizado é pela ADR: as regras aprendidas saem, o que o Asgard sabe vira código de triagem, e a falha de agente é pendência "para você" com "Tentar de novo"
+
+**Status:** aceita (15/10/2026). Substitui os itens 3a e 5 da ADR-149 (regra
+aprendida como primeiro passo da decisão; base de conhecimento aprovada na
+tela) e o "ajuste do mesmo dia" dela no que toca a regras ("Avisar sempre",
+"comentário contém"); a pendência de escalação da ADR-149, item 6, muda de
+tipo. Tudo o mais (triagem, validação em código, estados, ponte, agentes)
+segue.
+
+**Contexto.** Pedido de 15/10/2026: "sobre as regras, pode tirar isso. Vamos
+fazer o aprendizado pela ADR". Dois exemplos do dia dizem por quê. Uma
+tarefa de publicação falhou 3 vezes na troca de nameservers e a pendência
+pediu *uma regra* ("O que faço?" com "Ignorar sempre / Encaminhar sempre"):
+falha não é assunto de regra, e cada falha viraria mais uma regra na lista
+("se eu criar uma regra vai subir de 5 para 8, quase todas para o mesmo
+problema"). E as cinco regras aprovadas até então eram, na prática, código
+de triagem escrito pela tela: "descrição contém mpitemporario.com.br → Thor"
+(23 usos), "descrição contém SSL → Huginn" (sem o parâmetro `acao`, que o
+executor exige), "assunto começa com Site fora do ar → ignorar", uma
+duplicada e uma nunca usada. Regra editada na tela não tem teste, não tem
+histórico de por quê e não aparece em lugar nenhum além do JSON.
+
+**Decisão.**
+
+1. **As regras aprendidas saem inteiras**: `lib/escritorio/regras.js`
+   fica só com a validação de plano e de execução; `loja.js` deixa de ler
+   `escritorio-regras.json` (o arquivo antigo fica no disco, sem uso);
+   `triagem-ia.js` deixa de propor regra (sem `SCHEMA_REGRA`,
+   `montarPedidoRegra`, `regraRapida`, `trechoChave`); o orquestrador
+   perde `aprovarRegra`, `salvarRegra`, `apagarRegra` e as respostas
+   "texto", "ignorar sempre", "avisar sempre", "encaminhar sempre"; os canais
+   IPC e o preload idem; a tela perde a aba "Regras aprendidas", o formulário
+   de regra e a proposta do modelo. A ordem de decisão passa a ser: triagem
+   em código → modelo (se ligado) → pendência para você.
+2. **O que o Asgard aprende entra como código em `lib/triagem.js`, com a
+   decisão na ADR e teste.** As regras aprovadas viram:
+   - **Ativação de SSL** (no assunto ou no comentário: `RE_SSL`) → Huginn
+     com `acao = ssl` e os domínios da tarefa; **Suspensão/Suspender** (só
+     no assunto, para "suspender" dentro de outro pedido não virar suspensão)
+     → Huginn com `acao = suspensao`. `parametrosDaTriagem` leva a ação.
+   - **"Site fora do ar"** no começo do assunto → ignorada de vez
+     (`IGNORAR_SEMPRE`, `tri.ignorar = true`), sem modelo nem pendência.
+   - **Publicação MPI+ pelo temporário**: assunto que fala de publicação,
+     troca de DNS ou DNS (sem o padrão exato "Publicação (Troca de DNS)")
+     com um `*.mpitemporario.com.br` no comentário é publicação MPI+. A
+     regra da tela valia para qualquer assunto; aqui ficou restrita a assunto
+     que fala de publicação ou DNS ("Ajuste Site MPI" com temporário continua
+     perguntando), e se o Guilherme quiser a versão larga, é uma linha.
+   - **"Vincular GA4 → Freyr"** (0 usos) não entrou: Freyr publica Busca One
+     e não sabe o que fazer com um pedido de vínculo de GA4; quando aparecer,
+     vira pendência e o Guilherme diz o que é.
+3. **A pendência de tarefa desconhecida** diz: "Encaminhe para um agente,
+   marque como tratada ou ignore. Para tarefas assim entrarem sozinhas, diga
+   a regra ao Claude: ela vira código de triagem, com a decisão na ADR". As
+   respostas são "Encaminhar" (`escritorio:encaminhar`, antes "só desta
+   vez"; aceita preset do Huginn), "Marcar como tratada", "Ignorar estas" e
+   "Descartar".
+4. **Falha de agente é pendência "para você"**, não pergunta de regra: 3
+   tentativas (ou desistência de primeira) abrem a pendência com o motivo e
+   os botões "Tentar de novo" (zera as tentativas e volta à análise, mesmo
+   plano, validação de novo), "Encaminhar", "Marcar como tratada", "Ignorar
+   estas" e "Descartar". A tabela de estados ganha `escalada → pendente`
+   (hoje a escalação tentava essa transição e o log acusava "transição
+   inválida" duas vezes por dia). `reanalisar` e `encaminhar` também
+   zeram as tentativas.
+5. **Pendências antigas** com status "respondida" (proposta de regra em
+   aberto) continuam abertas e aparecem com as ações novas; a proposta é
+   ignorada.
+
+**Consequências.** Nada é decidido por JSON editado na tela: a lista de
+regras não cresce a cada falha, e cada tipo de tarefa que o Asgard trata
+sozinho está em `lib/triagem.js` com um teste e uma ADR dizendo quando e
+por quê. O custo é que ensinar o Asgard passa pelo Claude (uma frase do
+Guilherme vira código), e não por um botão; é o que ele pediu. As pendências
+de hoje (P-15, P-23 e as outras de escalação) viram "para você" ao abrir.
+Testes: `test-escritorio.js` (triagem SSL/suspensão/fora do ar/MPI+
+solto, módulo de regras só com validação), `test-escritorio-orquestrador.js`
+(escalação como pendência "para você" sem transição inválida, "tentar de
+novo", "encaminhar" com preset, respostas de regra recusadas),
+`test-escritorio-browser.js` (botões novos, sem aba de regras).
+
+## ADR-162 — Esperas sem interferência: o cliente é conferido de hora em hora, o domínio novo no Registro.br espera a publicação e troca os nameservers pelo vigia, e erro que repetir não resolve desiste de primeira
+
+**Status:** aceita (15/10/2026). Ajusta a ADR-142 (cadência do cliente), a
+ADR-080 (um caso novo do Registro.br) e a ADR-122/142 (falhas do driver
+automático).
+
+**Contexto.** Perguntas do Guilherme em 15/10: "o que fazer com sites que
+já fizemos quase tudo e estamos esperando o cliente realizar o apontamento?
+Esperamos ele apontar e verificamos de hora em hora, pois depende do cliente
+e não da nossa Cloudflare ou das 2h do Registro.br. O que fazer quando
+trocamos o DNS e temos que esperar a propagação de 2h? Criamos as
+propriedades e sincronizamos no painel e aguardamos o DNS virar para
+publicar em produção e sincronizar a aba relatório. Temos que pensar em tudo
+que pode acontecer para ficar automático, sem erros e sem que eu tenha que
+interferir demais." E o caso do dia: lojaderevestimentos.com.br, registrado
+há pouco, estava com status **Novo** no Registro.br, DNS `a.auto.dns.br`,
+contato nosso e `CanEditDNS=false` sem nenhum campo de transição; a etapa
+dos nameservers falhou 3 vezes em 10 minutos e escalou, com tags e planilha
+por fazer.
+
+**Decisão.**
+
+1. **Cliente apontando o DNS**: continua como na ADR-142 (publica, faz tags
+   e planilha, lista de espera "aguardando o cliente", sem prazo, nunca dá
+   por falhado), com a conferência **de hora em hora** em vez de 30 min
+   (`ESPERA_CLIENTE_PASSO_MS`). "Conferir agora" segue para não esperar.
+2. **Transição de 2 h do Registro.br**: já era o que ele descreveu (ADR-080):
+   tags e planilha na hora, propagação e SSL adiados, Search Console e
+   relatório depois do SSL, tarefa fechada no fim pelo vigia. Fica como está.
+3. **Domínio novo no Registro.br** (status Novo, contato técnico nosso,
+   `CanEditDNS=false` sem transição): `registrobr:trocarNs` devolve
+   `{ ok: false, dominioNovo: true }` em vez de erro. A etapa dos
+   nameservers é dada como **adiada** (`pub.nsPendente`), propagação e SSL
+   são pulados, aprovar/publicar/tags/planilha seguem, e o site vai para a
+   lista de espera com "trocar os nameservers no Registro.br" na frente do
+   que falta. O vigia (`vigiarNameservers`) tenta a troca a cada 30 min por
+   até um dia; quando entra, a espera vira a de sempre (previsão da
+   transição, ou propagação imediata) e termina SSL, Search Console e
+   tarefa. Depois de um dia sem o Registro.br liberar, "falta algo" com
+   "Tentar de novo". Nos outros casos de `CanEditDNS=false` o log passa a
+   dizer status, FreeDNSStatus e os campos da resposta, para a próxima
+   surpresa ter evidência.
+4. **Erro que repetir não resolve desiste de primeira** no driver
+   automático (`ERROS_SEM_SAIDA`): "A verificação … não vai passar" (o
+   site redireciona para outro domínio ou não tem a tag), "CanEditDNS=false"
+   fora do caso do domínio novo, "driver desconhecido". Vira pendência "para
+   você" (ADR-161) na primeira vez, em vez de três tentativas iguais de 5 em
+   5 min.
+
+**Consequências.** As esperas que dependem de terceiros (cliente, Registro.br
+publicando um domínio novo) não param a fila nem viram pendência; o que
+realmente precisa do Guilherme chega como pendência uma vez, com o motivo.
+O caso de hoje: na próxima varredura a tarefa de lojaderevestimentos.com.br,
+reanalisada ou por "Tentar de novo", publica, faz tags e planilha e deixa
+os nameservers com o vigia. O fluxo manual do Publicar MPI+ recebe o mesmo
+"adiada" na etapa dos nameservers (sem travar a publicação), mas só o
+automático manda o site para a lista de espera sozinho; no manual, a lista
+entra pelo caminho de sempre (SSL adiado).
+
+## ADR-163 — O IP real atrás do proxy da Cloudflare: descoberto pelos hosts que a Cloudflare não proxia e pelo SPF, usado como IP antigo e para os subdomínios proxiados
+
+**Status:** aceita (15/10/2026). Completa a ADR-085 e a ADR-091 (site que já
+estava atrás do proxy; subdomínio proxiado não é copiado).
+
+**Contexto.** libelulaexpress.com.br: a raiz apontava para o proxy da
+Cloudflare (172.67.x, 104.21.x), e o Hub avisou que o IP do servidor antigo
+estava escondido, usou o A de `mail.` como IP antigo e **não copiou**
+`pop.`, que também estava no proxy. O Guilherme: "tem alguma ferramenta
+para descobrir o IP sem ser do proxy? Assim complica na hora de fazer os
+apontamentos, os e-mails vão cair" e "não só do mail, mas do domínio em si".
+A resposta é que não existe consulta que revele o IP de origem de um proxy
+(é o que o proxy esconde); o que existe é **evidência indireta**, e a mais
+confiável está na própria zona: a Cloudflare não proxia e-mail (SMTP, POP,
+IMAP), FTP nem painel, então `mail`, `smtp`, `pop`, `imap`,
+`webmail`, `ftp`, `cpanel`, o alvo do MX e os demais hosts fora do
+proxy apontam para o servidor de verdade; e o `ip4:` do SPF diz de onde o
+e-mail sai, que em hospedagem compartilhada é o mesmo servidor. Serviços de
+histórico de DNS (SecurityTrails, ViewDNS) dariam o IP de antes da
+Cloudflare, mas são pagos ou raspagem, e menos confiáveis que o que a zona
+já mostra.
+
+**Decisão.**
+
+1. **`descobrirIpOrigem(registros, dominio, ipNovo)`** em `lib/zona.js`:
+   cada evidência vota num IPv4 (A de host de e-mail/acesso = 3 pontos, de
+   `www` = 2, de outro subdomínio = 1; `ip4:` do SPF = 2); nunca um IP do
+   proxy nem o servidor novo. Ganha o IP com mais pontos, **desde que tenha
+   ao menos uma evidência forte** (host de e-mail/acesso ou SPF): o A de um
+   subdomínio qualquer sozinho não diz onde o site mora, e a ADR-091
+   continua valendo para ele. A resposta traz as evidências, que vão para o
+   aviso.
+2. **Uso**: quando a raiz está no proxy (ou sem A), o IP descoberto é o
+   **IP antigo** (preserva e-mail e CNAME); e o **subdomínio proxiado** (A)
+   é copiado para ele, sem proxy, com aviso "copiei com o IP real descoberto
+   … confira se esse host mora no mesmo servidor". AAAA proxiado continua
+   descartado (o servidor novo não tem IPv6). Sem evidência forte, o
+   comportamento é o de antes, e o aviso da raiz diz que nenhum host fora do
+   proxy nem o SPF revelou o IP.
+3. **A fotografia do DNS** (`fotografarDns`) consulta mais hosts
+   (`whm`, `direct`, `direct-connect`, `origin`, `server`, `mx`,
+   `email`, `correio`, `admin`, `portal`, `vpn`, `dev`, `old`…) e o
+   **alvo do MX dentro da zona**, mesmo fora da lista.
+
+**Consequências.** No caso do dia, `pop.libelulaexpress.com.br` sairia como
+A para 158.69.27.204 (evidência: A de mail, ip4 do SPF), e o aviso diria
+isso em vez de pedir para cadastrar à mão. Onde a zona não tem host fora do
+proxy nem SPF com IP, nada muda: aviso e nada copiado, porque chutar o IP do
+e-mail é pior que avisar. Testado em `test-zona.js`.
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

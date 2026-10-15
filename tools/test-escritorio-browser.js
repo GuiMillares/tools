@@ -3,8 +3,8 @@
 // Chromium, com window.api falso. Prova que o Asgard abre no Início com o
 // Escritório logo abaixo na barra lateral (sem Three.js, sem canvas, sem tela
 // cheia), que a tela desenha o snapshot (agentes, resumo, pendências, fila,
-// regras), que cada botão chama o canal certo com o payload certo, que o
-// formulário de regra lê o que está nos campos, que o histórico abre, que a
+// concluídas; sem regras aprendidas, ADR-161), que cada botão chama o canal
+// certo com o payload certo (encaminhar, tentar de novo), que o histórico abre, que a
 // lista de espera vai para o processo principal, que a notificação clicada
 // abre as pendências e que a aba "IA & Escritório" das Configurações salva.
 //
@@ -43,12 +43,11 @@ const SNAP = {
   ],
   pendencias: [
     { id: 'P-1', tipo: 'pergunta', padrao: 'ativacao de ssl - {dominio}', pergunta: 'Ativação de SSL vai para quem?', agente: null, contexto: { assuntoExemplo: 'Ativação de SSL - a.com.br' }, tarefas: ['00T2', '00T3'], criadaEm: '2026-10-13T11:00:00.000Z', status: 'aberta', proposta: null },
-    { id: 'P-2', tipo: 'pergunta', padrao: 'x', pergunta: 'Pergunta respondida', agente: 'hospedagem', contexto: { assuntoExemplo: 'Suspensão - y.com.br' }, tarefas: [], criadaEm: '2026-10-13T10:00:00.000Z', status: 'respondida', proposta: { regra: { descricao: 'Suspensão → hospedagem', quando: [{ campo: 'assunto', op: 'comeca', valor: 'Suspensão' }], entao: { acao: 'encaminhar', agente: 'hospedagem', parametros: { acao: 'suspensao' } } }, erros: [], justificativa: 'o operador disse' } },
+    { id: 'P-2', tipo: 'humano', padrao: 'escalada:00T9', pergunta: 'Thor (Publicador MPI+) falhou 3 vezes em "Publicação (Troca de DNS) - z.com.br": Trocar os nameservers no Registro.br falhou. Resolva a causa e use "Tentar de novo", ou faça à mão e marque como tratada.', agente: 'publicador-mpiplus', contexto: { origem: 'execucao', assuntoExemplo: 'Publicação (Troca de DNS) - z.com.br' }, tarefas: [], criadaEm: '2026-10-13T10:00:00.000Z', status: 'aberta', proposta: null },
     { id: 'P-3', tipo: 'retomar', padrao: 'retomar:z', pergunta: 'O Hub fechou enquanto…', agente: 'bloqueador', contexto: {}, tarefas: [], criadaEm: '2026-10-13T09:00:00.000Z', status: 'aberta', proposta: null },
     { id: 'P-4', tipo: 'humano', padrao: 'humano:ajuste site mpi - {dominio}:republicar-site-subdiretorio', pergunta: 'Precisa de você: Republicar o site em subdiretório que sumiu. Nenhum agente publica subdiretório. Marque como tratada quando fizer.', agente: null, contexto: { assuntoExemplo: 'Ajuste Site MPI - adetech.com.br', categoria: 'republicar-site-subdiretorio', trechoChave: 'republicar o site novamente' }, tarefas: ['00T6'], criadaEm: '2026-10-13T08:00:00.000Z', status: 'aberta', proposta: null },
     { id: 'P-0', tipo: 'pergunta', padrao: 'velha', pergunta: 'fechada', agente: null, contexto: {}, tarefas: [], criadaEm: '2026-10-12T09:00:00.000Z', status: 'fechada', proposta: null },
   ],
-  regras: [{ id: 'R-1', descricao: 'Quando assunto começa com "Cobrança" → ignorar', ativa: true, usos: 4, origem: 'pendência P-9', criadaEm: '2026-10-12T09:00:00.000Z', quando: [{ campo: 'assunto', op: 'comeca', valor: 'Cobrança' }], entao: { acao: 'ignorar', agente: '', parametros: {} } }],
 };
 
 const STUB = `
@@ -122,9 +121,12 @@ const STUB = `
     check('o Freio desliga o modo automático', JSON.stringify(await ultima('escritorioLigar')) === '{"geral":false}');
     check('o comando mostra os contadores e a última varredura', await page.evaluate(() => /3/.test(document.querySelector('.esc-stat b').textContent) && /última varredura/.test(document.querySelector('.esc-comando .sec-meta').textContent)));
     check('as pendências abertas aparecem (4), a fechada não', await page.evaluate(() => document.querySelectorAll('.esc-pend').length === 4 && !document.querySelector('[data-pend="P-0"]')));
-    check('a pendência "para você" mostra a leitura do comentário, a categoria e o botão de tratada', await page.evaluate(() => { const p = document.querySelector('[data-pend="P-4"]'); return p && p.classList.contains('tipo-humano') && /para você/.test(p.querySelector('.sec-title').textContent) && /republicar-site-subdiretorio/.test(p.querySelector('.sec-meta').textContent) && /Republicar o site em subdiretório que sumiu por conflito/.test(p.querySelector('.esc-leitura').textContent) && !!p.querySelector('[data-acao="tratada"]') && !!p.querySelector('[data-acao="avisar-sempre"]'); }));
-    await page.click('[data-pend="P-4"] [data-acao="avisar-sempre"]');
-    check('"Avisar sempre" manda a resposta certa', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-4","resposta":{"acao":"avisar-sempre"}}');
+    check('a pendência "para você" mostra a leitura do comentário, a categoria e o botão de tratada', await page.evaluate(() => { const p = document.querySelector('[data-pend="P-4"]'); return p && p.classList.contains('tipo-humano') && /para você/.test(p.querySelector('.sec-title').textContent) && /republicar-site-subdiretorio/.test(p.querySelector('.sec-meta').textContent) && /Republicar o site em subdiretório que sumiu por conflito/.test(p.querySelector('.esc-leitura').textContent) && !!p.querySelector('[data-acao="tratada"]') && !!p.querySelector('[data-acao="tentar-de-novo"]') && !!p.querySelector('[data-acao="encaminhar"]') && !p.querySelector('[data-texto]'); }));
+    await page.click('[data-pend="P-4"] [data-acao="tentar-de-novo"]');
+    check('"Tentar de novo" manda a resposta certa', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-4","resposta":{"acao":"tentar-de-novo"}}');
+    check('a pendência de falha do agente (P-2) aparece como "para você", com Tentar de novo e Encaminhar, sem formulário de regra', await page.evaluate(() => { const p = document.querySelector('[data-pend="P-2"]'); return p && p.classList.contains('tipo-humano') && /para você/.test(p.querySelector('.sec-title').textContent) && /falhou 3 vezes/.test(p.textContent) && !!p.querySelector('[data-acao="tentar-de-novo"]') && !!p.querySelector('[data-agente-sel]') && !p.querySelector('[data-form]'); }));
+    check('a pergunta (P-1) tem Encaminhar, Marcar como tratada, Ignorar estas e Descartar, mais a dica do aprendizado pela ADR; nada de "sempre"', await page.evaluate(() => { const p = document.querySelector('[data-pend="P-1"]'); const acoes = [...p.querySelectorAll('[data-acao]')].map((b) => b.dataset.acao); return acoes.join() === 'encaminhar,tratada,ignorar-estas,descartar' && /ADR-161/.test(p.querySelector('.esc-aprender').textContent) && !p.querySelector('[data-texto]'); }), await page.evaluate(() => [...document.querySelectorAll('[data-pend="P-1"] [data-acao]')].map((b) => b.dataset.acao).join()));
+    check('não há aba de regras: Pendências, Fila e Concluídas', await page.evaluate(() => [...document.querySelectorAll('.esc-tab')].map((b) => b.dataset.aba).join() === 'tudo,fila,historico'));
     await page.click('[data-pend="P-4"] [data-acao="tratada"]');
     check('"Marcar como tratada" na pendência para você', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-4","resposta":{"acao":"tratada"}}');
     check('a pendência agrupa as duas tarefas', await page.evaluate(() => document.querySelectorAll('[data-pend="P-1"] .esc-chip').length === 2));
@@ -140,18 +142,15 @@ const STUB = `
     check('"Rodar agora" chama escritorioRodar', (await chamadas('escritorioRodar')).length === 1);
 
     // Respostas da pendência.
-    await page.fill('[data-pend="P-1"] [data-texto]', 'é sempre a hospedagem');
-    await page.click('[data-pend="P-1"] [data-acao="texto"]');
-    check('responder em texto manda a resposta certa', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-1","resposta":{"acao":"texto","texto":"é sempre a hospedagem"}}');
-    await page.click('[data-pend="P-1"] [data-acao="ignorar-sempre"]');
-    check('"Ignorar sempre"', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-1","resposta":{"acao":"ignorar-sempre"}}');
+    await page.click('[data-pend="P-1"] [data-acao="ignorar-estas"]');
+    check('"Ignorar estas" manda a resposta certa', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-1","resposta":{"acao":"ignorar-estas"}}');
     check('o seletor oferece o Huginn com os dois presets, não o Huginn seco', await page.evaluate(() => { const vals = [...document.querySelectorAll('[data-pend="P-1"] [data-agente-sel] option')].map((o) => o.value); return vals.includes('hospedagem|ssl') && vals.includes('hospedagem|suspensao') && !vals.includes('hospedagem'); }));
     await page.selectOption('[data-pend="P-1"] [data-agente-sel]', 'hospedagem|ssl');
     await page.click('[data-pend="P-1"] [data-acao="encaminhar"]');
-    check('"Encaminhar sempre" leva o agente e os parâmetros do preset', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-1","resposta":{"acao":"encaminhar","agente":"hospedagem","parametros":{"acao":"ssl"}}}', JSON.stringify(await ultima('escritorioResponder')));
+    check('"Encaminhar" chama escritorioEncaminhar com o agente e os parâmetros do preset', JSON.stringify(await ultima('escritorioEncaminhar')) === '{"id":"P-1","agente":"hospedagem","parametros":{"acao":"ssl"}}', JSON.stringify(await ultima('escritorioEncaminhar')));
     await page.selectOption('[data-pend="P-1"] [data-agente-sel]', 'hospedagem|suspensao');
-    await page.click('[data-pend="P-1"] [data-acao="so-desta-vez"]');
-    check('"Só desta vez" chama escritorioAplicarSemRegra com o preset', JSON.stringify(await ultima('escritorioAplicarSemRegra')) === '{"id":"P-1","agente":"hospedagem","parametros":{"acao":"suspensao"}}');
+    await page.click('[data-pend="P-1"] [data-acao="encaminhar"]');
+    check('com o outro preset, leva acao=suspensao', JSON.stringify(await ultima('escritorioEncaminhar')) === '{"id":"P-1","agente":"hospedagem","parametros":{"acao":"suspensao"}}');
     check('o cartão do agente com módulo rodando pela mão mostra trabalhando e o módulo', await page.evaluate(() => { const c = document.querySelector('.esc-agente[data-agente="relator"]'); return c.classList.contains('est-trabalhando') && /Planilha do Relatório/.test(c.querySelector('.esc-agente-atividade').textContent); }));
     check('o interruptor do modelo começa desligado e diz que não custa', await page.evaluate(() => !document.getElementById('escModelo').checked && /sem custo/.test(document.querySelector('label:has(#escModelo)').textContent)));
     await page.click('label:has(#escModelo)');
@@ -160,18 +159,6 @@ const STUB = `
     check('hubEscritorioAtividade manda a atividade do módulo ao processo principal', JSON.stringify(await ultima('escritorioAtividade')) === '{"agente":"auditor","ligado":true,"detalhe":"Quando publicou"}');
     await page.click('[data-pend="P-3"] [data-acao="retomar"]');
     check('"Retomar" na interrompida', JSON.stringify(await ultima('escritorioResponder')) === '{"id":"P-3","resposta":{"acao":"retomar"}}');
-
-    // Proposta de regra: o formulário mostra a proposta; editar e aprovar
-    // manda a regra lida dos campos.
-    check('a pendência respondida mostra a proposta com a condição e o agente', await page.evaluate(() => {
-      const f = document.querySelector('[data-pend="P-2"] [data-form]');
-      return f && f.querySelector('[data-valor]').value === 'Suspensão' && f.querySelector('[data-op]').value === 'comeca' && f.querySelector('[data-agente-regra]').value === 'hospedagem' && /acao=suspensao/.test(f.querySelector('[data-params]').value);
-    }));
-    await page.fill('[data-pend="P-2"] [data-form] [data-descricao]', 'Suspensão vai para a hospedagem');
-    await page.fill('[data-pend="P-2"] [data-form] [data-params]', 'acao=suspensao\nprojeto=Busca Cliente');
-    await page.click('[data-pend="P-2"] [data-acao="aprovar-regra"]');
-    const aprov = await ultima('escritorioAprovarRegra');
-    check('aprovar manda a regra lida do formulário (condição, ação, agente, parâmetros, descrição)', aprov && aprov.id === 'P-2' && aprov.regra.quando[0].valor === 'Suspensão' && aprov.regra.entao.agente === 'hospedagem' && aprov.regra.entao.parametros.projeto === 'Busca Cliente' && aprov.regra.descricao === 'Suspensão vai para a hospedagem', JSON.stringify(aprov));
 
     // Fila de tarefas e histórico.
     await page.click('.esc-tab[data-aba="fila"]');
@@ -188,25 +175,6 @@ const STUB = `
     check('o histórico fecha', await page.evaluate(() => !document.querySelector('.esc-hist')));
     await page.click('.esc-tab[data-aba="historico"]');
     check('a aba de concluídas e ignoradas lista a ignorada', await page.evaluate(() => !!document.querySelector('[data-tarefa="00T5"]')));
-
-    // Regras.
-    await page.click('.esc-tab[data-aba="regras"]');
-    check('a aba de regras lista a regra com usos e origem', await page.evaluate(() => /Cobrança/.test(document.querySelector('[data-regra="R-1"]').textContent) && /pendência P-9/.test(document.querySelector('[data-regra="R-1"]').textContent)));
-    await page.click('[data-regra="R-1"] .esc-mini-switch');
-    const salva = await ultima('escritorioRegraSalvar');
-    check('desligar a regra salva com ativa=false e o mesmo id', salva && salva.regra.id === 'R-1' && salva.regra.ativa === false);
-    await page.click('[data-editar-regra="R-1"]');
-    check('editar abre o formulário com a regra, e a ação tem "avisar"', await page.evaluate(() => { const f = document.querySelector('[data-form="regra"]'); return f && f.dataset.regraId === 'R-1' && f.querySelector('[data-valor]').value === 'Cobrança' && f.querySelector('[data-acao-sel]').value === 'ignorar' && [...f.querySelectorAll('[data-acao-sel] option')].some((o) => o.value === 'avisar'); }));
-    await page.click('[data-form="regra"] [data-add-cond]');
-    check('+ condição adiciona uma linha mantendo a primeira', await page.evaluate(() => document.querySelectorAll('[data-form="regra"] [data-cond]').length === 2 && document.querySelector('[data-form="regra"] [data-valor]').value === 'Cobrança'));
-    await page.fill('[data-form="regra"] [data-cond="1"] [data-valor]', 'bc');
-    await page.selectOption('[data-form="regra"] [data-cond="1"] [data-campo]', 'fila');
-    await page.click('[data-acao="salvar-regra"]');
-    const editada = await ultima('escritorioRegraSalvar');
-    check('salvar manda a regra editada com as duas condições', editada && editada.regra.id === 'R-1' && editada.regra.quando.length === 2 && editada.regra.quando[1].campo === 'fila' && editada.regra.quando[1].valor === 'bc', JSON.stringify(editada));
-    page.once('dialog', (d) => d.accept());
-    await page.click('[data-apagar-regra="R-1"]');
-    check('apagar pede confirmação e chama escritorioRegraApagar', JSON.stringify(await ultima('escritorioRegraApagar')) === '{"id":"R-1"}');
 
     // O log do processo principal chega ao terminal sem gravar de novo.
     await page.evaluate(() => { window.__gravadas = 0; const g = window.api.gravarLog; });
@@ -237,6 +205,7 @@ const STUB = `
     await page.evaluate(() => window.__abrir({ gaveta: 'pendencias' }));
     await page.waitForFunction(() => state.view === 'escritorio' && document.querySelector('.esc-pend'), { timeout: 3000 }).catch(() => {});
     check('a notificação clicada abre o Escritório na aba de pendências', await page.evaluate(() => state.view === 'escritorio' && window.hubEscritorio.ui.aba === 'tudo' && document.querySelectorAll('.esc-pend').length === 4 && document.querySelector('.esc-tab.active').dataset.aba === 'tudo'));
+    check('o Comando conta as tarefas aguardando externo no lugar das regras', await page.evaluate(() => [...document.querySelectorAll('.esc-stat small')].some((s) => /aguardando externo/.test(s.textContent)) && ![...document.querySelectorAll('.esc-stat small')].some((s) => /regra/.test(s.textContent))));
     check('o e-mail de vhost editado foi para o hub-state (mailVhost)', hub.length >= 1 && hub[hub.length - 1].to === 'infra@m3.test' && await page.evaluate(() => state.mailVhost && state.mailVhost.to === 'infra@m3.test'), JSON.stringify(hub));
     check('sem erro de página no fim', erros.length === 0, erros.join(' | '));
   } catch (e) {
