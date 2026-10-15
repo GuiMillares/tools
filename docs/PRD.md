@@ -713,6 +713,10 @@ toda tela e em todo seletor.
   decidido e por quê, qual regra validou, entradas, saídas e erros. Tarefa
   que estava executando quando o Hub fechou vira "retomar?" em vez de
   retomar sozinha. Falha comum tenta até 3 vezes e então escala para você.
+  "Reanalisar" vale para qualquer tarefa que não esteja executando nem
+  concluída, inclusive a que já foi publicada e espera o DNS do cliente
+  (ADR-160): ela volta à análise, ganha o plano de novo e o Thor, que
+  reconhece o site já publicado pela lista de espera, só confere o DNS.
 - **Modelo (opcional, desligado por padrão):** o interruptor "Perguntar ao
   Gemini" no Comando liga o modelo só para a tarefa que a triagem e as
   regras não reconhecem (ler o comentário e propor a regra). Desligado, ela

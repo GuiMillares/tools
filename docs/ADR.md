@@ -15,7 +15,7 @@ passado.
 <!-- indice:inicio (gerado por tools/indice-adr.js; não edite à mão) -->
 ## Índice
 
-160 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
+161 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
 
 - **ADR-001** — Electron puro, sem framework de UI e sem build step
 - **ADR-002** — Toda rede no processo principal; renderer só fala por IPC
@@ -175,6 +175,7 @@ passado.
 - **ADR-157** — O mapa de fluxo: a segunda visão do Escritório, com Odin no centro, os agentes em volta e as tarefas correndo pelas linhas
 - **ADR-158** — A identidade do app vira Asgard de vez: nome e appId novos, a pasta de dados copiada na primeira abertura e a instalação antiga trocada pela nova
 - **ADR-159** — O Escritório volta ao HTML: a cena 3D de tela cheia e o mapa saem por peso, o Início volta a ser a abertura, e a automação fica como está
+- **ADR-160** — Reanalisar uma tarefa que espera o DNS: a transição existe, e o reanalisar confere antes de mexer na tarefa
 - **Pendências conhecidas** (não são decisões — são dívidas)
 - **ADR-146** — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
 <!-- indice:fim -->
@@ -7991,6 +7992,50 @@ trabalhando"; o que diz isso agora é o cartão do agente (estado e
 atividade) e o chip do topo. A preferência da cena guardada no localStorage
 (`hub.escritorio.tela`) fica órfã e inofensiva. A suíte perde um arquivo
 (a planta) e o instalador fica menor.
+
+## ADR-160 — Reanalisar uma tarefa que espera o DNS: a transição existe, e o reanalisar confere antes de mexer na tarefa
+
+**Status:** aceita (15/10/2026). Ajuste da ADR-149 (estados e reanálise).
+
+**Contexto.** O Guilherme clicou em "reanalisar" em duas tarefas de
+publicação MPI+ que estavam em **aguardando externo** (o site já publicado,
+faltando o DNS do cliente, que o vigia confere a cada 30 min). A Atividade
+mostrou, para cada uma, "transição inválida: aguardando_externo →
+em_analise", depois "→ planejada", e no meio "plano → Thor (via regra)";
+a tarefa não saiu do lugar. Dois defeitos: a tabela de transições da
+ADR-149 não tinha `aguardando_externo → em_analise` (reanalisar nunca
+tinha sido pensado para esse estado), e o `reanalisar` limpava o plano e
+o agente **antes** de tentar a transição; recusada a transição, a análise
+rodava mesmo assim sobre uma tarefa no estado antigo, refazia o plano e
+tentava `planejada`, recusada de novo. A tarefa ficou consistente por
+sorte (a regra devolveu o mesmo plano), mas o histórico ganhou ruído e o
+botão não fez o que prometia.
+
+**Decisão.**
+
+1. **`aguardando_externo → em_analise` entra na tabela.** Reanalisar
+   é um pedido explícito da pessoa; a tabela existe para barrar erro de
+   programa, não caso de uso. É seguro porque o executor do Thor é
+   idempotente nesse ponto: ao receber de novo um domínio que está na lista
+   de espera do Publicar MPI+, ele responde "já publicado; aguardando o DNS
+   do cliente" (`aguardando`), e a tarefa volta a aguardando externo sem
+   republicar nada. Em modo manual, o plano espera o "Executar", como
+   qualquer outro.
+2. **`reanalisar` confere `Estados.podeIr(estado, em_analise)` antes de
+   tocar na tarefa.** Se não dá (hoje só a concluída), devolve
+   `{ ok: false, erro: 'a tarefa está "concluída" e não volta para
+   análise' }` com o plano intacto, e nada vai para o log como transição
+   inválida. A tela mostra o erro na Atividade, como já fazia com os
+   outros.
+
+**Consequências.** O botão faz o que diz em todo estado em que aparece
+(a tela já o escondia só para executando e concluída). O teste do
+orquestrador prova a reanálise de uma tarefa aguardando externo (volta à
+análise, ganha plano, a varredura seguinte a devolve a aguardando externo
+sem transição inválida) e a recusa limpa para a concluída. As duas tarefas
+do dia (anrservicos.com.br e preventsolucoes.com.br) continuam em aguardando
+externo, com o plano certo; o que falta nelas é o cliente apontar o DNS,
+não uma reanálise.
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

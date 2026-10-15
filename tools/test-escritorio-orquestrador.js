@@ -285,6 +285,16 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     check('automático: executou o Publicador MPI+ depois de validar, e concluiu', t.estado === T.CONCLUIDA && m.execucoes.length === 2 && m.execucoes.find((e) => e.agente === 'publicador-mpiplus').parametros.dominio === 'cliente.com.br' && t.historico.some((h) => h.tipo === 'validacao' && h.ok) && t.historico.some((h) => h.tipo === 'execucao' && h.ok), JSON.stringify(t.historico.map((h) => h.tipo)));
     check('estados passaram por executando', t.historico.some((h) => h.tipo === 'estado' && h.para === T.EXECUTANDO));
     check('aguardando: vira aguardando externo', m.loja.tarefa('00T-BLQ').estado === T.AGUARDANDO_EXTERNO);
+    // Reanalisar quem já foi publicado e espera o DNS (ADR-160): volta à
+    // análise, ganha plano de novo e, na varredura seguinte, o executor (que
+    // reconhece "já publicado") responde aguardando outra vez.
+    let r2 = await m.orq.reanalisar('00T-BLQ');
+    check('reanalisar uma tarefa aguardando externo é aceito: volta à análise e ganha plano de novo, sem transição inválida no log', r2.ok && !!m.loja.tarefa('00T-BLQ').plano && m.loja.tarefa('00T-BLQ').historico.some((h) => h.tipo === 'estado' && h.de === T.AGUARDANDO_EXTERNO && h.para === T.EM_ANALISE) && !temLog(m.logs, /transição inválida/), JSON.stringify(r2));
+    await m.orq.varrer();
+    check('na varredura seguinte o executor responde aguardando e ela volta a aguardando externo', m.loja.tarefa('00T-BLQ').estado === T.AGUARDANDO_EXTERNO);
+    const planoMpi = m.loja.tarefa('00T-MPI').plano;
+    r2 = await m.orq.reanalisar('00T-MPI');
+    check('reanalisar uma concluída é recusado antes de mexer nela: o plano fica e o log não acusa transição inválida', !r2.ok && /concluída/.test(r2.erro) && m.loja.tarefa('00T-MPI').plano === planoMpi && m.loja.tarefa('00T-MPI').estado === T.CONCLUIDA && !temLog(m.logs, /transição inválida/), JSON.stringify(r2));
     // Falha até o teto → escalada + pendência.
     m.fila.tarefas.push(sf('00T-BL2', 'BLOQUEIO DE CONTATOS - bc.com.br', '', { id: '00T-BL2' }));
     respostas['bc.com.br'] = { ok: false, motivo: 'painel fora do ar' };
