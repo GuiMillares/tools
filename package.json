@@ -1,6 +1,6 @@
 {
   "name": "asgard",
-  "version": "1.0.94",
+  "version": "1.0.95",
   "description": "Asgard: o Hub da equipe com o orquestrador e os agentes (merge de PRs, publicação, propriedades Google, e-mails, relatórios)",
   "main": "main.js",
   "author": "Guilherme",
