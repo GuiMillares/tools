@@ -8001,6 +8001,9 @@ atividade) e o chip do topo. A preferência da cena guardada no localStorage
 ## ADR-160 — Reanalisar uma tarefa que espera o DNS: a transição existe, e o reanalisar confere antes de mexer na tarefa
 
 **Status:** aceita (15/10/2026). Ajuste da ADR-149 (estados e reanálise).
+Corrigida pela ADR-162, item 5: a reanálise de uma tarefa já na lista de
+espera parava na validação "Fora da lista de espera" e virava pendência;
+agora volta a aguardando externo.
 
 **Contexto.** O Guilherme clicou em "reanalisar" em duas tarefas de
 publicação MPI+ que estavam em **aguardando externo** (o site já publicado,
@@ -8171,6 +8174,13 @@ por fazer.
    fora do caso do domínio novo, "driver desconhecido". Vira pendência "para
    você" (ADR-161) na primeira vez, em vez de três tentativas iguais de 5 em
    5 min.
+5. **Domínio já na lista de espera não é pendência.** Quando a única regra
+   de execução que barra é "Fora da lista de espera", o site já foi
+   publicado e só espera o DNS: a tarefa vai para **aguardando externo**
+   (transições `planejada` e `falhou` → `aguardando_externo`), sem
+   pendência, e o vigia da lista termina e fecha. Foi o que aconteceu com
+   as duas tarefas reanalisadas de manhã (ADR-160): viraram pendência
+   "não pode agir: Fora da lista de espera" quando deviam só esperar.
 
 **Consequências.** As esperas que dependem de terceiros (cliente, Registro.br
 publicando um domínio novo) não param a fila nem viram pendência; o que

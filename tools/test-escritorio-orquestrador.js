@@ -315,6 +315,16 @@ const temLog = (logs, re) => logs.some((l) => re.test(l[0]));
     m.limpar();
   }
 
+  console.log('\n=== Domínio já na lista de espera: aguardando externo, não pendência (ADR-162) ===');
+  {
+    const m = montar({ tarefas: [MPI], executar: async () => ({ ok: true, mensagem: 'não era para executar' }), ctx: { configurado: () => true, emEspera: (d) => (d === 'cliente.com.br' ? { motivo: 'aguardando o cliente apontar' } : null), marcaDoDominio: async () => ({ marca: 'bc', ips: [] }) } });
+    m.orq.ligar({ geral: true, observacao: false });
+    await m.orq.varrer();
+    const t = m.loja.tarefa('00T-MPI');
+    check('a validação "Fora da lista de espera" leva a tarefa a aguardando externo, sem pendência e sem executar', t.estado === T.AGUARDANDO_EXTERNO && m.execucoes.length === 0 && m.loja.pendenciasAbertas().length === 0 && temLog(m.logs, /já está na lista de espera/) && !temLog(m.logs, /transição inválida/), JSON.stringify([t.estado, m.loja.pendenciasAbertas().length]));
+    m.limpar();
+  }
+
   console.log('\n=== Modo manual e tarefa interrompida ===');
   {
     const m = montar({ tarefas: [BLOQ], executar: async () => ({ ok: true, mensagem: 'feito' }) });
