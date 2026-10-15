@@ -651,8 +651,9 @@ convenção do "Criar propriedades", listada na aba **Vincular Analytics**.
 
 ### 4.15 Escritório — `escritorio`
 
-A tela principal do Hub (a primeira da barra lateral e a de abertura), de
-tela cheia, com o escritório em 3D (ADR-153): o
+A segunda tela da barra lateral, logo abaixo do Início (ADR-159; da ADR-149
+à ADR-158 foi a de abertura, e por um dia em 3D de tela cheia, ADR-153, que
+saiu por peso): o
 **orquestrador** e os **agentes** que fazem sozinhos o que antes era feito
 módulo a módulo (ADR-149, ADR-150). O orquestrador, **Odin**, lê a fila de
 deploy do Salesforce a cada 5 minutos, decide o que cada tarefa precisa e
@@ -671,7 +672,8 @@ toda tela e em todo seletor.
   um site em subdiretório, por exemplo): vira pendência "para você", com a
   leitura, até você marcar como tratada. Tarefas do mesmo tipo de pedido
   (pelo comentário, não só pelo assunto) entram na mesma pendência.
-- **Agentes** (uma figura na própria sala, com o cartão preso a ela): **Thor** (Publicador MPI+:
+- **Agentes** (um cartão por agente, com sala, nome, papel, módulos, estado
+  e o interruptor dele): **Thor** (Publicador MPI+:
   Publicar MPI+ e Publicação em Massa), **Freyr** (Publicador Busca One:
   propriedades, geral.php, vhost), **Tyr** (Bloqueador de Contatos),
   **Huginn** (Hospedagem & E-mails: SSL e suspensão), **Ratatoskr**
@@ -727,46 +729,17 @@ toda tela e em todo seletor.
 - **Resumo "Hoje e últimos 7 dias" (ADR-155):** quantas tarefas os agentes
   fizeram sozinhos, quantas você fez à mão, falhas, ignoradas, pendências e
   o tempo médio da fila até a execução, no título da tela (a frase do dia) e
-  na gaveta Comando (a tabela, com o total por agente). É a medida para
-  decidir se vale tirar um agente do standby.
-- **A tela é o escritório em 3D, de tela cheia (ADR-153):** dez salas
-  numeradas em duas filas com um corredor no meio (01 Sala de Comando do
-  Odin, 02 a 09 uma por agente, 10 Sala de Reunião), divisórias de vidro,
-  mesas, monitores e uma figura por agente com o cartão (nome · papel)
-  preso a ela. O que se vê diz o estado: **na mesa** quem está ocioso, em
-  standby ou trabalhando (losango ciano girando e monitor aceso); **cadeira
-  vazia** quem está desligado; **na Sala de Reunião**, com um losango
-  amarelo, quem tem pendência aberta com você, e o Odin vai para lá quando a
-  pendência não é de agente nenhum; **de pé na Sala de Comando**, com
-  losango vermelho, quem tem tarefa escalada. Cada tarefa aberta é um
-  **pacote** na mesa de quem cuida dela (na fila e escalada na do Odin,
-  pendente na de reunião) e viaja pelo corredor quando é encaminhada, com
-  um selo dizendo o assunto e para quem vai; a concluída vira um "✓" que
-  sobe. Cada agente leva, acima da cabeça, um losango com o ícone da sua
-  função (o mesmo da barra lateral) e um anel luminoso no chão, ambos com a
-  cor do estado; o cartão fica preso por um fio. A câmera só se move pela
-  mão: pan, zoom e giro pelo mouse; duplo clique recentra. Em janela menor
-  os cartões, losangos e rótulos encolhem junto com a cena, os cartões
-  (uma linha: avatar, nome · papel) viram compactos (avatar e nome) e saem
-  do caminho uns dos outros para cima ou para o lado, sem cobrir outro
-  cartão nem o nome de uma sala; redimensionar a janela reenquadra. Passar
-  o mouse num pacote mostra a tarefa (assunto, estado, agente); clicar nele
-  abre o histórico dela (ADR-156).
-- **Mapa de fluxo (ADR-157):** o botão "Mapa" do rodapé troca para a
-  segunda visão: Odin no centro, os agentes em hexágonos em volta com a cor
-  do estado e o número de tarefas abertas, linhas de Odin a cada um (mais
-  grossas quanto mais tarefas; tracejadas para o standby). Uma tarefa
-  encaminhada corre como um pulso ciano de Odin ao agente; a concluída
-  volta verde. Clicar num nó abre a gaveta do agente; "Escritório" volta ao
-  3D. Sem WebGL, a mesma planta aparece em 2D (botão 3D/2D no
-  rodapé). O menu do Hub e o topo ficam recolhidos e voltam quando o mouse
-  encosta na borda esquerda ou na de cima (ou pelo ☰). O rodapé tem
-  "Mostrar/Esconder painéis" (os cartões) e abre, numa gaveta por cima da
-  cena, as Pendências, a Fila, as Regras, as Concluídas, o Comando e a
-  Atividade (o terminal). Clicar numa figura ou num cartão abre a gaveta
-  do agente, com o interruptor dele, as pendências e as tarefas. Nada
-  anima parado: o laço de quadros só roda enquanto alguém anda ou trabalha,
-  e para com a janela sem foco ou ao sair da tela.
+  numa tabela abaixo dos cartões dos agentes (com o total por agente). É a
+  medida para decidir se vale tirar um agente do standby.
+- **A tela (ADR-159):** HTML no painel da esquerda, como qualquer outra
+  ferramenta: o cabeçalho com o modo e as pendências, "Rodar agora" e Freio;
+  o Comando com os interruptores, os contadores do dia e a lista de espera do
+  DNS; os cartões dos agentes; a tabela do resumo; as abas Pendências, Fila
+  de tarefas, Regras aprendidas e Concluídas e ignoradas; o histórico de uma
+  tarefa num painel lateral. Nada anima parado e nada pede quadro: a tela só
+  se redesenha quando o orquestrador avisa que algo mudou. O escritório em
+  3D de tela cheia (ADR-153) e o mapa de fluxo (ADR-157) saíram em 15/10/2026
+  porque pesavam demais na máquina; ficaram no histórico do git.
 
 O painel flutuante da automação foi absorvido pelo Escritório (4.10,
 ADR-150).

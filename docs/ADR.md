@@ -15,7 +15,7 @@ passado.
 <!-- indice:inicio (gerado por tools/indice-adr.js; não edite à mão) -->
 ## Índice
 
-159 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
+160 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
 
 - **ADR-001** — Electron puro, sem framework de UI e sem build step
 - **ADR-002** — Toda rede no processo principal; renderer só fala por IPC
@@ -174,6 +174,7 @@ passado.
 - **ADR-156** — Pacotes clicáveis, suíte a cada push e em paralelo, índice da ADR, e o backlog antigo: fila de PRs persistida, histórico exportado, ID ambíguo escolhido
 - **ADR-157** — O mapa de fluxo: a segunda visão do Escritório, com Odin no centro, os agentes em volta e as tarefas correndo pelas linhas
 - **ADR-158** — A identidade do app vira Asgard de vez: nome e appId novos, a pasta de dados copiada na primeira abertura e a instalação antiga trocada pela nova
+- **ADR-159** — O Escritório volta ao HTML: a cena 3D de tela cheia e o mapa saem por peso, o Início volta a ser a abertura, e a automação fica como está
 - **Pendências conhecidas** (não são decisões — são dívidas)
 - **ADR-146** — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
 <!-- indice:fim -->
@@ -7511,8 +7512,10 @@ ganhou as verificações dos dois executores, das regras e do interruptor.
 
 ## ADR-153 — Escritório, fases 4 e 5: a tela de tela cheia com o escritório em 3D isométrico, a planta como código, e o menu que volta pela borda
 
-**Status:** aceita — fases 4 e 5 de 5, entregues juntas a pedido de
-14/10/2026. Fecha a série ADR-149 → ADR-152.
+**Status:** substituída pela ADR-159 (15/10/2026): a cena 3D, a tela cheia
+e o menu pela borda saíram por peso; a tela do Escritório voltou à da fase 3
+e o Início voltou a ser a abertura. Era: aceita — fases 4 e 5 de 5,
+entregues juntas a pedido de 14/10/2026. Fecha a série ADR-149 → ADR-152.
 
 **Contexto.** Em 14/10/2026 o Guilherme mandou dois prints de um escritório
 isométrico (salas numeradas, mesas, divisórias de vidro, um cartão por agente
@@ -7790,6 +7793,7 @@ quatro itens.
 ## ADR-156 — Pacotes clicáveis, suíte a cada push e em paralelo, índice da ADR, e o backlog antigo: fila de PRs persistida, histórico exportado, ID ambíguo escolhido
 
 **Status:** aceita — bloco 2 do pedido de 14/10/2026 (ADR-155 é o bloco 1).
+Os pacotes clicáveis (item 1) saíram com a cena 3D na ADR-159; o resto fica.
 
 **Contexto.** Depois do bloco de risco, o que deixa o dia a dia mais
 fluido e o projeto mais fácil de manter: o que o backlog do PRD listava
@@ -7846,7 +7850,8 @@ pacote (dica e clique). A suíte inteira cai de ~2 min para menos de 1 min.
 
 ## ADR-157 — O mapa de fluxo: a segunda visão do Escritório, com Odin no centro, os agentes em volta e as tarefas correndo pelas linhas
 
-**Status:** aceita — bloco 3 do pedido de 14/10/2026.
+**Status:** substituída pela ADR-159 (15/10/2026): o mapa saiu junto com a
+cena 3D. Era: aceita — bloco 3 do pedido de 14/10/2026.
 
 **Contexto.** O vídeo de referência (ADR-153) tinha, além do escritório
 isométrico, uma tela "SQUAD": um mapa de nós em hexágonos ligados por
@@ -7922,6 +7927,70 @@ Correção: a migração roda **no carregamento do main.js, antes do
 `whenReady`** (antes de o Chromium abrir a pasta) e copia o `Local State`
 antigo por cima do que houver. Na máquina do Guilherme a pasta nova foi
 apagada e a migração refeita pela 1.0.92; o teste cobre os dois pontos.
+
+## ADR-159 — O Escritório volta ao HTML: a cena 3D de tela cheia e o mapa saem por peso, o Início volta a ser a abertura, e a automação fica como está
+
+**Status:** aceita (15/10/2026). Substitui a ADR-153 (fases 4 e 5) e a
+ADR-157 (mapa de fluxo) no que diz respeito à tela; a parte dos pacotes
+clicáveis da ADR-156 sai junto. As ADR-149 a 152 (orquestrador, agentes,
+regras aprendidas, validação em código, ponte do Publicar MPI+) seguem
+como estão.
+
+**Contexto.** Pedido de 15/10/2026: "achei legal a ideia do escritório e
+tudo mais, só que está muito pesado; vamos voltar como era a tela inicial
+sem escritório, porém as automações das tarefas podem permanecer como
+estão". Depois de três rodadas de aliviar o motor (ADR-153, 3º adendo:
+sombra calculada uma vez, vidro simples, GPU dedicada, cartões de uma
+linha), a cena em 3D continuou pesada na máquina dele. O que ele quer
+manter é o orquestrador com os agentes, as regras, as pendências e a fila;
+o que incomoda é a tela, e a tela de abertura em especial, porque o
+Three.js subia junto com o Asgard mesmo quando ele ia usar outro módulo.
+
+**Decisão.**
+
+1. **A tela do Escritório volta a ser a da fase 3** (`renderer/
+   escritorio-ui.js`: o arquivo de antes da ADR-153, mais o que entrou
+   depois e não é 3D): o cabeçalho com o modo, as pendências, "Rodar agora"
+   e o Freio; o Comando (interruptores, contadores do dia, lista de espera
+   do DNS); os cartões dos agentes com o interruptor de cada um; a tabela
+   "Hoje e últimos 7 dias" (ADR-155) logo abaixo dos cartões e a frase do
+   dia no título; as abas Pendências / Fila / Regras / Concluídas e
+   ignoradas; o histórico da tarefa num painel lateral. Nada pede quadro:
+   sem `requestAnimationFrame`, sem canvas, sem laço; a tela só se redesenha
+   quando o orquestrador emite um evento (ADR-126 fica trivial). A
+   notificação do Windows clicada (ADR-155) abre a aba de pendências.
+2. **O Início volta a ser a tela de abertura** (`state.view = 'home'`),
+   como antes da ADR-149, e o Escritório passa a ser o segundo item da barra
+   lateral, logo abaixo. O chip do topo continua em todas as telas.
+3. **Sai do repositório o que só servia à cena**: `renderer/
+   escritorio-cena.js`, `renderer/escritorio-mapa.js`, `lib/escritorio/
+   planta.js`, `renderer/vendor/` (Three.js r158, licença e LEIA-ME),
+   `tools/test-escritorio-planta.js`, o bloco de CSS da tela cheia
+   (bordas, HUD, gaveta, losangos, selos, mapa, as media queries) e as
+   linhas do `render()` do app.js que punham o `.app` em `esc-cheia` e
+   chamavam `hubEscritorioSair`. O index.html carrega só o resumo (dual,
+   ADR-155) e a tela. Está tudo no histórico do git (versões 1.0.81 a
+   1.0.92) se a ideia voltar um dia numa máquina que aguente; não se
+   mantém código morto no repositório por isso.
+4. **A automação não muda em nada**: orquestrador, agentes, regras,
+   validação, ponte, relógio de 5 min, notificação, resumo, canais do
+   preload e do main.js são os mesmos. O snapshot continua trazendo
+   `salas` e `resumo`; a tela só deixou de desenhar a planta.
+5. **Testes.** `test-escritorio-browser.js` volta ao roteiro da fase 3 e
+   prova a abertura no Início, a ordem da barra lateral, a ausência de
+   Three.js, canvas e tela cheia, o resumo na tela e a notificação abrindo
+   as pendências; `test-leveza.js` prova que os arquivos da cena saíram, que
+   o CSS e o app.js não têm mais a tela cheia e que a tela não anima; o
+   `test-escritorio-planta.js` sai com a planta.
+
+**Consequências.** O Asgard abre no Início, leve como antes do Escritório,
+e sem Three.js carregado em tela nenhuma; o Escritório é uma tela de gestão
+a um clique (barra lateral, chip do topo ou notificação), sem nada a
+desenhar enquanto ninguém olha. Perde-se o "ver de longe quem está
+trabalhando"; o que diz isso agora é o cartão do agente (estado e
+atividade) e o chip do topo. A preferência da cena guardada no localStorage
+(`hub.escritorio.tela`) fica órfã e inofensiva. A suíte perde um arquivo
+(a planta) e o instalador fica menor.
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

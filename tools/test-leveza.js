@@ -103,17 +103,11 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
   check('a telemetria do topo não trabalha com a janela escondida', /if \(document\.visibilityState === 'hidden'\) return;/.test(recorta(app, 'function iniciarTopbarLive(', '\n}')));
   check('o CSS também saiu', !/\.tb-pill|\.statusbar|\.nav-foot|\.sb-dot/.test(css));
 
-  console.log('\n=== A cena do Escritório (ADR-153) não roda para sempre ===');
-  {
-    const cena = ler('renderer', 'escritorio-cena.js');
-    const laco = recorta(cena, 'function criarLaco(', '\n  }');
-    check('o laço para com a janela escondida ou sem foco e só volta no foco', /document\.hidden/.test(laco) && /sem-foco/.test(laco) && /visibilitychange/.test(laco) && /addEventListener\('focus'/.test(laco));
-    check('o laço tem teto de quadros por segundo', /FPS_MAX/.test(laco) && /const FPS_MAX = 30;/.test(cena));
-    check('só pede outro quadro enquanto algo se move (figura, pacote, ícone de trabalho ou câmera)', /if \(continua\) raf = requestAnimationFrame\(quadro\);/.test(laco) && /return movendo \|\| camMudou;/.test(cena));
-    check('ícone de pergunta e de erro ficam parados; só o de trabalho e o da fila giram', /if \(f\.icone === 'trabalho' \|\| f\.icone === 'fila'\) \{ f\.iconeAng \+= dt \* 1\.6; movendo = true; \}/.test(cena));
-    check('sair do Escritório desliga o laço (app.js chama hubEscritorioSair no render)', /window\.hubEscritorioSair\(\)/.test(app) && /motor\.desligar\(\)/.test(ler('renderer', 'escritorio-ui.js')));
-    check('o pixel ratio tem teto (sem 4K de sombra por quadro)', /Math\.min\(window\.devicePixelRatio \|\| 1, 1\.25\)/.test(cena));
-  }
+  console.log('\n=== O Escritório voltou ao HTML (ADR-159): sem cena, sem laço de quadros ===');
+  check('index.html não carrega Three.js, a cena, o mapa nem a planta', !/three\.min\.js|escritorio-cena\.js|escritorio-mapa\.js|planta\.js/.test(html));
+  check('os arquivos da cena saíram do repositório', !fs.existsSync(path.join(raiz, 'renderer', 'escritorio-cena.js')) && !fs.existsSync(path.join(raiz, 'renderer', 'escritorio-mapa.js')) && !fs.existsSync(path.join(raiz, 'renderer', 'vendor')) && !fs.existsSync(path.join(raiz, 'lib', 'escritorio', 'planta.js')));
+  check('o app.js não tem mais a tela cheia nem o CSS dela', !/esc-cheia|hubEscritorioSair/.test(app) && !/esc-cheia|esc-borda|esc-palco|esc-mapa/.test(css));
+  check('a tela do Escritório não pede quadro nenhum nem anima para sempre', !/requestAnimationFrame|setInterval/.test(ler('renderer', 'escritorio-ui.js')));
 
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
   process.exit(falhas ? 1 : 0);

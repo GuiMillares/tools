@@ -1,15 +1,12 @@
-// Escritório (ADR-149, ADR-153) — a tela principal do Hub, de tela cheia: o
-// escritório em 3D isométrico (renderer/escritorio-cena.js, com a planta de
-// lib/escritorio/planta.js) com o orquestrador e os agentes nas salas, os
-// cartões presos às figuras, o HUD do Comando por cima e uma gaveta à
-// direita com as pendências, a fila, as regras e as concluídas. O menu do
-// Hub e o topo somem e voltam quando o mouse encosta na borda esquerda ou
-// na de cima.
-//
-// Carregado por <script> DEPOIS do app.js, como o automacao-ui.js: não mexe
-// no corpo do app.js, só registra `renderEscritorioTool` (que o render() do
-// app chama quando state.view === 'escritorio'), injeta o chip de status no
-// topo e conversa com o processo principal pelo preload.
+// Escritório (ADR-149, ADR-159) — a tela do orquestrador e dos agentes, em
+// HTML puro: o Comando, os cartões dos agentes, as abas de pendências, fila,
+// regras e concluídas, e o histórico de cada tarefa. A tela em 3D de tela
+// cheia (ADR-153/157) saiu em 15/10/2026 por peso; o Início voltou a ser a
+// abertura e esta tela é a segunda da barra lateral.
+// Carregado por <script> DEPOIS do app.js, como o automacao-ui.js:
+// não mexe no corpo do app.js, só registra `renderEscritorioTool` (que o
+// render() do app chama quando state.view === 'escritorio'), injeta o chip
+// de status no topo e conversa com o processo principal pelo preload.
 //
 // Tudo que aparece aqui vem de `escritorio:estado` (o snapshot do
 // orquestrador); a tela nunca decide nada sozinha. A lista de espera do DNS,
@@ -28,28 +25,8 @@
   const CAMPOS = ['assunto', 'descricao', 'fila', 'tipo', 'plataforma', 'dominio', 'temporario', 'marca', 'elegivel', 'dono', 'prioridade', 'relativoTipo'];
   const OPS = [['igual', '='], ['diferente', '≠'], ['contem', 'contém'], ['naoContem', 'não contém'], ['comeca', 'começa com'], ['termina', 'termina com'], ['regex', 'bate com (regex)'], ['vazio', 'está vazio'], ['naoVazio', 'não está vazio']];
   const ESTADO_AGENTE = { ocioso: ['ocioso', 'neutral'], standby: ['standby', 'neutral'], trabalhando: ['trabalhando', 'run'], aguardando: ['aguardando você', 'warn'], erro: ['com erro', 'err'], desligado: ['desligado', 'off'] };
-  const PREFS_CHAVE = 'hub.escritorio.tela';
-  const ALTURA_CARTAO = 3.0;  // o cartão, no alto do fio, em metros da planta
-  const ALTURA_LOSANGO = 2.1; // o losango com o ícone, logo acima da cabeça
 
-  const ui = { snap: null, carregando: false, erro: '', aba: 'tudo', gaveta: null, historico: null, editando: null, pendenciaAberta: null, timerRefresh: null, ultimaEsperas: '', paineis: true, motorPreferido: '3d', terminal: false, vista: 'cena' };
-  let mapa = null; // o mapa de fluxo (ADR-157), montado na primeira vez que é pedido
-  let motor = null;          // o motor da cena (3D ou 2D), vive enquanto o Hub estiver aberto
-  const cartoes = new Map(); // id da figura → elemento do cartão
-  const losangos = new Map(); // id da figura → o losango com o ícone da função
-  const selos = new Map();    // id do pacote em viagem → o selo que viaja com ele
-  const rotulos = new Map(); // número da sala → elemento do rótulo
-  const contadores = new Map(); // lugar → elemento "+n"
-
-  function lerPrefs() {
-    try {
-      const p = JSON.parse(localStorage.getItem(PREFS_CHAVE) || '{}');
-      if (typeof p.paineis === 'boolean') ui.paineis = p.paineis;
-      if (p.motor === '2d' || p.motor === '3d') ui.motorPreferido = p.motor;
-      if (p.vista === 'mapa' || p.vista === 'cena') ui.vista = p.vista;
-    } catch (e) { /* sem armazenamento: fica o padrão */ }
-  }
-  function gravarPrefs() { try { localStorage.setItem(PREFS_CHAVE, JSON.stringify({ paineis: ui.paineis, motor: ui.motorPreferido, vista: ui.vista })); } catch (e) {} }
+  const ui = { snap: null, carregando: false, erro: '', aba: 'tudo', historico: null, editando: null, pendenciaAberta: null, timerRefresh: null, ultimaEsperas: '' };
 
   function hora(iso) {
     if (!iso) return '';
@@ -60,9 +37,6 @@
     return (mesmoDia ? '' : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ') + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   }
   const badge = (texto, tom) => `<span class="badge ${tom === 'ok' ? 'ok' : tom === 'warn' ? 'warn' : tom === 'err' ? 'err' : tom === 'run' ? 'run' : 'neutral'}">${esc(texto)}</span>`;
-  const fmtK = (n) => (n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n || 0));
-  // "Thor · Publicador MPI+ · Publicar MPI+ / Publicação em Massa", para os seletores.
-  const rotuloAg = (a) => `${a.nome}${a.papel ? ' · ' + a.papel : ''}${a.modulosNomes ? ' · ' + a.modulosNomes : ''}`;
 
   // ---------- dados ----------
   async function carregar() {
@@ -92,7 +66,7 @@
     ui.ultimaEsperas = chave;
     api().escritorioEsperas({ lista }).catch(() => {});
   }
-  document.addEventListener('hub:esperas', () => { mandarEsperas(); if (ativa() && ui.gaveta === 'comando') desenhar(); });
+  document.addEventListener('hub:esperas', () => { mandarEsperas(); if (ativa()) desenhar(); });
 
   // ---------- chip no topo ----------
   let chip = null;
@@ -123,424 +97,71 @@
     else { state.view = 'escritorio'; if (typeof render === 'function') render(); }
   }
 
-  // ---------- a moldura de tela cheia: menu e topo nas bordas ----------
-  const appEl = () => document.querySelector('.app');
-  function montarBordas() {
-    if (document.querySelector('.esc-borda-menu')) return;
-    const app = appEl();
-    if (!app) return;
-    const bordaMenu = document.createElement('div');
-    bordaMenu.className = 'esc-borda esc-borda-menu';
-    bordaMenu.title = 'Menu do Hub';
-    const bordaTopo = document.createElement('div');
-    bordaTopo.className = 'esc-borda esc-borda-topo';
-    // Dentro do .app: é a classe esc-cheia dele que as mostra.
-    app.append(bordaMenu, bordaTopo);
-    bordaMenu.addEventListener('mouseenter', () => app.classList.add('menu-aberto'));
-    bordaTopo.addEventListener('mouseenter', () => app.classList.add('topo-aberto'));
-    // Fecham quando o mouse sai deles (e não só quando sai da borda que os
-    // abriu: quem encosta na borda e volta sem entrar no menu também fecha).
-    document.addEventListener('mousemove', (e) => {
-      if (!app.classList.contains('esc-cheia')) return;
-      const alvo = e.target instanceof Element ? e.target : null;
-      if (app.classList.contains('menu-aberto') && !(alvo && alvo.closest('.app-nav, .esc-borda-menu'))) app.classList.remove('menu-aberto');
-      if (app.classList.contains('topo-aberto') && !(alvo && alvo.closest('.topbar, .esc-borda-topo'))) app.classList.remove('topo-aberto');
-    });
-    // Esc fecha o que estiver aberto por cima da cena.
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || !ativa()) return;
-      if (ui.historico) { ui.historico = null; desenhar(); return; }
-      if (app.classList.contains('menu-aberto') || app.classList.contains('topo-aberto')) { app.classList.remove('menu-aberto', 'topo-aberto'); return; }
-      if (ui.gaveta) { ui.gaveta = null; desenhar(); }
-    });
-  }
-  // O app.js chama ao sair do Escritório: a cena para de pedir quadros; o
-  // canvas fica guardado no motor e volta quando a tela voltar.
-  window.hubEscritorioSair = function () {
-    const app = appEl();
-    if (app) app.classList.remove('menu-aberto', 'topo-aberto', 'esc-terminal');
-    if (motor) motor.desligar();
-    if (mapa) mapa.desligar();
-  };
-
   // ---------- a tela ----------
   async function renderEscritorioTool() {
     const painel = (typeof el !== 'undefined' && el.leftPanel) || document.getElementById('leftPanel');
     if (!painel) return;
-    montarBordas();
     if (!ui.snap && !ui.carregando) { painel.innerHTML = '<div class="empty-state"><p>Lendo o Escritório…</p></div>'; await carregar(); }
     desenhar();
     mandarEsperas();
   }
   window.renderEscritorioTool = renderEscritorioTool;
 
-  function esqueleto() {
-    return `
-      <div class="esc-cena" id="escCena">
-        <div class="esc-palco" id="escPalco"><div class="esc-overlay ${ui.paineis ? '' : 'sem-paineis'}" id="escOverlay"></div></div>
-        <div class="esc-mapa" id="escMapaHost" hidden></div>
-        <div class="esc-hud esc-hud-topo" id="escHudTopo"></div>
-        <div class="esc-hud esc-hud-comando" id="escHudComando"></div>
-        <div class="esc-hud esc-hud-rodape" id="escHudRodape"></div>
-        <aside class="esc-gaveta" id="escGaveta" hidden></aside>
-        <div id="escHist"></div>
-      </div>`;
-  }
-
   function desenhar() {
     const painel = (typeof el !== 'undefined' && el.leftPanel) || document.getElementById('leftPanel');
     if (!painel || !ativa()) return;
     const s = ui.snap;
     if (!s) { painel.innerHTML = `<div class="empty-state"><p><strong>Escritório indisponível.</strong> ${esc(ui.erro || '')}</p></div>`; return; }
-    let cena = painel.querySelector('#escCena');
-    if (!cena) {
-      painel.innerHTML = esqueleto();
-      cena = painel.querySelector('#escCena');
-      cartoes.clear(); rotulos.clear(); contadores.clear(); losangos.clear(); selos.clear();
-      montarCena(cena.querySelector('#escPalco'));
-    }
-    const dir = window.Planta ? window.Planta.dirigir(s) : null;
-    atualizarHud(cena, s);
-    atualizarCartoes(cena, s);
-    atualizarGaveta(cena, s);
-    cena.querySelector('#escHist').innerHTML = ui.historico ? htmlHistorico(ui.historico) : '';
-    ligarEventos(cena.querySelector('#escHist'));
-    if (motor && dir) {
-      motor.atualizar(dir, { concluidas: new Set(s.tarefas.filter((t) => t.estado === 'concluida').map((t) => t.id)) });
-      atualizarContadores(dir);
-    }
-    aplicarVista(cena, s);
-  }
-
-  // A vista: a cena em 3D ou o mapa de fluxo (ADR-157). Só uma roda por vez.
-  function aplicarVista(cena, s) {
-    const palco = cena.querySelector('#escPalco'), host = cena.querySelector('#escMapaHost');
-    if (!palco || !host) return;
-    const noMapa = ui.vista === 'mapa' && !!window.hubEscritorioMapa;
-    palco.hidden = noMapa;
-    host.hidden = !noMapa;
-    if (noMapa) {
-      if (!mapa) mapa = window.hubEscritorioMapa.montar(host, { aoClicarFigura: (id) => { ui.gaveta = 'agente:' + id; desenhar(); } });
-      mapa.atualizar(s);
-      mapa.ligar();
-      if (motor) motor.desligar();
-    } else {
-      if (mapa) mapa.desligar();
-      if (motor) { motor.ligar(); motor.pedirQuadro(); }
-    }
-  }
-
-  // ----- a cena -----
-  function montarCena(palco) {
-    if (!window.hubEscritorioCena || !window.Planta) { palco.insertAdjacentHTML('beforeend', '<div class="esc-sem-cena">A cena não carregou (escritorio-cena.js ou planta.js ausentes).</div>'); return; }
-    if (motor) {
-      // Voltando de outra tela: o mesmo canvas, o mesmo contexto.
-      palco.insertBefore(motor.canvas, palco.firstChild);
-      motor.redimensionar();
-      motor.ligar();
-      return;
-    }
-    const aoFalhar = (e) => logar(`Escritório: o 3D não abriu (${e && e.message ? e.message : e}); a planta em 2D cobre.`, 'warn');
-    motor = window.hubEscritorioCena.montar(palco, { preferir: ui.motorPreferido, aoClicarFigura: (id) => { ui.gaveta = 'agente:' + id; desenhar(); }, aoViajar: atualizarSelosDeViagem, aoEscalar: aoEscalar, aoClicarPacote: abrirHistoricoDoPacote, aoApontarPacote: apontarPacote, aoFalhar });
-    palco.insertBefore(motor.canvas, palco.firstChild);
-    if (ui.motorPreferido === '3d' && motor.tipo === '2d') logar('Escritório: sem WebGL nesta máquina; a planta em 2D cobre.', 'warn');
-    motor.ligar();
-    window.addEventListener('resize', () => { if (motor && ativa()) motor.redimensionar(); });
-  }
-  function trocarMotor(tipo) {
-    ui.motorPreferido = tipo;
-    gravarPrefs();
-    const palco = document.getElementById('escPalco');
-    if (!palco) return;
-    if (motor) { motor.destruir(); motor = null; }
-    cartoes.clear(); rotulos.clear(); contadores.clear(); losangos.clear(); selos.clear();
-    const overlay = palco.querySelector('#escOverlay');
-    if (overlay) overlay.innerHTML = '';
-    montarCena(palco);
-    desenhar();
-  }
-
-  // ----- HUD -----
-  function atualizarHud(cena, s) {
     const pendAbertas = s.pendencias.filter((p) => p.status !== 'fechada');
     const abertas = s.tarefas.filter((t) => !['concluida', 'ignorada'].includes(t.estado));
     const modo = !s.ligado.geral ? 'MANUAL' : s.ligado.observacao ? 'OBSERVAÇÃO' : 'AUTOMÁTICO';
     const v = s.ultimaVarredura;
-    const trabalhando = s.agentes.filter((a) => a.estado === 'trabalhando').length;
-    cena.querySelector('#escHudTopo').innerHTML = `
-      <button class="esc-menu-btn" id="escMenuBtn" title="Menu do Hub (ou encoste o mouse na borda esquerda)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-      <div class="esc-titulo">
-        <div class="esc-titulo-linha"><span class="home-hi__ola">Escritório</span><span class="home-pill ${s.ligado.geral ? (s.ligado.observacao ? 'cyan' : '') : 'dim'}">${modo}</span><span class="home-pill ${pendAbertas.length ? 'warn' : 'dim'}">${pendAbertas.length} pendência(s)</span></div>
-        <div class="home-hi__sub">01 / SALA DE COMANDO · ${esc((s.orquestrador && s.orquestrador.nome) || 'Odin')}, o orquestrador${s.modelo.configurado ? ` · ${esc(s.modelo.orquestrador)}` : ' · sem modelo'} · ${v ? `última varredura ${hora(v.quando)}${v.ok === false ? ' · falhou: ' + esc(v.erro || '') : ''}` : 'nenhuma varredura ainda'}${s.rodando ? ' · <b class="esc-vivo">varrendo…</b>' : ''}${trabalhando ? ` · ${trabalhando} trabalhando` : ''}${s.resumo && window.EscritorioResumo ? ' · ' + esc(window.EscritorioResumo.frase(s.resumo)) : ''}</div>
-      </div>`;
-    cena.querySelector('#escHudComando').innerHTML = `
-      <div class="esc-hud-switches">
-        <label class="esc-switch mini ${s.ligado.geral ? 'on' : ''}" title="Lê a fila a cada 5 min e encaminha sozinho"><input type="checkbox" id="escGeral" ${s.ligado.geral ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Automático</b></span></label>
-        <label class="esc-switch mini ${s.ligado.observacao ? 'on' : ''}" title="Só anota o que faria; nada executa"><input type="checkbox" id="escObs" ${s.ligado.observacao ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Observação</b></span></label>
-        <label class="esc-switch mini ${s.modelo.ligado ? 'on' : ''}" title="${s.modelo.temChave ? 'Ligado, o que a triagem não reconhece vai ao Gemini (custa tokens). Desligado, vira pendência e você ensina pela regra.' : 'Sem chave do Gemini gravada: ligar não chama nada. Configure em Configurações › Escritório & IA.'}"><input type="checkbox" id="escModelo" ${s.modelo.ligado ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Gemini</b><small>${s.modelo.ligado ? (s.modelo.temChave ? 'ligado' : 'sem chave') : 'sem custo'}</small></span></label>
+    painel.innerHTML = `
+      <div class="home-head anim-in">
+        <div class="home-head-left">
+          <div class="home-hi">
+            <span class="home-hi__ola">Escritório</span>
+            <span class="home-hi__sub">01 / SALA DE COMANDO · ${esc((s.orquestrador && s.orquestrador.nome) || 'Odin')}, o orquestrador${s.modelo.configurado ? ` · ${esc(s.modelo.orquestrador)}` : ' · sem modelo'}${s.resumo && window.EscritorioResumo ? ' · ' + esc(window.EscritorioResumo.frase(s.resumo)) : ''}</span>
+          </div>
+        </div>
+        <div class="home-head-right">
+          <span class="home-pill ${s.ligado.geral ? (s.ligado.observacao ? 'cyan' : '') : 'dim'}">${modo}</span>
+          <span class="home-pill ${pendAbertas.length ? 'warn' : 'dim'}">${pendAbertas.length} pendência(s)</span>
+          <button class="btn compact ghost" id="escRodar" ${s.rodando ? 'disabled' : ''}>${s.rodando ? 'varrendo…' : 'Rodar agora'}</button>
+          <button class="btn compact danger" id="escFreio" title="Desliga o modo automático e, se houver publicação no meio, interrompe (ADR-102)">Freio</button>
+        </div>
       </div>
-      <div class="esc-hud-botoes">
-        <button class="btn compact ghost" id="escRodar" ${s.rodando ? 'disabled' : ''}>${s.rodando ? 'varrendo…' : 'Rodar agora'}</button>
-        <button class="btn compact danger" id="escFreio" title="Desliga o modo automático e, se houver publicação no meio, interrompe (ADR-102)">Freio</button>
-      </div>`;
-    const g = ui.gaveta || '';
-    const aba = (id, nome, n) => `<button class="esc-rodape-btn ${g === id ? 'active' : ''}" data-gaveta="${id}">${nome}${n != null ? `<span class="n">${n}</span>` : ''}</button>`;
-    cena.querySelector('#escHudRodape').innerHTML = `
-      <div class="esc-rodape-grupo">
-        <button class="esc-rodape-btn ${ui.paineis ? 'active' : ''}" id="escPaineis" title="Mostra ou esconde os cartões dos agentes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>${ui.paineis ? 'Esconder painéis' : 'Mostrar painéis'}</button>
-      </div>
-      <div class="esc-rodape-grupo">
-        ${aba('pendencias', 'Pendências', pendAbertas.length)}
-        ${aba('fila', 'Fila', abertas.length)}
-        ${aba('regras', 'Regras', s.regras.length)}
-        ${aba('historico', 'Concluídas', null)}
-        ${aba('comando', 'Comando', null)}
-        <button class="esc-rodape-btn ${appEl() && appEl().classList.contains('esc-terminal') ? 'active' : ''}" id="escTerminal" title="A Atividade (o log do Hub) por cima da cena">Atividade</button>
-      </div>
-      <div class="esc-rodape-grupo">
-        <button class="esc-rodape-btn" id="escRecentrar" title="Volta ao enquadramento inicial (ou duplo clique na cena)">⌖ Recentrar</button>
-        <button class="esc-rodape-btn ${ui.vista === 'mapa' ? 'active' : ''}" id="escVista" title="${ui.vista === 'mapa' ? 'Voltar ao escritório em 3D' : 'O mapa de fluxo: Odin no centro, os agentes em volta, as tarefas correndo pelas linhas'}">${ui.vista === 'mapa' ? 'Escritório' : 'Mapa'}</button>
-        <button class="esc-rodape-btn" id="escMotor" title="${motor && motor.tipo === '3d' ? 'Trocar para a planta em 2D (mais leve)' : 'Tentar o 3D (precisa de WebGL)'}">${motor && motor.tipo === '3d' ? '3D' : '2D'}</button>
-      </div>`;
-    ligarEventos(cena.querySelector('#escHudTopo'));
-    ligarEventos(cena.querySelector('#escHudComando'));
-    ligarEventos(cena.querySelector('#escHudRodape'));
-  }
 
-  // ----- os cartões presos às figuras, os losangos e os rótulos das salas -----
-  // O ícone da função, como na referência: o do primeiro módulo do agente (os
-  // mesmos da barra lateral); o Odin leva o do Escritório.
-  function iconeDaFigura(a) {
-    const icones = typeof NAV_ICON !== 'undefined' ? NAV_ICON : null;
-    if (!icones) return `<b>${esc((a.nome || '?').charAt(0))}</b>`;
-    if (a.id === 'orquestrador') return icones.escritorio || '';
-    const modulo = (a.modulos || [])[0];
-    const chave = modulo === 'newproject' ? 'google' : modulo;
-    return icones[chave] || `<b>${esc((a.nome || '?').charAt(0))}</b>`;
-  }
-  // Nome curto da tarefa e para onde ela vai, para o selo que viaja com ela.
-  function textoDoSelo(t, s) {
-    if (!t) return '';
-    const assunto = String(t.assunto || '').replace(/\s+/g, ' ').trim();
-    const curto = assunto.length > 34 ? assunto.slice(0, 33) + '…' : assunto;
-    const ag = t.agente ? s.agentes.find((a) => a.id === t.agente) : null;
-    const destino = t.estado === 'pendente' ? 'reunião' : ag ? ag.nome : ((s.orquestrador && s.orquestrador.nome) || 'Odin');
-    return `${curto} → ${destino}`;
-  }
-  // A cena avisa quando os cartões ficam pequenos demais para o papel e a
-  // função: viram compactos (avatar e nome), e voltam quando sobra espaço.
-  function aoEscalar(e) {
-    const overlay = document.getElementById('escOverlay');
-    if (overlay) overlay.classList.toggle('compacto', !!(e && e.compacto));
-  }
-  // Os pacotes (as tarefas nas mesas): passar o mouse mostra o assunto; clicar
-  // abre o histórico (ADR-156).
-  let seloDica = null, seloDicaDe = null;
-  function apontarPacote(id) {
-    const overlay = document.getElementById('escOverlay');
-    if (!overlay || !motor) return;
-    if (seloDicaDe && seloDicaDe !== id) { motor.ancorar('dica:' + seloDicaDe, null); seloDicaDe = null; }
-    if (!id) { if (seloDica) { seloDica.remove(); seloDica = null; } return; }
-    const t = ui.snap && ui.snap.tarefas.find((x) => x.id === id);
-    if (!seloDica) { seloDica = document.createElement('div'); seloDica.className = 'esc-selo dica'; overlay.appendChild(seloDica); }
-    seloDica.dataset.pacote = id;
-    seloDica.textContent = t ? `${t.assunto} · ${t.rotulo || t.estado}${t.agenteNome ? ' · ' + t.agenteNome : ''}` : id;
-    seloDicaDe = id;
-    motor.ancorar('dica:' + id, seloDica, 0.7);
-  }
-  async function abrirHistoricoDoPacote(id) {
-    const r = await chamar('escritorioTarefa', { id }, { recarregar: false });
-    if (r.ok) { ui.historico = r.tarefa; desenhar(); }
-  }
-  // Os selos dos pacotes em viagem: a cena avisa quando o conjunto muda.
-  function atualizarSelosDeViagem(ids) {
-    const overlay = document.getElementById('escOverlay');
-    if (!overlay || !motor) return;
-    const vivos = new Set(ids);
-    for (const [id, el] of selos) if (!vivos.has(id)) { el.remove(); selos.delete(id); motor.ancorar('pacote:' + id, null); }
-    for (const id of ids) {
-      if (selos.has(id)) continue;
-      const t = ui.snap && ui.snap.tarefas.find((x) => x.id === id);
-      const el = document.createElement('div');
-      el.className = 'esc-selo viagem';
-      el.dataset.pacote = id;
-      el.textContent = textoDoSelo(t, ui.snap || { agentes: [] });
-      overlay.appendChild(el);
-      selos.set(id, el);
-      motor.ancorar('pacote:' + id, el, 0.7);
-    }
-  }
-  function atualizarCartoes(cena, s) {
-    const overlay = cena.querySelector('#escOverlay');
-    if (!overlay) return;
-    overlay.classList.toggle('sem-paineis', !ui.paineis);
-    const figuras = [{ id: 'orquestrador', nome: (s.orquestrador && s.orquestrador.nome) || 'Odin', papel: (s.orquestrador && s.orquestrador.papel) || 'Orquestrador', modo: 'orquestrador', estado: s.rodando ? 'trabalhando' : s.pendencias.some((p) => p.status !== 'fechada' && !p.agente && p.tipo !== 'sugestao') ? 'aguardando' : 'ocioso', atividade: s.rodando ? 'lendo a fila' : '', sala: { numero: '01', nome: 'SALA DE COMANDO' }, ligado: true, tarefas: s.tarefas.filter((t) => ['na_fila', 'em_analise', 'escalada'].includes(t.estado)).length }, ...s.agentes];
-    const vistos = new Set();
-    for (const a of figuras) {
-      vistos.add(a.id);
-      let c = cartoes.get(a.id);
-      if (!c) {
-        c = document.createElement('button');
-        c.className = 'esc-agente';
-        c.dataset.agente = a.id;
-        c.addEventListener('click', () => { ui.gaveta = 'agente:' + a.id; desenhar(); });
-        overlay.appendChild(c);
-        cartoes.set(a.id, c);
-      }
-      if (motor) motor.ancorar(a.id, c, ALTURA_CARTAO, { empurrar: true });
-      let l = losangos.get(a.id);
-      if (!l) {
-        l = document.createElement('div');
-        l.className = 'esc-losango';
-        l.dataset.losango = a.id;
-        l.innerHTML = iconeDaFigura(a);
-        overlay.appendChild(l);
-        losangos.set(a.id, l);
-        if (motor) motor.ancorar('losango:' + a.id, l, ALTURA_LOSANGO, { centro: true });
-      }
-      l.className = `esc-losango ${a.modo} est-${esc(a.estado)}`;
-      const [rot, tom] = ESTADO_AGENTE[a.estado] || [a.estado, 'neutral'];
-      c.className = `esc-agente ${a.modo} est-${esc(a.estado)} ${ui.gaveta === 'agente:' + a.id ? 'aberto' : ''}`;
-      c.title = `${a.nome} · ${a.papel}${a.modulosNomes ? ' · ' + a.modulosNomes : ''} · ${rot}`;
-      c.innerHTML = `
-        <span class="esc-agente-avatar">${esc((a.nome || '?').charAt(0))}</span>
-        <span class="esc-agente-texto">
-          <span class="esc-agente-nome">${esc(a.nome)}<span class="esc-agente-papel"> · ${esc(a.papel || '')}</span></span>
-          ${a.estado === 'trabalhando' ? `<span class="esc-agente-atividade">${esc(a.atividade || 'trabalhando')}</span>` : a.estado === 'aguardando' ? '<span class="esc-agente-atividade aguarda">aguardando você</span>' : a.estado === 'erro' ? '<span class="esc-agente-atividade erro">com erro</span>' : ''}
-        </span>
-        <span class="esc-agente-dot ${tom}"></span>`;
-    }
-    for (const [id, c] of cartoes) if (!vistos.has(id)) { c.remove(); cartoes.delete(id); if (motor) motor.ancorar(id, null); }
-    for (const [id, l] of losangos) if (!vistos.has(id)) { l.remove(); losangos.delete(id); if (motor) motor.ancorar('losango:' + id, null); }
-    if (window.Planta && !rotulos.size) {
-      for (const sl of window.Planta.SALAS) {
-        const r = document.createElement('div');
-        r.className = 'esc-sala-rotulo';
-        r.dataset.sala = sl.numero;
-        r.textContent = `${sl.numero} / ${sl.nome}`;
-        overlay.appendChild(r);
-        rotulos.set(sl.numero, r);
-        if (motor) motor.ancorar('sala:' + sl.numero, r, 0, { fixo: true });
-      }
-    }
-  }
-  // "+n" em cima da mesa que tem mais tarefas do que cabem.
-  function atualizarContadores(dir) {
-    const overlay = document.getElementById('escOverlay');
-    if (!overlay) return;
-    const vistos = new Set();
-    for (const l of dir.lugares) {
-      if (l.total <= l.visiveis) continue;
-      vistos.add(l.lugar);
-      let c = contadores.get(l.lugar);
-      if (!c) { c = document.createElement('div'); c.className = 'esc-lugar-n'; overlay.appendChild(c); contadores.set(l.lugar, c); if (motor) motor.ancorar('lugar:' + l.lugar, c, 0); }
-      c.textContent = `+${l.total - l.visiveis}`;
-      c.title = `${l.total} tarefa(s) nesta mesa`;
-    }
-    for (const [lugar, c] of contadores) if (!vistos.has(lugar)) { c.remove(); contadores.delete(lugar); if (motor) motor.ancorar('lugar:' + lugar, null); }
-  }
-
-  // ----- a gaveta -----
-  function atualizarGaveta(cena, s) {
-    const gaveta = cena.querySelector('#escGaveta');
-    if (!gaveta) return;
-    if (!ui.gaveta) { gaveta.hidden = true; gaveta.innerHTML = ''; return; }
-    const pendAbertas = s.pendencias.filter((p) => p.status !== 'fechada');
-    const abertas = s.tarefas.filter((t) => !['concluida', 'ignorada'].includes(t.estado));
-    let titulo = '', corpo = '';
-    if (ui.gaveta === 'pendencias') { titulo = `Pendências <span class="n">${pendAbertas.length}</span>`; corpo = htmlPendencias(pendAbertas); }
-    else if (ui.gaveta === 'fila') { titulo = `Fila de tarefas <span class="n">${abertas.length}</span>`; corpo = htmlFila(abertas); }
-    else if (ui.gaveta === 'regras') { titulo = `Regras aprendidas <span class="n">${s.regras.length}</span>`; corpo = htmlRegras(s.regras); }
-    else if (ui.gaveta === 'historico') { titulo = 'Concluídas e ignoradas'; corpo = htmlFila(s.tarefas.filter((t) => ['concluida', 'ignorada'].includes(t.estado)), true); }
-    else if (ui.gaveta === 'comando') { titulo = 'Comando'; corpo = htmlComando(s); }
-    else if (ui.gaveta.startsWith('agente:')) { const r = htmlAgente(s, ui.gaveta.slice(7)); titulo = r.titulo; corpo = r.corpo; }
-    gaveta.hidden = false;
-    gaveta.innerHTML = `<div class="esc-gaveta-head"><span class="sec-title">${titulo}</span><button class="text-btn" id="escGavetaFechar" title="Fechar (Esc)">fechar</button></div><div class="esc-gaveta-corpo">${corpo}</div>`;
-    ligarEventos(gaveta);
-  }
-
-  function htmlComando(s) {
-    const abertas = s.tarefas.filter((t) => !['concluida', 'ignorada'].includes(t.estado));
-    return `<div class="sec esc-comando">
-      <div class="esc-switches">
-        <label class="esc-switch ${s.ligado.geral ? 'on' : ''}"><input type="checkbox" data-ligar="geral" ${s.ligado.geral ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Modo automático</b><small>lê a fila a cada 5 min e encaminha sozinho</small></span></label>
-        <label class="esc-switch ${s.ligado.observacao ? 'on' : ''}"><input type="checkbox" data-ligar="observacao" ${s.ligado.observacao ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Modo observação</b><small>só anota o que faria; nada executa</small></span></label>
-        <label class="esc-switch ${s.modelo.ligado ? 'on' : ''}"><input type="checkbox" data-ligar="modelo" ${s.modelo.ligado ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Perguntar ao Gemini</b><small>${s.modelo.ligado ? (s.modelo.temChave ? 'o que a triagem não reconhece vai ao modelo' : 'ligado, mas sem chave: não chama') : 'desligado: sem custo; o desconhecido vira pendência'}</small></span></label>
-        <div class="esc-stat"><b>${s.contadores.chamadas}</b><small>chamadas ao modelo hoje</small></div>
-        <div class="esc-stat"><b>${fmtK(s.contadores.tokensEntrada + s.contadores.tokensSaida + s.contadores.tokensPensamento)}</b><small>tokens hoje</small></div>
-        <div class="esc-stat"><b>${abertas.length}</b><small>tarefa(s) em aberto</small></div>
-        <div class="esc-stat"><b>${s.regras.filter((r) => r.ativa !== false).length}</b><small>regra(s) ativa(s)</small></div>
+      <div class="sec anim-in esc-comando">
+        <div class="sec-head"><span class="sec-title">Comando</span><span class="sec-meta">${v ? `última varredura ${hora(v.quando)}${v.ok === false ? ' · falhou: ' + esc(v.erro || '') : ''}` : 'nenhuma varredura ainda'}</span></div>
+        <div class="esc-switches">
+          <label class="esc-switch ${s.ligado.geral ? 'on' : ''}"><input type="checkbox" id="escGeral" ${s.ligado.geral ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Modo automático</b><small>lê a fila a cada 5 min e encaminha sozinho</small></span></label>
+          <label class="esc-switch ${s.ligado.observacao ? 'on' : ''}"><input type="checkbox" id="escObs" ${s.ligado.observacao ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Modo observação</b><small>só anota o que faria; nada executa</small></span></label>
+          <label class="esc-switch ${s.modelo.ligado ? 'on' : ''}" title="${s.modelo.temChave ? 'Ligado, o que a triagem não reconhece vai ao Gemini (custa tokens). Desligado, vira pendência e você ensina pela regra.' : 'Sem chave do Gemini gravada: ligar não chama nada. Configure em Configurações › Escritório & IA.'}"><input type="checkbox" id="escModelo" ${s.modelo.ligado ? 'checked' : ''}><span class="esc-switch-k"></span><span><b>Perguntar ao Gemini</b><small>${s.modelo.ligado ? (s.modelo.temChave ? 'o que a triagem não reconhece vai ao modelo' : 'ligado, mas sem chave: não chama') : 'desligado: sem custo; o desconhecido vira pendência'}</small></span></label>
+          <div class="esc-stat"><b>${s.contadores.chamadas}</b><small>chamadas ao modelo hoje</small></div>
+          <div class="esc-stat"><b>${fmtK(s.contadores.tokensEntrada + s.contadores.tokensSaida + s.contadores.tokensPensamento)}</b><small>tokens hoje</small></div>
+          <div class="esc-stat"><b>${abertas.length}</b><small>tarefa(s) em aberto</small></div>
+          <div class="esc-stat"><b>${s.regras.filter((r) => r.ativa !== false).length}</b><small>regra(s) ativa(s)</small></div>
+        </div>
+        ${linhaEsperas()}
+        ${!s.modelo.configurado ? '<p class="hint mt8">Sem modelo: tarefa que a triagem não reconhece vira pendência, e você decide uma vez (Ignorar sempre, Avisar sempre, Encaminhar sempre). Os agentes não usam modelo nunca.</p>' : ''}
       </div>
-      ${linhaEsperas()}
+
+      <div class="home-sec-title anim-in">Agentes <span class="r">${s.agentes.filter((a) => a.modo === 'auto').length} automáticos · ${s.agentes.filter((a) => a.modo === 'standby').length} em standby</span></div>
+      <div class="esc-agentes anim-in">${s.agentes.map(cardAgente).join('')}</div>
       ${htmlResumo(s)}
-      ${!s.modelo.configurado ? '<p class="hint mt8">Sem modelo: tarefa que a triagem não reconhece vira pendência, e você decide uma vez (Ignorar sempre, Avisar sempre, Encaminhar sempre). Os agentes não usam modelo nunca.</p>' : ''}
-    </div>
-    <div class="home-sec-title">Agentes <span class="r">${s.agentes.filter((a) => a.modo === 'auto').length} automáticos · ${s.agentes.filter((a) => a.modo === 'standby').length} em standby</span></div>
-    <div class="esc-agentes">${s.agentes.map(cardAgente).join('')}</div>`;
-  }
 
-  // O que os agentes fizeram hoje e nos últimos 7 dias (ADR-155).
-  function htmlResumo(s) {
-    const r = s.resumo;
-    if (!r || !r.hoje || !r.semana) return '';
-    const nome = (id) => { const a = s.agentes.find((x) => x.id === id); return a ? a.nome : id; };
-    const linha = (titulo, x) => `<tr><td><b>${titulo}</b></td><td>${x.pelosAgentes}</td><td>${x.pelaMao}</td><td>${x.falhas}</td><td>${x.ignoradas}</td><td>${x.pendenciasCriadas}</td><td>${x.tempoMedioMin == null ? '—' : x.tempoMedioMin + ' min'}</td></tr>`;
-    const porAgente = Object.entries(r.semana.porAgente || {}).sort((a, b) => b[1] - a[1]).map(([id, n]) => `${esc(nome(id))} ${n}`).join(' · ');
-    return `<div class="home-sec-title" id="escResumo">Hoje e últimos 7 dias <span class="r">o que os agentes fizeram sozinhos</span></div>
-      <div class="table-wrap"><table class="table esc-tabela"><thead><tr><th></th><th>Pelos agentes</th><th>À mão</th><th>Falhas</th><th>Ignoradas</th><th>Pendências</th><th>Da fila à execução</th></tr></thead><tbody>${linha('Hoje', r.hoje)}${linha('7 dias', r.semana)}</tbody></table></div>
-      ${porAgente ? `<p class="hint">Por agente (7 dias): ${porAgente}</p>` : ''}`;
-  }
-  function htmlAgente(s, id) {
-    if (id === 'orquestrador') {
-      const naMesa = s.tarefas.filter((t) => ['na_fila', 'em_analise', 'escalada'].includes(t.estado));
-      const pend = s.pendencias.filter((p) => p.status !== 'fechada' && !p.agente);
-      return { titulo: `${esc((s.orquestrador && s.orquestrador.nome) || 'Odin')} · Orquestrador`, corpo: `
-        <p class="esc-pergunta">${esc((s.orquestrador && s.orquestrador.descricao) || 'Lê a fila, decide e distribui; vê tudo da Sala de Comando.')}</p>
-        <div class="esc-pend-acoes"><button class="btn compact ghost" data-gaveta="comando">Abrir o Comando</button><button class="btn compact ghost" id="escRodar2" ${s.rodando ? 'disabled' : ''}>${s.rodando ? 'varrendo…' : 'Rodar agora'}</button></div>
-        <div class="home-sec-title">Na mesa dele <span class="r">${naMesa.length} tarefa(s) · ${pend.length} pendência(s) sem agente</span></div>
-        ${htmlFila(naMesa)}
-        ${pend.length ? htmlPendencias(pend) : ''}` };
-    }
-    const a = s.agentes.find((x) => x.id === id);
-    if (!a) return { titulo: 'Agente', corpo: '<div class="empty-state"><p>Agente não encontrado.</p></div>' };
-    const minhas = s.tarefas.filter((t) => t.agente === a.id && !['concluida', 'ignorada'].includes(t.estado));
-    const feitas = s.tarefas.filter((t) => t.agente === a.id && t.estado === 'concluida').slice(0, 10);
-    const pend = s.pendencias.filter((p) => p.status !== 'fechada' && p.agente === a.id);
-    return { titulo: `${esc(a.nome)} · ${esc(a.papel || '')}`, corpo: `
-      <div class="esc-agentes um">${cardAgente(a)}</div>
-      ${pend.length ? `<div class="home-sec-title">Pendências <span class="r">${pend.length}</span></div>${htmlPendencias(pend)}` : ''}
-      <div class="home-sec-title">Tarefas em aberto <span class="r">${minhas.length}</span></div>
-      ${htmlFila(minhas)}
-      ${feitas.length ? `<div class="home-sec-title">Últimas concluídas</div>${htmlFila(feitas, true)}` : ''}` };
-  }
-
-  // A lista de espera do Publicar MPI+ (ADR-103/142), que o painel flutuante
-  // mostrava: quem aguarda o cliente apontar e quem aguarda a propagação.
-  function linhaEsperas() {
-    const lista = (typeof esperas !== 'undefined' && Array.isArray(esperas)) ? esperas.filter((e) => e && e.status !== 'concluido') : [];
-    if (!lista.length) return '';
-    const cli = lista.filter((e) => e.cliente).map((e) => e.dominio);
-    const prop = lista.filter((e) => !e.cliente).map((e) => e.dominio);
-    const falta = lista.filter((e) => e.status === 'falhou').length;
-    return `<p class="hint mt8" id="escEsperas">Aguardando DNS (o vigia do Publicar MPI+ termina quando apontar): ${cli.length ? `<b>o cliente apontar</b> ${esc(cli.join(', '))}` : ''}${cli.length && prop.length ? ' · ' : ''}${prop.length ? `<b>a propagação</b> ${esc(prop.join(', '))}` : ''}${falta ? ` · <span class="warn-text">${falta} com pendência (ver a lista do Publicar MPI+)</span>` : ''}</p>`;
-  }
-
-  function cardAgente(a) {
-    const [rot, tom] = ESTADO_AGENTE[a.estado] || [a.estado, 'neutral'];
-    return `<div class="esc-agente-card ${a.modo} est-${esc(a.estado)}" data-agente-card="${esc(a.id)}">
-      <div class="esc-agente-sala">${esc(a.sala ? a.sala.numero + ' / ' + a.sala.nome : '')}</div>
-      <div class="esc-agente-nome">${esc(a.nome)}${a.papel ? `<span class="esc-agente-papel"> · ${esc(a.papel)}</span>` : ''}</div>
-      <div class="esc-agente-funcao">${esc(a.funcao)}</div>
-      ${a.modulosNomes ? `<div class="esc-agente-modulos">${esc(a.modulosNomes)}</div>` : ''}
-      ${a.atividade ? `<div class="esc-agente-atividade">${esc(a.atividade)}</div>` : ''}
-      <div class="esc-agente-rodape">
-        ${badge(rot, tom === 'off' ? 'neutral' : tom)}
-        ${a.tarefas ? `<span class="dim">${a.tarefas} tarefa(s)</span>` : ''}
-        ${a.modo === 'auto' ? `<label class="esc-mini-switch" title="Liga ou desliga só este agente"><input type="checkbox" data-agente-toggle="${esc(a.id)}" ${a.ligado ? 'checked' : ''}><span></span></label>` : '<span class="esc-standby" title="Só roda quando você aciona pelo módulo">standby</span>'}
+      <div class="esc-tabs anim-in">
+        ${[['tudo', `Pendências <span class="n">${pendAbertas.length}</span>`], ['fila', `Fila de tarefas <span class="n">${abertas.length}</span>`], ['regras', `Regras aprendidas <span class="n">${s.regras.length}</span>`], ['historico', 'Concluídas e ignoradas']].map(([id, nome]) => `<button class="esc-tab ${ui.aba === id ? 'active' : ''}" data-aba="${id}">${nome}</button>`).join('')}
       </div>
-    </div>`;
+      <div id="escCorpo" class="anim-in">${ui.aba === 'tudo' ? htmlPendencias(pendAbertas) : ui.aba === 'fila' ? htmlFila(abertas) : ui.aba === 'regras' ? htmlRegras(s.regras) : htmlFila(s.tarefas.filter((t) => ['concluida', 'ignorada'].includes(t.estado)), true)}</div>
+      ${ui.historico ? htmlHistorico(ui.historico) : ''}
+    `;
+    ligarEventos(painel);
   }
-
+  const fmtK = (n) => (n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n || 0));
+  // "Thor · Publicador MPI+ · Publicar MPI+ / Publicação em Massa", para os seletores.
+  const rotuloAg = (a) => `${a.nome}${a.papel ? ' · ' + a.papel : ''}${a.modulosNomes ? ' · ' + a.modulosNomes : ''}`;
   // As opções do "Encaminhar sempre": um agente, ou um agente com um preset
   // (Huginn · Ativação de SSL / Huginn · Suspensão). Valor "agente|preset".
   function opcoesEncaminhar(agentes, selecionado) {
@@ -558,12 +179,51 @@
     const p = a && preset ? (a.presets || []).find((x) => x.id === preset) : null;
     return { agente, parametros: p ? { ...p.parametros } : {} };
   }
+  // A lista de espera do Publicar MPI+ (ADR-103/142), que o painel flutuante
+  // mostrava: quem aguarda o cliente apontar e quem aguarda a propagação.
+  function linhaEsperas() {
+    const lista = (typeof esperas !== 'undefined' && Array.isArray(esperas)) ? esperas.filter((e) => e && e.status !== 'concluido') : [];
+    if (!lista.length) return '';
+    const cli = lista.filter((e) => e.cliente).map((e) => e.dominio);
+    const prop = lista.filter((e) => !e.cliente).map((e) => e.dominio);
+    const falta = lista.filter((e) => e.status === 'falhou').length;
+    return `<p class="hint mt8" id="escEsperas">Aguardando DNS (o vigia do Publicar MPI+ termina quando apontar): ${cli.length ? `<b>o cliente apontar</b> ${esc(cli.join(', '))}` : ''}${cli.length && prop.length ? ' · ' : ''}${prop.length ? `<b>a propagação</b> ${esc(prop.join(', '))}` : ''}${falta ? ` · <span class="warn-text">${falta} com pendência (ver a lista do Publicar MPI+)</span>` : ''}</p>`;
+  }
+
+  // O que os agentes fizeram hoje e nos últimos 7 dias (ADR-155).
+  function htmlResumo(s) {
+    const r = s.resumo;
+    if (!r || !r.hoje || !r.semana) return '';
+    const nome = (id) => { const a = s.agentes.find((x) => x.id === id); return a ? a.nome : id; };
+    const linha = (titulo, x) => `<tr><td><b>${titulo}</b></td><td>${x.pelosAgentes}</td><td>${x.pelaMao}</td><td>${x.falhas}</td><td>${x.ignoradas}</td><td>${x.pendenciasCriadas}</td><td>${x.tempoMedioMin == null ? '—' : x.tempoMedioMin + ' min'}</td></tr>`;
+    const porAgente = Object.entries(r.semana.porAgente || {}).sort((a, b) => b[1] - a[1]).map(([id, n]) => `${esc(nome(id))} ${n}`).join(' · ');
+    return `<div class="home-sec-title anim-in" id="escResumo">Hoje e últimos 7 dias <span class="r">o que os agentes fizeram sozinhos</span></div>
+      <div class="table-wrap anim-in"><table class="table esc-tabela"><thead><tr><th></th><th>Pelos agentes</th><th>À mão</th><th>Falhas</th><th>Ignoradas</th><th>Pendências</th><th>Da fila à execução</th></tr></thead><tbody>${linha('Hoje', r.hoje)}${linha('7 dias', r.semana)}</tbody></table></div>
+      ${porAgente ? `<p class="hint">Por agente (7 dias): ${porAgente}</p>` : ''}`;
+  }
+
+  function cardAgente(a) {
+    const [rot, tom] = ESTADO_AGENTE[a.estado] || [a.estado, 'neutral'];
+    return `<div class="esc-agente ${a.modo} est-${esc(a.estado)}" data-agente="${esc(a.id)}">
+      <div class="esc-agente-sala">${esc(a.sala ? a.sala.numero + ' / ' + a.sala.nome : '')}</div>
+      <div class="esc-agente-nome">${esc(a.nome)}${a.papel ? `<span class="esc-agente-papel"> · ${esc(a.papel)}</span>` : ''}</div>
+      <div class="esc-agente-funcao">${esc(a.funcao)}</div>
+      ${a.modulosNomes ? `<div class="esc-agente-modulos">${esc(a.modulosNomes)}</div>` : ''}
+      ${a.atividade ? `<div class="esc-agente-atividade">${esc(a.atividade)}</div>` : ''}
+      <div class="esc-agente-rodape">
+        ${badge(rot, tom === 'off' ? 'neutral' : tom)}
+        ${a.tarefas ? `<span class="dim">${a.tarefas} tarefa(s)</span>` : ''}
+        ${a.modo === 'auto' ? `<label class="esc-mini-switch" title="Liga ou desliga só este agente"><input type="checkbox" data-agente-toggle="${esc(a.id)}" ${a.ligado ? 'checked' : ''}><span></span></label>` : '<span class="esc-standby" title="Só roda quando você aciona pelo módulo">standby</span>'}
+      </div>
+    </div>`;
+  }
 
   function htmlPendencias(lista) {
     if (!lista.length) return '<div class="empty-state"><p><strong>Nenhuma pendência.</strong> O orquestrador não tem pergunta para você.</p></div>';
     const s = ui.snap;
     return lista.map((p) => {
       const tarefas = p.tarefas.map((id) => s.tarefas.find((t) => t.id === id)).filter(Boolean);
+      const aberta = ui.pendenciaAberta === p.id;
       const agentesAuto = s.agentes.filter((a) => a.modo === 'auto');
       return `<div class="sec esc-pend tipo-${esc(p.tipo)} ${p.status === 'respondida' ? 'respondida' : ''}" data-pend="${esc(p.id)}">
         <div class="sec-head"><span class="sec-title">${esc(p.id)} · ${p.tipo === 'retomar' ? 'retomar?' : p.tipo === 'sugestao' ? 'sugestão' : p.tipo === 'humano' ? 'para você' : p.status === 'respondida' ? 'proposta de regra' : 'pergunta'}</span><span class="sec-meta">${hora(p.criadaEm)} · ${tarefas.length} tarefa(s)${p.agente ? ' · ' + esc((s.agentes.find((a) => a.id === p.agente) || { nome: p.agente }).nome) : ''}${p.contexto && p.contexto.categoria ? ' · ' + esc(p.contexto.categoria) : ''}</span></div>
@@ -711,48 +371,23 @@
     if (recarregar) { await carregar(); atualizarChip(); if (ativa()) desenhar(); }
     return r || { ok: false };
   }
-  async function freio() {
-    // Desliga o modo automático (nada novo começa) e, se há uma publicação
-    // no meio, puxa o freio do Hub (ADR-102), que o próprio fluxo solta ao
-    // terminar de parar.
-    const publicando = typeof pub !== 'undefined' && pub && (pub.emAndamento || pub.rodando);
-    if (publicando && typeof pararAgora === 'function') { try { pararAgora(); } catch (e) {} }
-    logar(`Freio: modo automático desligado${publicando ? '; interrompendo a publicação em andamento' : ''}.`, 'warn');
-    await chamar('escritorioLigar', { geral: false });
-  }
-  function alternarTerminal() {
-    const app = appEl();
-    if (!app) return;
-    const aberto = app.classList.contains('esc-terminal') && (typeof terminais === 'undefined' || terminais.atividade === 'aberto');
-    if (aberto) app.classList.remove('esc-terminal');
-    else { app.classList.add('esc-terminal'); if (typeof mudarAtividade === 'function' && typeof terminais !== 'undefined' && terminais.atividade !== 'aberto') mudarAtividade('aberto'); }
-    // Só o botão muda de cara: redesenhar o rodapé no meio do clique trocaria o
-    // elemento clicado por outro.
-    const b = document.getElementById('escTerminal');
-    if (b) b.classList.toggle('active', app.classList.contains('esc-terminal'));
-  }
 
-  // Liga os eventos de um pedaço da tela (HUD, gaveta ou histórico): cada
-  // seletor só acha o que está dentro daquele pedaço.
-  function ligarEventos(raiz) {
-    if (!raiz) return;
-    const painel = raiz;
-    painel.querySelector('#escMenuBtn')?.addEventListener('click', () => appEl()?.classList.toggle('menu-aberto'));
+  function ligarEventos(painel) {
     painel.querySelector('#escRodar')?.addEventListener('click', async () => { ui.snap.rodando = true; desenhar(); await chamar('escritorioRodar'); });
-    painel.querySelector('#escRodar2')?.addEventListener('click', async () => { ui.snap.rodando = true; desenhar(); await chamar('escritorioRodar'); });
-    painel.querySelector('#escFreio')?.addEventListener('click', freio);
+    painel.querySelector('#escFreio')?.addEventListener('click', async () => {
+      // Desliga o modo automático (nada novo começa) e, se há uma publicação
+      // no meio, puxa o freio do Hub (ADR-102), que o próprio fluxo solta ao
+      // terminar de parar.
+      const publicando = typeof pub !== 'undefined' && pub && (pub.emAndamento || pub.rodando);
+      if (publicando && typeof pararAgora === 'function') { try { pararAgora(); } catch (e) {} }
+      logar(`Freio: modo automático desligado${publicando ? '; interrompendo a publicação em andamento' : ''}.`, 'warn');
+      await chamar('escritorioLigar', { geral: false });
+    });
     painel.querySelector('#escGeral')?.addEventListener('change', (e) => chamar('escritorioLigar', { geral: e.target.checked }));
     painel.querySelector('#escObs')?.addEventListener('change', (e) => chamar('escritorioLigar', { observacao: e.target.checked }));
     painel.querySelector('#escModelo')?.addEventListener('change', (e) => chamar('iaUsarModelo', { ligar: e.target.checked }));
-    painel.querySelectorAll('[data-ligar]').forEach((c) => c.addEventListener('change', (e) => { const k = c.dataset.ligar; if (k === 'modelo') chamar('iaUsarModelo', { ligar: e.target.checked }); else chamar('escritorioLigar', { [k]: e.target.checked }); }));
-    painel.querySelector('#escPaineis')?.addEventListener('click', () => { ui.paineis = !ui.paineis; gravarPrefs(); desenhar(); });
-    painel.querySelector('#escTerminal')?.addEventListener('click', alternarTerminal);
-    painel.querySelector('#escRecentrar')?.addEventListener('click', () => { if (motor) motor.recentrar(); });
-    painel.querySelector('#escMotor')?.addEventListener('click', () => trocarMotor(motor && motor.tipo === '3d' ? '2d' : '3d'));
-    painel.querySelector('#escVista')?.addEventListener('click', () => { ui.vista = ui.vista === 'mapa' ? 'cena' : 'mapa'; gravarPrefs(); desenhar(); });
-    painel.querySelector('#escGavetaFechar')?.addEventListener('click', () => { ui.gaveta = null; ui.editando = null; desenhar(); });
-    painel.querySelectorAll('[data-gaveta]').forEach((b) => b.addEventListener('click', () => { const g = b.dataset.gaveta; ui.gaveta = ui.gaveta === g ? null : g; ui.editando = null; desenhar(); }));
     painel.querySelectorAll('[data-agente-toggle]').forEach((c) => c.addEventListener('change', (e) => chamar('escritorioLigar', { agente: c.dataset.agenteToggle, valor: e.target.checked })));
+    painel.querySelectorAll('.esc-tab').forEach((b) => b.addEventListener('click', () => { ui.aba = b.dataset.aba; desenhar(); }));
     painel.querySelectorAll('[data-hist]').forEach((b) => b.addEventListener('click', async () => { const r = await chamar('escritorioTarefa', { id: b.dataset.hist }, { recarregar: false }); if (r.ok) { ui.historico = r.tarefa; desenhar(); } }));
     painel.querySelector('#escHistFechar')?.addEventListener('click', () => { ui.historico = null; desenhar(); });
     painel.querySelector('#escHistFundo')?.addEventListener('click', (e) => { if (e.target.id === 'escHistFundo') { ui.historico = null; desenhar(); } });
@@ -810,14 +445,13 @@
   }
 
   function iniciar() {
-    lerPrefs();
     montarChip();
     if (api().onEscritorioExecutar) api().onEscritorioExecutar(atenderPonte);
     if (api().escritorioRendererPronto) api().escritorioRendererPronto().catch(() => {});
     if (api().onEscritorioLog) api().onEscritorioLog((d) => logar(d && d.message, (d && d.type) || 'info'));
     if (api().onEscritorioEvento) api().onEscritorioEvento(() => agendarRefresh());
-    // A notificação do Windows clicada (ADR-155): abre o Escritório na gaveta pedida.
-    if (api().onEscritorioAbrir) api().onEscritorioAbrir((d) => { ui.gaveta = (d && d.gaveta) || 'pendencias'; abrir(); carregar().then(() => desenhar()); });
+    // A notificação do Windows clicada (ADR-155): abre o Escritório nas pendências.
+    if (api().onEscritorioAbrir) api().onEscritorioAbrir(() => { ui.aba = 'tudo'; abrir(); carregar().then(() => desenhar()); });
     // O app.js pode ter desenhado antes de este script existir (o render()
     // cai no Início): com o snapshot na mão, a tela certa entra no lugar.
     carregar().then(() => { atualizarChip(); if (ativa()) renderEscritorioTool(); });
@@ -833,5 +467,5 @@
     api().escritorioAtividade({ agente, ligado: !!ligado, detalhe: detalhe || '' }).catch(() => {});
   };
 
-  window.hubEscritorio = { ui, carregar, desenhar, abrir, lerFormRegra, atenderPonte, get motor() { return motor; }, get mapa() { return mapa; }, trocarMotor };
+  window.hubEscritorio = { ui, carregar, desenhar, abrir, lerFormRegra, atenderPonte };
 })();

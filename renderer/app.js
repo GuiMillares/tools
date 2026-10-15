@@ -159,8 +159,8 @@ function wireBrandSelect(selectId, onChange) {
 // ---------- Estado ----------
 
 const state = {
-  // A tela de abertura é o Escritório (ADR-149); 'home' é o Início.
-  view: 'escritorio',
+  // A tela de abertura é o Início (ADR-159; de ADR-149 a 158 foi o Escritório).
+  view: 'home',
   recents: [],
   creds: null,
   strategy: 'merge_commit',
@@ -605,10 +605,6 @@ function render() {
   guardarSettingsBox();
   el.leftPanel.classList.toggle('wide', state.view === 'home' || state.view === 'kanban' || state.view === 'config' || state.view === 'escritorio');
   document.querySelector('.app-body')?.classList.toggle('home', state.view === 'home');
-  // O Escritório é de tela cheia (ADR-153): o menu e o topo saem da grade e
-  // voltam pela borda; ao sair dele, a cena para de pedir quadros.
-  document.querySelector('.app')?.classList.toggle('esc-cheia', state.view === 'escritorio');
-  if (state.view !== 'escritorio' && typeof window.hubEscritorioSair === 'function') window.hubEscritorioSair();
   renderChrome();
   // Os atalhos leem os campos da tela nova, então esperam ela existir.
   queueMicrotask(renderAtalhosTerminal);
@@ -663,9 +659,9 @@ NAV_ICON.config = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 // A sidebar espelha os mockups (ADR-115): só módulo que existe. As
 // configurações ficam no pé da sidebar, fora desta lista.
 const MODULES = [
-  // O Escritório (ADR-149) fica acima do Início: é o painel principal.
-  { id: 'escritorio', nome: 'Escritório', icon: 'escritorio', tag: 'MOD_ESCRITORIO' },
   { id: 'home', nome: 'Início', icon: 'home', tag: 'HOME' },
+  // O Escritório (ADR-149) vem logo abaixo do Início (ADR-159).
+  { id: 'escritorio', nome: 'Escritório', icon: 'escritorio', tag: 'MOD_ESCRITORIO' },
   { id: 'merge', nome: 'Mergear PRs', icon: 'merge', tag: 'MOD_GIT_MERGE' },
   { id: 'kanban', nome: 'Salesforce Kanban', icon: 'kanban', tag: 'MOD_SF_KANBAN' },
   { id: 'publish', nome: 'Publicar MPI+', icon: 'publish', tag: 'MOD_PUBLISH_MPI' },

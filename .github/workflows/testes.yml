@@ -1,7 +1,7 @@
 # A suíte do Asgard a cada push (ADR-156): os mesmos tools/test-*.js que o
-# `npm test` roda na máquina do Guilherme, num Windows do GitHub. O Chromium
-# do Playwright tem WebGL por SwiftShader, então até a cena 3D do Escritório
-# entra. Nada aqui toca credencial: os testes usam dublês.
+# `npm test` roda na máquina do Guilherme, num Windows do GitHub, com o
+# Chromium do Playwright para os testes de navegador. Nada aqui toca
+# credencial: os testes usam dublês.
 name: testes
 
 on:
