@@ -84,6 +84,10 @@
     /CanEditDNS=false/i,             // a conta não pode editar o DNS (não é domínio novo, que é espera)
     /driver desconhecido/i,
   ];
+  // Erro passageiro (o painel ou o Salesforce demoraram, rede, sessão): não é
+  // "não achei", é "não deu para olhar agora". Vira "adiada" (pulou), e a
+  // próxima varredura tenta sem contar tentativa (ADR-162).
+  const passageiro = (msg) => /demorou|timeout|tempo esgotado|n[ãa]o respondeu|ECONN|ETIMEDOUT|ENOTFOUND|net::|sess[ãa]o/i.test(String(msg || ''));
   window.hubPublicarTarefaAuto = async function hubPublicarTarefaAuto(payload) {
     const p = payload || {};
     // const/let de topo do app.js (PUB_ETAPAS, pub, state…) não viram window.X,
@@ -128,6 +132,7 @@
       const rz = await window.api.salesforceContaPorDominio({ dominio: dom }).catch((e) => ({ ok: false, error: e.message }));
       if (rz && rz.log) rz.log.forEach((l) => log(l.message, l.type));
       if (rz && rz.ok && rz.achou && rz.razao) razao = rz.razao;
+      else if (passageiro(rz && rz.error)) return { ok: false, pulou: true, motivo: 'o Salesforce não respondeu ao procurar a conta do domínio (' + rz.error + ')' };
       else return { ok: false, desistir: !(rz && rz.reauth), motivo: 'não achei a razão social: a tarefa não está ligada a um caso com conta, e o domínio não achou conta' + ((rz && (rz.error || rz.motivo)) ? ' (' + (rz.error || rz.motivo) + ')' : '') };
     }
 
@@ -140,6 +145,7 @@
     // 3) Link do painel sem perguntar: acha pelo contrato (razão + temporário).
     const ach = await window.api.acharContratoNoPainel({ razao: pub.razao, temporario: temp, dominio: dom }).catch((e) => ({ ok: false, error: e.message }));
     if (ach && ach.log) ach.log.forEach((l) => log(l.message, l.type));
+    if (!(ach && ach.ok && ach.url) && passageiro(ach && ach.error)) return { ok: false, pulou: true, motivo: 'o painel não respondeu ao procurar o contrato de ' + dom + ' (' + ach.error + ')' };
     if (!(ach && ach.ok && ach.url)) return { ok: false, desistir: true, motivo: 'não achei o contrato de ' + dom + ' no painel' + ((ach && ach.error) ? ': ' + ach.error : '') + '; publicar à mão' };
     pub.painelUrl = ach.url; pub.painelConferido = ach.url; pub.painelAchado = true;
     log(`Publicação automática de ${dom} (${pub.razao}): painel ${ach.url}. Começando as etapas.`, 'cmd');

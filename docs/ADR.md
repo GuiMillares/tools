@@ -8181,6 +8181,12 @@ por fazer.
    pendência, e o vigia da lista termina e fecha. Foi o que aconteceu com
    as duas tarefas reanalisadas de manhã (ADR-160): viraram pendência
    "não pode agir: Fora da lista de espera" quando deviam só esperar.
+6. **Erro passageiro antes das etapas não é desistência.** "A página do
+   painel demorou demais para carregar" ao procurar o contrato, ou "O
+   Salesforce não respondeu" ao procurar a conta, viravam "desistiu" e
+   pendência na primeira vez (aconteceu com lojaderevestimentos.com.br às
+   17:21). Agora são "adiada" (`pulou`): a próxima varredura tenta de novo
+   sem contar tentativa. "Não achei" de verdade continua desistindo.
 
 **Consequências.** As esperas que dependem de terceiros (cliente, Registro.br
 publicando um domínio novo) não param a fila nem viram pendência; o que
