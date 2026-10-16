@@ -15,7 +15,7 @@ passado.
 <!-- indice:inicio (gerado por tools/indice-adr.js; não edite à mão) -->
 ## Índice
 
-165 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
+166 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
 
 - **ADR-001** — Electron puro, sem framework de UI e sem build step
 - **ADR-002** — Toda rede no processo principal; renderer só fala por IPC
@@ -180,6 +180,7 @@ passado.
 - **ADR-162** — Esperas sem interferência: o cliente é conferido de hora em hora, o domínio novo no Registro.br espera a publicação e troca os nameservers pelo vigia, e erro que repetir não resolve desiste de primeira
 - **ADR-163** — O IP real atrás do proxy da Cloudflare: descoberto pelos hosts que a Cloudflare não proxia e pelo SPF, usado como IP antigo e para os subdomínios proxiados
 - **ADR-164** — O Escritório sai inteiro: sem orquestrador, agentes, regras nem Gemini; a fila volta a ser automatizada pelo motor de antes, com um interruptor só no topo
+- **ADR-165** — "Parar tudo": um botão ao lado da Fila automática que para o Asgard inteiro e deixa a fila começar do zero
 - **Pendências conhecidas** (não são decisões — são dívidas)
 - **ADR-146** — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
 <!-- indice:fim -->
@@ -4472,6 +4473,9 @@ com o SSL e o Search Console pendentes.
 
 ## ADR-102 — Parar no meio
 
+**Status:** aceita — ampliada pela ADR-165: o "Parar tudo" do topo puxa este
+mesmo freio para o Asgard inteiro, e o solta quando tudo parou.
+
 **Contexto.** Com um dado errado na tela (domínio, razão social, link), a
 única saída era fechar o app. O Publicar em massa só tinha "Parar depois
 deste site".
@@ -8443,6 +8447,68 @@ três tipos, a dica, gravar e voltar ligado, o freio),
 `test-busca-one-browser.js` (de volta, com o vhost nas Configurações),
 `test-leveza.js` (relógio no renderer, nada do Escritório no main, no
 app.js, no CSS e no index.html), `test-triagem.js`.
+
+## ADR-165 — "Parar tudo": um botão ao lado da Fila automática que para o Asgard inteiro e deixa a fila começar do zero
+
+**Status:** aceita (16/10/2026). Amplia a ADR-102 (o freio) para fora do
+Publicar MPI+ e do Publicar em massa, e completa a ADR-164 (o interruptor da
+fila).
+
+**Contexto.** Pedido de 16/10/2026, logo depois da ADR-164: "preciso de um
+botão que pare tudo o que ele esteja fazendo, pode estar ao lado do botão de
+fila automática, para que ele faça o que eu precisar no momento ou começar
+tudo do zero". O freio da ADR-102 só existia dentro de duas telas, e só se
+soltava quando a operação que estava rodando terminava de parar: a fila
+automática, o vigia da lista de espera e as rodadas de Vínculos, Relatório,
+Ouvidoria e Quando publicou não tinham um "pare agora" em comum. Desligar o
+interruptor parava a fila entre uma tarefa e outra, mas não a publicação do
+meio, nem o vigia, e a fila continuava lembrando o que já tinha tratado na
+sessão.
+
+**Decisão.**
+
+1. **Um botão vermelho "Parar tudo"**, logo depois do interruptor "Fila
+   automática", no topo de todas as telas (`renderer/automacao-ui.js`).
+   Enquanto para, ele diz "Parando…" e não aceita outro clique. Em janela
+   estreita fica só o ícone, com a explicação na dica.
+2. **`pararTudo()` no `app.js`**, na ordem: anuncia no terminal o que está
+   rodando (`quemEstaRodando`); desliga a fila automática e grava desligada
+   (`hubAutomacao.desligar`, sem o log de desligar, porque quem fala é ele);
+   **pausa o vigia da lista de espera** (`pausarVigia`); pede "parar depois
+   do item atual" às rodadas de Ouvidoria, Quando publicou, Vínculos e
+   Relatório; puxa o freio da ADR-102 (`pararAgora`: esperas, janela do
+   painel, perguntas abertas, `processo:parar`); espera tudo parar
+   (aviso no terminal depois de 1 min, teto de 10 min) e **solta o freio**
+   (`pararTerminou`), para a próxima coisa que você fizer não nascer barrada.
+   No fim, **zera a memória da fila** (`hubAutomacao.zerar`: tratadas,
+   tentativas, aguardando, última varredura): religar começa do zero.
+3. **Publicação no meio.** A automática (`pub.auto`) que parou sai da tela:
+   a fila refaz do zero quando for religada. A que você começou fica no
+   Publicar MPI+ com "Continuar" e "Descartar", como na ADR-102. O Publicar
+   em massa fica com "Retomar", também como era. Nada do que já foi feito é
+   desfeito; uma gravação que já saiu termina, o passo seguinte não começa.
+4. **O vigia pausado** não confere nem termina nada até alguém precisar dele:
+   ligar a fila automática, "Conferir agora", "Tentar de novo" ou o novo
+   "Retomar a conferência" na lista, um site novo entrando na lista, ou
+   reabrir o Asgard (a pausa não é gravada). A lista mostra "Conferência
+   pausada pelo Parar tudo", e a dica do interruptor também.
+5. **Site da lista cortado no meio** (o SSL, o Search Console ou a tarefa
+   interrompidos pelo freio ou pela pausa) volta a "esperando", com "parado
+   por você no meio", em vez de virar "falta algo": não é falha do site. O
+   que já ficou feito (o SSL, por exemplo) fica marcado.
+
+**Consequências.** Um clique tira o Asgard de tudo, de qualquer tela, e
+devolve o controle para você sem fechar o app. O custo é o vigia ficar
+parado até um dos gatilhos do item 4, o que é o pedido ("pare tudo"); o log
+do "Parar tudo" diz isso e como volta. Um job que o painel já começou no
+servidor continua lá (ADR-102): parar interrompe o Asgard, não o servidor.
+O merge de um PR e o Bloquear Contatos pela mão não têm parada no meio
+(são chamadas curtas): o botão espera eles terminarem. Testes:
+`test-parar-tudo-browser.js` (o app inteiro: botão ao lado do interruptor,
+fila desligada e gravada, freio puxado e solto, rodada parada, memória
+zerada, publicação automática descartada e manual mantida, lista pausada com
+"Retomar", site cortado no SSL volta a esperar, ligar a fila retoma a lista),
+`test-automacao-browser.js` (o botão sem o app.js para a fila e zera).
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

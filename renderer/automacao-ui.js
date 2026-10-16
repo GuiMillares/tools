@@ -6,7 +6,8 @@
 // window.api.* (preload) + window.log (terminal do app).
 // Um interruptor só liga a fila inteira: bloqueio de contatos, publicação MPI+
 // (ADR-122) e publicação Busca One (ADR-132). Fica gravado no hub-state
-// (state.automacaoFila): reabrir o Asgard volta como estava.
+// (state.automacaoFila): reabrir o Asgard volta como estava. Ao lado, o botão
+// "Parar tudo" (ADR-165, pararTudo no app.js) para o Asgard inteiro.
 //
 // De 13/10 a 16/10/2026 (ADR-149 a 163) isto morou no Escritório (orquestrador,
 // agentes, regras, Gemini), e antes num painel flutuante. A ADR-164 tirou o
@@ -428,6 +429,7 @@
     const prop = abertas.filter((e) => !e.cliente).map((e) => e.dominio + (e.status === 'falhou' ? ' (falta algo)' : ''));
     if (cli.length) partes.push(`Aguardando o cliente apontar (${cli.length}): ${cli.join(', ')}.`);
     if (prop.length) partes.push(`Aguardando a propagação (${prop.length}): ${prop.join(', ')}.`);
+    if (typeof vigiaPausado !== 'undefined' && vigiaPausado && abertas.some((e) => e.status === 'esperando')) partes.push('A lista de espera está pausada pelo "Parar tudo": volta quando você ligar a fila.');
     return partes.join('\n');
   }
 
@@ -446,13 +448,17 @@
   document.addEventListener('hub:esperas', () => { try { atualizarPainel(); } catch (e) {} });
 
   // origem: 'clique' grava no hub-state; 'gravado' é a volta depois de
-  // reabrir (já está gravado).
+  // reabrir (já está gravado); 'parar' é o "Parar tudo" (grava, e quem avisa
+  // no terminal é ele).
   function ligarFila(on, { origem = 'clique' } = {}) {
     estado.ligado = { bloqueio: on, publicacao: on, buscaone: on };
     if (!on) estado.parar = true;
     revisarTimer();
     atualizarPainel();
-    if (origem === 'clique' && typeof state !== 'undefined' && state) {
+    // Ligar a fila é precisar da lista de espera de novo (o "Parar tudo" a
+    // deixou pausada, ADR-165).
+    if (on && typeof retomarVigia === 'function') { try { retomarVigia('a fila automática foi ligada'); } catch (e) {} }
+    if (origem !== 'gravado' && typeof state !== 'undefined' && state) {
       state.automacaoFila = on;
       if (typeof saveHubState === 'function') { try { Promise.resolve(saveHubState()).catch(() => {}); } catch (e) {} }
     }
@@ -462,9 +468,31 @@
         : 'Fila automática LIGADA: publicação MPI+ (com backup do DNS antes de aplicar), Busca One e bloqueio de contatos saem sozinhos; leio a fila agora e a cada 5 min.', 'success');
       if (origem === 'gravado') setTimeout(() => { if (ligada()) rodarVarredura(false); }, RETOMAR_MS);
       else rodarVarredura(false);
-    } else {
+    } else if (origem !== 'parar') {
       log(estado.rodando ? 'Fila automática desligada: a varredura em andamento para depois da tarefa atual.' : 'Fila automática desligada.', 'warn');
     }
+  }
+
+  // O que o "Parar tudo" usa: desligar (grava desligada, a varredura para
+  // entre uma tarefa e outra) e, quando tudo parou, zerar o que a fila
+  // lembrava desta sessão: religar começa do zero.
+  function desligarFila() { ligarFila(false, { origem: 'parar' }); }
+  function zerarFila() {
+    estado.processados.clear();
+    estado.tentativas.clear();
+    estado.aguardando.clear();
+    estado.ultima = null;
+    atualizarPainel();
+  }
+
+  // Sem o app.js (teste da cola sozinha), o botão para pelo menos a fila.
+  async function pararTudoAqui() {
+    if (typeof pararTudo === 'function') return pararTudo();
+    desligarFila();
+    for (let i = 0; i < 240 && estado.rodando; i++) await new Promise((r) => setTimeout(r, 250));
+    zerarFila();
+    log('Parar tudo: a fila automática parou e começa do zero quando você ligar.', 'success');
+    return { ok: true };
   }
 
   function montarInterruptor() {
@@ -476,8 +504,30 @@
     chave.innerHTML = '<input type="checkbox" id="autoFila" role="switch" aria-checked="false" aria-label="Fila automática"><span class="tb-auto-k"></span><span>FILA AUTOMÁTICA</span><small>desligada</small>';
     direita.insertBefore(chave, direita.firstChild);
     chave.querySelector('input').addEventListener('change', (e) => ligarFila(e.target.checked));
+    // O "Parar tudo", logo depois do interruptor (ADR-165).
+    const parar = document.createElement('button');
+    parar.type = 'button';
+    parar.className = 'tb-parar';
+    parar.id = 'pararTudoBtn';
+    parar.title = 'Para tudo o que o Asgard está fazendo: desliga a fila automática, pausa a lista de espera, interrompe a publicação, o Publicar em massa e as rodadas no meio, e zera o que a fila lembrava. Para você fazer o que precisa agora ou recomeçar do zero. Uma gravação que já saiu termina; o passo seguinte não começa.';
+    parar.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></svg><span>PARAR TUDO</span>';
+    chave.insertAdjacentElement('afterend', parar);
+    parar.addEventListener('click', async () => {
+      if (parar.disabled) return;
+      parar.disabled = true;
+      try { await pararTudoAqui(); } finally { parar.disabled = false; atualizarParar(false); }
+    });
     atualizarPainel();
   }
+  function atualizarParar(parando) {
+    const b = document.getElementById('pararTudoBtn');
+    if (!b) return;
+    b.classList.toggle('parando', !!parando);
+    b.disabled = !!parando;
+    const s = b.querySelector('span');
+    if (s) s.textContent = parando ? 'PARANDO…' : 'PARAR TUDO';
+  }
+  document.addEventListener('hub:parandoTudo', (ev) => { try { atualizarParar(ev.detail && ev.detail.parando); atualizarPainel(); } catch (e) {} });
 
   // Volta como ficou gravado, quando o app.js terminar de carregar o estado
   // (credenciais, service account, conta Microsoft e lista de espera).
@@ -491,7 +541,7 @@
   else document.addEventListener('hub:pronto', retomarGravado, { once: true });
 
   // Exposto para depuração, para a tela e para os testes.
-  window.hubAutomacao = { rodar: () => rodarVarredura(true), ligar: (on) => ligarFila(!!on), estado, emEspera, listaDeEspera };
+  window.hubAutomacao = { rodar: () => rodarVarredura(true), ligar: (on) => ligarFila(!!on), desligar: desligarFila, zerar: zerarFila, pararTudo: pararTudoAqui, estado, emEspera, listaDeEspera };
   // Atalho para validar o bloqueio no painel MPI+ ao vivo (ex.: no console do
   // Asgard): hubBloquearPainel({ dominio, url|cnpj, acao:'bloquear'|'desbloquear' }).
   // Loga o passo a passo no terminal do Asgard.

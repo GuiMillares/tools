@@ -1458,6 +1458,18 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .tb-auto.rodando .tb-auto-k::after { background: var(--accent-2); }
 .tb-auto.rodando small { color: var(--accent-2); }
 .tb-auto:has(input:focus-visible) { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* O "Parar tudo" ao lado do interruptor (ADR-165): vermelho, sempre à mão. */
+.tb-parar { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; color: var(--error); background: transparent; border: 1px solid var(--error-line); border-radius: 9px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+.tb-parar svg { width: 10px; height: 10px; flex: none; }
+.tb-parar:hover { background: var(--error-soft); border-color: var(--error); }
+.tb-parar:focus-visible { outline: 1px solid var(--error); outline-offset: 1px; }
+.tb-parar.parando, .tb-parar:disabled { opacity: 0.7; cursor: progress; background: var(--error-soft); }
+/* Janela estreita: sai primeiro o placar (fica na dica), depois o texto do
+   Parar tudo (fica o ícone, com a dica), por último o MEM/CPU; o nome da fila
+   e o usuário ficam. */
+@media (max-width: 1500px) { .tb-auto small { display: none; } }
+@media (max-width: 1300px) { .tb-parar span { display: none; } .tb-parar { padding: 4px 8px; } }
+@media (max-width: 1180px) { .tb-sys { display: none; } }
 
 /* ---- Marca: Asgard (ADR-154). A runa Othala é o logotipo; a grafia rúnica
    fica ao lado do nome, apagada. Segoe UI Historic vem com o Windows e tem o

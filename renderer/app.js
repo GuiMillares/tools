@@ -418,6 +418,84 @@ async function pararTerminou() {
   try { await window.api.liberarProcesso(); } catch (e) {}
 }
 
+// ----- Parar tudo (ADR-165) -----
+// O botão ao lado da Fila automática: para TUDO o que o Asgard está fazendo,
+// sozinho ou pela sua mão, para você fazer o que precisa agora ou recomeçar do
+// zero. Na ordem: desliga a fila automática (gravada desligada); pausa o vigia
+// da lista de espera; pede às rodadas da tela que parem depois do item atual;
+// puxa o freio (o mesmo do "Parar agora", ADR-102: esperas, janela do painel e
+// perguntas abertas); espera tudo parar e solta o freio; e esquece o que a
+// fila tinha tratado nesta sessão (religar começa do zero). A publicação
+// automática que parou no meio sai da tela (a fila refaz do zero); a que você
+// começou fica com "Continuar" e "Descartar". Uma gravação que já saiu (um
+// registro na Cloudflare, o PATCH de um campo) termina; o passo seguinte não
+// começa.
+const PARAR_TUDO_AVISO_MS = 60 * 1000;
+const PARAR_TUDO_TETO_MS = 10 * 60 * 1000;
+let pararTudoRodando = false;
+
+// Quem está trabalhando agora, em palavras.
+function quemEstaRodando() {
+  const lista = [];
+  const auto = window.hubAutomacao && window.hubAutomacao.estado;
+  if (auto && auto.rodando) lista.push('a varredura da fila automática');
+  if (typeof pub !== 'undefined' && pub && (pub.emAndamento || pub.rodando)) lista.push(`a publicação de ${pub.dominio || 'um site'}`);
+  if (bulkRodando) lista.push('o Publicar em massa');
+  for (const e of esperas) if (e.status === 'rodando') lista.push(`o vigia terminando ${e.dominio}`);
+  if (ouvEstado.rodando) lista.push('a Ouvidoria & Auditoria');
+  if (qpEstado.rodando) lista.push('o Quando publicou');
+  if (vincEstado.rodando) lista.push('o Conferir Vínculos');
+  if (relEstado.rodando) lista.push('a Planilha do Relatório');
+  if (doutorEstado.rodando) lista.push('o Bloquear Contatos');
+  if (state.queue.some((q) => q.status === 'merging')) lista.push('o merge de um PR');
+  return lista;
+}
+
+async function pararTudo() {
+  if (pararTudoRodando) return { ok: false, motivo: 'já estou parando' };
+  pararTudoRodando = true;
+  document.dispatchEvent(new CustomEvent('hub:parandoTudo', { detail: { parando: true } }));
+  const inicio = Date.now();
+  try {
+    const estavam = quemEstaRodando();
+    log(`Parar tudo: ${estavam.length ? 'interrompendo ' + estavam.join(', ') : 'nada estava rodando'}; a fila automática desliga e a lista de espera pausa.`, 'warn');
+    if (window.hubAutomacao && typeof window.hubAutomacao.desligar === 'function') window.hubAutomacao.desligar();
+    pausarVigia();
+    for (const est of [ouvEstado, qpEstado, vincEstado, relEstado]) if (est.rodando) est.parar = true;
+    await pararAgora();
+    let avisou = false;
+    while (quemEstaRodando().length && Date.now() - inicio < PARAR_TUDO_TETO_MS) {
+      if (!avisou && Date.now() - inicio > PARAR_TUDO_AVISO_MS) {
+        avisou = true;
+        log(`Parar tudo: ainda terminando ${quemEstaRodando().join(', ')} (uma chamada que já saiu termina antes de parar). Solto o freio quando terminar.`, 'warn');
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const sobrou = quemEstaRodando();
+    if (window.hubAutomacao && typeof window.hubAutomacao.zerar === 'function') window.hubAutomacao.zerar();
+    // A publicação automática interrompida sai da tela: a fila refaz do zero.
+    let descartada = '';
+    if (pub && pub.auto && pub.dominio && !pub.emAndamento && !pub.rodando) {
+      descartada = pub.dominio;
+      pub = pubNovo();
+      if (state.view === 'publish' || document.getElementById('pubEtapas')) renderPublishTool();
+    }
+    await pararTerminou();
+    const manual = pub && pub.dominio && pub.etapa && !pub.auto ? pub.dominio : '';
+    log([
+      sobrou.length ? `Parar tudo: soltei o freio depois de ${Math.round(PARAR_TUDO_TETO_MS / 60000)} min, mas ${sobrou.join(', ')} ainda não tinha terminado; confira.` : 'Parar tudo: tudo parado.',
+      'A fila automática está desligada e começa do zero quando você ligar.',
+      esperas.some((e) => e.status === 'esperando') ? 'A lista de espera está pausada: volta quando você ligar a fila, clicar em "Conferir agora" ou "Tentar de novo", ou publicar um site que entre nela.' : '',
+      descartada ? `A publicação automática de ${descartada}, que parou no meio, saiu da tela; o que já tinha sido feito continua feito.` : '',
+      manual ? `A publicação de ${manual} que você começou ficou no Publicar MPI+: "Continuar" retoma de onde parou, ou descarte.` : '',
+    ].filter(Boolean).join(' '), sobrou.length ? 'warn' : 'success');
+    return { ok: true, estavam, sobrou, descartada };
+  } finally {
+    pararTudoRodando = false;
+    document.dispatchEvent(new CustomEvent('hub:parandoTudo', { detail: { parando: false } }));
+  }
+}
+
 // Espera da tela que a parada interrompe.
 function esperarOuParar(ms) {
   if (paradaAgora) return Promise.reject(new Error('parado por você'));
@@ -6527,6 +6605,26 @@ const ESPERA_NS_TETO_MS = 24 * 60 * 60 * 1000;
 let esperas = [];
 let vigiaRodando = false;
 let vigiaTimer = null;
+// O "Parar tudo" (ADR-165) pausa o vigia: ele não confere nem termina nada
+// até alguém precisar dele de novo (a fila automática ligada, "Conferir agora"
+// ou "Tentar de novo" na lista, um site novo na lista, ou reabrir o Asgard).
+let vigiaPausado = false;
+
+function pausarVigia() {
+  vigiaPausado = true;
+  if (vigiaTimer) { clearTimeout(vigiaTimer); vigiaTimer = null; }
+  if (typeof vigiaAcordar === 'function') vigiaAcordar();
+  renderEsperas();
+}
+
+function retomarVigia(motivo) {
+  if (!vigiaPausado) return false;
+  vigiaPausado = false;
+  if (esperas.some((e) => e.status === 'esperando')) log(`Lista de espera: volto a conferir (${motivo}).`, 'info');
+  renderEsperas();
+  vigiarEsperas();
+  return true;
+}
 
 // O que o Search Console e o relatório precisam, sem segredo nenhum.
 function vSemSegredos(v) {
@@ -6608,7 +6706,7 @@ function pubMandarParaEspera({ cliente = false, ate } = {}) {
   const empresa = pub.empresa;
   pub = { ...pubNovo(), empresa };
   if (state.view === 'publish' || document.getElementById('pubEtapas')) renderPublishTool();
-  vigiarEsperas();
+  if (!retomarVigia(`${e.dominio} entrou na lista`)) vigiarEsperas();
 }
 
 function renderEsperas() {
@@ -6620,7 +6718,11 @@ function renderEsperas() {
   const badge = { esperando: ['neutral', 'esperando'], rodando: ['neutral', 'terminando'], concluido: ['ok', 'concluído'], falhou: ['err', 'falta algo'] };
   const abertas = esperas.filter((e) => e.status !== 'concluido');
   const rotulo = abertas.some((e) => e.cliente) ? (abertas.some((e) => !e.cliente) ? 'Aguardando a propagação ou o cliente' : 'Aguardando o cliente apontar o DNS') : 'Aguardando a propagação';
-  let html = `<div class="section-label">${rotulo} (${abertas.length})</div><div class="rows">`;
+  let html = `<div class="section-label">${rotulo} (${abertas.length})</div>`;
+  if (vigiaPausado && abertas.some((e) => e.status === 'esperando')) {
+    html += `<div class="hint" id="esperasPausada">Conferência pausada pelo "Parar tudo". <button class="btn ghost compact" id="esperasRetomar">Retomar a conferência</button></div>`;
+  }
+  html += '<div class="rows">';
   for (const e of [...esperas].sort((a, b) => a.ate - b.ate)) {
     const [cls, texto] = e.cliente && e.status === 'esperando' ? ['neutral', 'aguardando o cliente'] : (badge[e.status] || badge.esperando);
     const hora = new Date(e.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -6636,6 +6738,7 @@ function renderEsperas() {
   }
   html += '</div>';
   wrap.innerHTML = html;
+  document.getElementById('esperasRetomar')?.addEventListener('click', () => retomarVigia('você pediu na lista'));
   wrap.querySelectorAll('[data-espera-tentar]').forEach((b) => b.addEventListener('click', () => {
     const e = esperas.find((x) => x.id === b.dataset.esperaTentar);
     if (!e) return;
@@ -6665,10 +6768,12 @@ function renderEsperas() {
 const ESPERA_DORMIR_MAX_MS = 30 * 60 * 1000;
 
 async function vigiarEsperas({ agora = false } = {}) {
+  if (agora && vigiaPausado) { vigiaPausado = false; log('Lista de espera: volto a conferir (você pediu na lista).', 'info'); }
+  if (vigiaPausado) return;
   if (vigiaRodando) { if (agora) { clearTimeout(vigiaTimer); vigiaTimer = null; vigiaAcordar?.(); } return; }
   vigiaRodando = true;
   try {
-    while (esperas.some((e) => e.status === 'esperando')) {
+    while (!vigiaPausado && esperas.some((e) => e.status === 'esperando')) {
       const t = Date.now();
       if (!bulkRodando) {
         // Só confere quem JÁ passou da previsão do Registro.br (e.ate). Quem
@@ -6676,7 +6781,7 @@ async function vigiarEsperas({ agora = false } = {}) {
         // conferir antes não adianta nada e deixa a máquina lenta (ADR-124).
         const fila = esperas.filter((e) => e.status === 'esperando' && !(e.ate > t)).sort((a, b) => a.ate - b.ate);
         for (const e of fila) {
-          if (bulkRodando) break;
+          if (bulkRodando || vigiaPausado) break;
           // Um erro numa espera não pode matar o vigia das outras (ADR-104).
           try {
             await vigiarUma(e);
@@ -6698,7 +6803,7 @@ async function vigiarEsperas({ agora = false } = {}) {
         salvarEsperas();
         renderEsperas();
       }
-      if (!esperas.some((e) => e.status === 'esperando')) break;
+      if (vigiaPausado || !esperas.some((e) => e.status === 'esperando')) break;
       // Quanto dormir: 1 min se alguma já passou da previsão (está sendo
       // conferida); senão, até a previsão mais próxima (no máximo 30 min).
       const agora2 = Date.now();
@@ -6761,6 +6866,17 @@ async function vigiarUma(e) {
     verificarSc: () => verificarScERelatorio(e.v, null, { painelUrl: normalizePainelUrl(e.painelUrl), brand: 'mpiplus' }),
     fecharTarefa: () => window.api.salesforceFecharTarefa({ link: e.sfTarefa, assumir: true, concluir: true, comentar: true, texto: 'Site publicado' }),
   });
+  if (!r.ok && (vigiaPausado || paradaAgora || ehParada(r.detalhe))) {
+    // O "Parar tudo" (ou o freio) cortou no meio: não é falha do site. O que
+    // já ficou feito (o SSL, por exemplo) fica marcado; o resto, na próxima.
+    e.status = 'esperando';
+    e.ate = Date.now();
+    e.detalhe = 'parado por você no meio; termino quando a lista voltar a ser conferida';
+    salvarEsperas();
+    renderEsperas();
+    log(`${e.dominio}: ${e.detalhe}.`, 'warn');
+    return;
+  }
   if (r.ok) log(`${e.dominio}: ${r.detalhe}.`, 'success');
   else log(`${e.dominio}: ${r.detalhe}. Use "Tentar de novo" na lista de espera quando quiser.`, 'warn');
 }

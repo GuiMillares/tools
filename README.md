@@ -377,7 +377,10 @@ bloqueio de contatos da fila do Salesforce (ADR-164). Ligado, ele lê a fila
 na hora e a cada 5 minutos; desligado, para entre uma tarefa e outra. Ele
 lembra o estado: reabrir o Asgard volta como estava. Passe o mouse para ver
 a última varredura e quem está na lista de espera; o detalhe de cada tarefa
-sai no terminal. Não há agente, regra nem modelo de IA: o que o Asgard
+sai no terminal. O botão vermelho **Parar tudo**, logo ao lado, para o
+Asgard inteiro (fila, lista de espera, publicação e rodadas no meio) e zera o
+que a fila lembrava: religar começa do zero (ADR-165). Não há agente, regra
+nem modelo de IA: o que o Asgard
 reconhece sozinho está em `lib/triagem.js`, e um tipo novo de tarefa entra
 ali, com teste e ADR.
 

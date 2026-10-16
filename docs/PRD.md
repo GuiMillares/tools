@@ -468,6 +468,15 @@ outra. O estado fica gravado: reabrir o Asgard volta como estava, e a
 primeira leitura espera 15 s para a sessão do Salesforce acordar. Passar o
 mouse mostra a última varredura (feitas, aguardando o DNS, puladas, erros) e
 quem está na lista de espera; o detalhe de cada tarefa vai para o terminal.
+Logo ao lado, o botão vermelho **Parar tudo** (ADR-165) para o Asgard
+inteiro: desliga a fila (gravada desligada), pausa a lista de espera,
+interrompe a publicação, o Publicar em massa e as rodadas no meio, solta o
+freio quando tudo parou e zera o que a fila lembrava, para você fazer o que
+precisa na hora ou recomeçar do zero. A publicação automática que parou sai
+da tela; a que você começou fica com "Continuar". A lista de espera volta a
+ser conferida quando você liga a fila, clica em "Conferir agora", "Tentar de
+novo" ou "Retomar a conferência", publica um site que entre nela, ou reabre o
+Asgard.
 Não há orquestrador, agente, regra aprendida nem modelo: de 13 a 16/10/2026
 isto foi o Escritório (ADR-149 a 163), que saiu inteiro pela ADR-164.
 
@@ -509,7 +518,8 @@ Asgard tenta de novo, porque nada fica marcado como ignorado para sempre.
 "O Asgard está ocupado com outra publicação" e erro passageiro só adiam.
 Quem está na lista de espera do DNS não é publicado de novo: a fila anota e
 segue, e o vigia da lista termina. O **freio do Asgard** interrompe uma
-publicação no meio (ADR-102).
+publicação no meio (ADR-102); o **Parar tudo** puxa esse freio para tudo de
+uma vez (ADR-165).
 
 ### 4.11 Quando publicou — `hosting`
 

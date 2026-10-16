@@ -115,6 +115,17 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     check('e solta a janela para desacelerar de novo (ADR-126)', JSON.stringify(acordado[acordado.length - 1]) === JSON.stringify([false, 'automacao']), JSON.stringify(acordado));
     check('e grava desligado no hub-state', await page.evaluate(() => state.automacaoFila === false && window.__salvos.join() === 'true,false'));
     check('rodar agora com tudo desligado só avisa', await page.evaluate(async () => { const n = window.__chamadas.salesforceTarefas; await window.hubAutomacao.rodar(); return window.__chamadas.salesforceTarefas === n; }) && (await logs(page, /a fila automática está desligada \(interruptor no topo\)/)).length === 1);
+
+    // O "Parar tudo" (ADR-165) fica logo depois do interruptor. Sem o app.js
+    // (só a cola), ele para pelo menos a fila: desliga, grava e zera.
+    check('o botão "Parar tudo" fica logo depois do interruptor', await page.evaluate(() => { const b = document.getElementById('pararTudoBtn'); return !!b && document.getElementById('autoFilaChave').nextElementSibling === b && /PARAR TUDO/.test(b.textContent); }));
+    await page.click('#autoFilaChave');
+    await page.waitForFunction(() => window.hubAutomacao.estado.rodando === false && window.__chamadas.salesforceTarefas === 2, { timeout: 8000 });
+    check('religada, a fila lembra o que tratou nesta sessão', await page.evaluate(() => window.hubAutomacao.estado.processados.size > 0 && window.hubAutomacao.estado.ultima !== null));
+    await page.click('#pararTudoBtn');
+    await page.waitForFunction(() => (window.__logs || []).some((l) => /Parar tudo: a fila automática parou e começa do zero/.test(l[0])), { timeout: 8000 });
+    check('"Parar tudo" desliga a fila, grava desligada e zera a memória da sessão', await page.evaluate(() => !document.getElementById('autoFila').checked && state.automacaoFila === false && window.__salvos[window.__salvos.length - 1] === false && window.hubAutomacao.estado.processados.size === 0 && window.hubAutomacao.estado.tentativas.size === 0 && window.hubAutomacao.estado.ultima === null));
+    check('e o botão volta a aceitar clique', await page.evaluate(() => !document.getElementById('pararTudoBtn').disabled));
     await page.close();
 
     // Reabrir com o interruptor gravado ligado: volta ligado sozinho, sem
