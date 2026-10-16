@@ -49,7 +49,7 @@ const STUB = `
     await page.goto('file://' + path.join(ROOT, 'renderer', 'index.html').replace(/\\/g, '/'));
     await page.waitForFunction(() => window.hubAutomacao && window.__hubPronto && document.getElementById('pararTudoBtn'), { timeout: 10000 });
 
-    check('o botão "Parar tudo" fica logo depois do interruptor da fila, no topo', await page.evaluate(() => { const c = document.getElementById('autoFilaChave'); const b = document.getElementById('pararTudoBtn'); return !!c && !!b && c.nextElementSibling === b && b.parentElement.classList.contains('tb-right') && /PARAR TUDO/.test(b.textContent) && !b.disabled; }));
+    check('o botão "Parar tudo" fica depois do interruptor da fila e do "▾", no topo', await page.evaluate(() => { const c = document.getElementById('autoFilaChave'); const b = document.getElementById('pararTudoBtn'); return !!c && !!b && c.nextElementSibling.classList.contains('tb-auto-tipos') && c.nextElementSibling.nextElementSibling === b && b.parentElement.classList.contains('tb-right') && /PARAR TUDO/.test(b.textContent) && !b.disabled; }));
     check('pararTudo é a função do app.js (a cola usa ela)', await page.evaluate(() => typeof pararTudo === 'function' && typeof pausarVigia === 'function' && typeof retomarVigia === 'function'));
 
     // Cenário: fila ligada (com memória), uma publicação AUTOMÁTICA no meio,

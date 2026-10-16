@@ -1458,6 +1458,20 @@ html.sem-foco .card--status.pending .card__title::before { animation: none; }
 .tb-auto.rodando .tb-auto-k::after { background: var(--accent-2); }
 .tb-auto.rodando small { color: var(--accent-2); }
 .tb-auto:has(input:focus-visible) { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* O que a fila cobre (ADR-166): o "▾" e o menu que abre embaixo. */
+/* O topo tem animação de entrada (camada própria): sem isto, o conteúdo, que vem
+   depois, pinta por cima do menu. Os modais (z-index maior) continuam acima. */
+.topbar { position: relative; z-index: 40; }
+.tb-auto-escopo { font-style: normal; color: var(--warning); letter-spacing: 0.02em; }
+.tb-auto-tipos { position: relative; display: inline-flex; margin-left: -6px; }
+.tb-auto-tipos > button { font-family: var(--mono); font-size: 11px; line-height: 1; color: var(--text-dim); background: transparent; border: 1px solid var(--border); border-radius: 7px; padding: 5px 6px; cursor: pointer; }
+.tb-auto-tipos > button:hover, .tb-auto-tipos > button[aria-expanded="true"] { color: var(--text); border-color: var(--border-hi); }
+.tb-auto-menu { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 1000; min-width: 230px; background: var(--panel-solid); border: 1px solid var(--border-hi); border-radius: 9px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; gap: 6px; }
+.tb-auto-menu[hidden] { display: none; }
+.tb-auto-menu-tit { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+.tb-auto-menu label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text); cursor: pointer; }
+.tb-auto-menu input { accent-color: var(--accent); }
+.tb-auto-menu-hint { font-size: var(--fs-xs); color: var(--text-faint); line-height: 1.35; }
 /* O "Parar tudo" ao lado do interruptor (ADR-165): vermelho, sempre à mão. */
 .tb-parar { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; color: var(--error); background: transparent; border: 1px solid var(--error-line); border-radius: 9px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
 .tb-parar svg { width: 10px; height: 10px; flex: none; }

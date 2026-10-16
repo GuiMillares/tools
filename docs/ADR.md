@@ -15,7 +15,7 @@ passado.
 <!-- indice:inicio (gerado por tools/indice-adr.js; não edite à mão) -->
 ## Índice
 
-166 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
+167 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
 
 - **ADR-001** — Electron puro, sem framework de UI e sem build step
 - **ADR-002** — Toda rede no processo principal; renderer só fala por IPC
@@ -181,6 +181,7 @@ passado.
 - **ADR-163** — O IP real atrás do proxy da Cloudflare: descoberto pelos hosts que a Cloudflare não proxia e pelo SPF, usado como IP antigo e para os subdomínios proxiados
 - **ADR-164** — O Escritório sai inteiro: sem orquestrador, agentes, regras nem Gemini; a fila volta a ser automatizada pelo motor de antes, com um interruptor só no topo
 - **ADR-165** — "Parar tudo": um botão ao lado da Fila automática que para o Asgard inteiro e deixa a fila começar do zero
+- **ADR-166** — O que a fila automática cobre: o "▾" ao lado do interruptor escolhe MPI+, Busca One e bloqueio, e fica gravado
 - **Pendências conhecidas** (não são decisões — são dívidas)
 - **ADR-146** — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
 <!-- indice:fim -->
@@ -8377,6 +8378,8 @@ e-mail é pior que avisar. Testado em `test-zona.js`.
 externo). Restabelece a ADR-120 (motor e relógio da fila no renderer), a
 ADR-122 e a ADR-132 como estavam até a 1.0.75, com o painel flutuante
 trocado por um interruptor.
+O item 2 (o interruptor liga os três tipos) foi ajustado pela ADR-166: o
+"▾" ao lado escolhe o que a fila cobre.
 
 **Contexto.** Pedido de 16/10/2026, de manhã: "eu quero que ele pare de ter
 essas regras, procure a ADR em que eu solicitei a criação de agentes usando
@@ -8562,6 +8565,50 @@ fila desligada e gravada, freio puxado e solto, rodada parada, memória
 zerada, publicação automática descartada e manual mantida, lista pausada com
 "Retomar", site cortado no SSL volta a esperar, ligar a fila retoma a lista),
 `test-automacao-browser.js` (o botão sem o app.js para a fila e zera).
+
+## ADR-166 — O que a fila automática cobre: o "▾" ao lado do interruptor escolhe MPI+, Busca One e bloqueio, e fica gravado
+
+**Status:** aceita (16/10/2026). Ajusta a ADR-164, item 2 (o interruptor
+ligava sempre os três tipos de uma vez).
+
+**Contexto.** No fim da tarde de 16/10/2026 o Guilherme precisava publicar
+sites MPI+ ainda no mesmo dia e pediu: "peça que ele rode a publicação
+automática apenas de MPI+". O interruptor da ADR-164 era tudo ou nada:
+ligado, a fila também mexia na Busca One (propriedades, geral.php, e-mail de
+vhost) e no bloqueio de contatos, que ele não queria que rodassem naquela
+hora.
+
+**Decisão.**
+
+1. **Um botão "▾" entre o interruptor e o "Parar tudo"** abre um menu "A
+   fila automática cobre", com três caixas: Publicação MPI+, Publicação Busca
+   One e Bloqueio de contatos (todas marcadas por padrão). Fecha ao clicar
+   fora ou com Esc.
+2. **O interruptor liga só o que está marcado** (`estado.tipos` em
+   `renderer/automacao-ui.js`): `estado.ligado` vira a escolha, e o motor
+   (`lib/automacao.js`) já respeitava um interruptor por tipo, então nada
+   muda nele. O tipo desmarcado fica na fila do Salesforce, sem ser tocado,
+   para ser feito à mão.
+3. **Com a fila ligada, a escolha vale na hora**: o tipo tirado não começa
+   mais (a tarefa do meio termina), o tipo posto entra numa varredura
+   imediata. **Nunca tudo desmarcado**: tirar o último é recusado com um aviso
+   (para não rodar nada, desliga-se o interruptor).
+4. **Fica gravado** no hub-state (`automacaoTipos`, só as três chaves,
+   booleanas, nunca todas falsas), como o interruptor: reabrir o Asgard volta
+   com o mesmo escopo, e o log da volta diz qual ("só publicação MPI+").
+5. **O escopo aparece**: com menos de três, o rótulo do interruptor ganha "·
+   só MPI+" (ou "só MPI+ + Busca One"), em amarelo; a dica e o log de ligar
+   dizem o que fica de fora. O topo passa a ficar numa camada acima do
+   conteúdo (`.topbar` com z-index), para o menu não abrir por baixo dele;
+   os modais continuam acima.
+
+**Consequências.** Dá para pôr a fila para publicar só MPI+ (ou só bloquear
+contatos) sem perder o "ligar e esquecer" do interruptor. Ninguém precisa
+lembrar de remarcar: a escolha fica até alguém mudar no "▾". Testado em
+`test-automacao-browser.js` (menu, só MPI+ gravado, varredura que publica o
+MPI+ e deixa Busca One e bloqueio, o último tipo não sai, pôr o bloqueio de
+volta varre na hora, reabrir com só MPI+) e em `test-parar-tudo-browser.js`
+(o "Parar tudo" depois do "▾").
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

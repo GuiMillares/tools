@@ -198,6 +198,8 @@ const state = {
   // MPI+, Busca One e bloqueio de contatos de uma vez. Lembrado: reabrir o
   // Asgard volta como estava.
   automacaoFila: false,
+  // O que ela cobre (ADR-166): o "▾" ao lado do interruptor. Lembrado.
+  automacaoTipos: { publicacao: true, buscaone: true, bloqueio: true },
   npFind: null, // resultado da busca por propriedades existentes
   npPicked: { idAnalytics: '', tagmanager: '' }, // o que foi escolhido pra reaproveitar
   oauthClientId: '', // credenciais do login manual (ferramenta "Conceder acesso")
@@ -659,6 +661,7 @@ function saveHubState() {
     npSteps: state.npSteps,
     sfTarefasAuto: state.sfTarefasAuto,
     automacaoFila: !!state.automacaoFila,
+    automacaoTipos: { ...state.automacaoTipos },
     // A fila de PRs sobrevive ao fechar (ADR-156): só os links, os dados voltam da API.
     filaPrs: state.queue.filter((q) => q.url && q.status !== 'merged').map((q) => q.url),
   });
@@ -9048,6 +9051,12 @@ async function init() {
     // mão não pode injetar etapa que não existe nem valor estranho.
     if (typeof hubRes.state.sfTarefasAuto === 'boolean') state.sfTarefasAuto = hubRes.state.sfTarefasAuto;
     if (typeof hubRes.state.automacaoFila === 'boolean') state.automacaoFila = hubRes.state.automacaoFila;
+    // Só os três tipos, booleanos, e nunca todos desmarcados (ADR-166).
+    if (hubRes.state.automacaoTipos && typeof hubRes.state.automacaoTipos === 'object') {
+      const t = {};
+      for (const k of ['publicacao', 'buscaone', 'bloqueio']) t[k] = hubRes.state.automacaoTipos[k] !== false;
+      if (t.publicacao || t.buscaone || t.bloqueio) state.automacaoTipos = t;
+    }
     if (hubRes.state.npSteps && typeof hubRes.state.npSteps === 'object') {
       for (const e of NP_STEPS) {
         if (e.id in hubRes.state.npSteps) state.npSteps[e.id] = !!hubRes.state.npSteps[e.id];

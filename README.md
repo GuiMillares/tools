@@ -372,8 +372,9 @@ A chave fica criptografada nesta máquina, como a do Bitbucket, e nunca volta pa
 ## 12. A fila automática (e o e-mail de vhost)
 
 O interruptor **Fila automática**, no topo de todas as telas (à esquerda do
-MEM/CPU), liga de uma vez a publicação MPI+, a publicação Busca One e o
-bloqueio de contatos da fila do Salesforce (ADR-164). Ligado, ele lê a fila
+MEM/CPU), liga a publicação MPI+, a publicação Busca One e o bloqueio de
+contatos da fila do Salesforce (ADR-164). O **"▾"** ao lado escolhe quais
+desses três ela cobre, por exemplo só MPI+ (ADR-166); fica gravado. Ligado, ele lê a fila
 na hora e a cada 5 minutos; desligado, para entre uma tarefa e outra. Ele
 lembra o estado: reabrir o Asgard volta como estava. Passe o mouse para ver
 a última varredura e quem está na lista de espera; o detalhe de cada tarefa

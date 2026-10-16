@@ -459,8 +459,12 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
 ### 4.10 Automação da fila — o interruptor do topo
 
 Um interruptor deslizante só, **Fila automática**, no topo de todas as telas
-(à esquerda do MEM/CPU), liga a fila inteira: publicação MPI+, publicação
-Busca One e bloqueio de contatos (ADR-164). Ligado, lê a fila do Salesforce
+(à esquerda do MEM/CPU), liga a fila: publicação MPI+, publicação Busca One e
+bloqueio de contatos (ADR-164). O **"▾"** ao lado escolhe o que ela cobre
+(ADR-166): por exemplo, só a publicação MPI+, com a Busca One e o bloqueio
+ficando na fila do Salesforce para a mão. A escolha fica gravada, o rótulo
+mostra "· só MPI+" quando não é tudo, e com a fila ligada vale na hora; tirar
+o último tipo é recusado. Ligado, lê a fila do Salesforce
 na hora e depois a cada 5 minutos, uma tarefa por vez, pela triagem em
 código (`lib/triagem.js`) e pelo motor da fila (`lib/automacao.js`,
 ADR-119, ADR-120). Desligar é o freio: a varredura para entre uma tarefa e

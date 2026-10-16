@@ -19,7 +19,7 @@ const STUB = `
   window.log = (m, t) => { (window.__logs = window.__logs || []).push([m, t]); };
   // O que o app.js tem e a automação usa por identificador: o estado (com o
   // interruptor gravado) e quem grava o hub-state.
-  var state = { automacaoFila: __GRAVADO__ };
+  var state = { automacaoFila: __GRAVADO__, automacaoTipos: __TIPOS__ };
   function saveHubState() { window.__salvos.push(state.automacaoFila); return Promise.resolve({ ok: true }); }
   // A lista de espera do app.js (let de topo, visível por identificador): um
   // site já publicado cujo DNS é do cliente (ADR-142).
@@ -43,9 +43,9 @@ const STUB = `
   };
 `;
 
-const html = ({ gravado = false, pronto = false } = {}) => `<!doctype html><html><head><meta charset="utf-8"></head><body>
+const html = ({ gravado = false, pronto = false, tipos = { publicacao: true, buscaone: true, bloqueio: true } } = {}) => `<!doctype html><html><head><meta charset="utf-8"></head><body>
 <header class="topbar"><div class="tb-right"><span class="tb-sys">MEM</span></div></header>
-<script>${STUB.replace('__GRAVADO__', gravado ? 'true' : 'false')}${pronto ? 'window.__hubPronto = true;' : ''}</script>
+<script>${STUB.replace('__GRAVADO__', gravado ? 'true' : 'false').replace('__TIPOS__', JSON.stringify(tipos))}${pronto ? 'window.__hubPronto = true;' : ''}</script>
 <script src="../lib/triagem.js"></script>
 <script src="../lib/busca-one.js"></script>
 <script src="../lib/automacao.js"></script>
@@ -118,7 +118,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
 
     // O "Parar tudo" (ADR-165) fica logo depois do interruptor. Sem o app.js
     // (só a cola), ele para pelo menos a fila: desliga, grava e zera.
-    check('o botão "Parar tudo" fica logo depois do interruptor', await page.evaluate(() => { const b = document.getElementById('pararTudoBtn'); return !!b && document.getElementById('autoFilaChave').nextElementSibling === b && /PARAR TUDO/.test(b.textContent); }));
+    check('o botão "Parar tudo" fica depois do interruptor e do "▾"', await page.evaluate(() => { const b = document.getElementById('pararTudoBtn'); return !!b && document.getElementById('autoFilaChave').nextElementSibling.nextElementSibling === b && /PARAR TUDO/.test(b.textContent); }));
     await page.click('#autoFilaChave');
     await page.waitForFunction(() => window.hubAutomacao.estado.rodando === false && window.__chamadas.salesforceTarefas === 2, { timeout: 8000 });
     check('religada, a fila lembra o que tratou nesta sessão', await page.evaluate(() => window.hubAutomacao.estado.processados.size > 0 && window.hubAutomacao.estado.ultima !== null));
@@ -132,7 +132,7 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     // gravar de novo, e a primeira leitura espera a sessão acordar.
     const p2 = await abrir({ gravado: true, pronto: true });
     check('reaberto com a fila gravada ligada, o interruptor volta ligado', await p2.evaluate(() => document.getElementById('autoFila').checked && window.hubAutomacao.estado.ligado.publicacao === true));
-    check('avisa no terminal que voltou como estava, e não lê a fila na hora', (await logs(p2, /Fila automática: volta ligada, como ficou gravada; a primeira leitura da fila sai em 15s/)).length === 1 && await p2.evaluate(() => window.__chamadas.salesforceTarefas === 0 && window.__salvos.length === 0));
+    check('avisa no terminal que voltou como estava, e não lê a fila na hora', (await logs(p2, /Fila automática: volta ligada, como ficou gravada \(tudo\); a primeira leitura da fila sai em 15s/)).length === 1 && await p2.evaluate(() => window.__chamadas.salesforceTarefas === 0 && window.__salvos.length === 0));
     await p2.close();
 
     // Gravado ligado, mas o app.js ainda carregando: espera o "hub:pronto".
@@ -141,6 +141,38 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
     await p3.evaluate(() => document.dispatchEvent(new CustomEvent('hub:pronto')));
     check('com o hub:pronto, volta ligado', await p3.evaluate(() => document.getElementById('autoFila').checked));
     await p3.close();
+
+    // O que a fila cobre (ADR-166): o "▾" entre o interruptor e o "Parar tudo".
+    const p4 = await abrir();
+    check('o "▾" fica entre o interruptor e o "Parar tudo", com o menu fechado e tudo marcado', await p4.evaluate(() => { const c = document.getElementById('autoFilaChave'); const t = c.nextElementSibling; return t.classList.contains('tb-auto-tipos') && t.nextElementSibling.id === 'pararTudoBtn' && document.getElementById('autoTiposMenu').hidden && [...document.querySelectorAll('#autoTiposMenu input[data-tipo]')].every((i) => i.checked) && document.querySelector('.tb-auto-escopo').hidden; }));
+    await p4.click('#autoTiposBtn');
+    check('clicar no "▾" abre o menu com os três tipos', await p4.evaluate(() => !document.getElementById('autoTiposMenu').hidden && document.querySelectorAll('#autoTiposMenu input[data-tipo]').length === 3));
+    await p4.click('#autoTiposMenu input[data-tipo="buscaone"]');
+    await p4.click('#autoTiposMenu input[data-tipo="bloqueio"]');
+    check('desmarcar Busca One e bloqueio deixa só MPI+, grava no hub-state e o rótulo diz "só MPI+"', await p4.evaluate(() => JSON.stringify(window.hubAutomacao.estado.tipos) === '{"publicacao":true,"buscaone":false,"bloqueio":false}' && JSON.stringify(state.automacaoTipos) === '{"publicacao":true,"buscaone":false,"bloqueio":false}' && window.__salvos.length === 2 && /só MPI\+/.test(document.querySelector('.tb-auto-escopo').textContent) && !document.querySelector('.tb-auto-escopo').hidden));
+    await p4.click('#autoTiposMenu input[data-tipo="publicacao"]');
+    check('o último tipo não sai: o MPI+ continua marcado e o log explica', await p4.evaluate(() => window.hubAutomacao.estado.tipos.publicacao === true && document.querySelector('#autoTiposMenu input[data-tipo="publicacao"]').checked) && (await logs(p4, /precisa cobrir pelo menos um tipo/)).length === 1);
+    await p4.mouse.click(5, 300);
+    check('clicar fora fecha o menu', await p4.evaluate(() => document.getElementById('autoTiposMenu').hidden));
+    await p4.click('#autoFilaChave');
+    await p4.waitForFunction(() => window.hubAutomacao.estado.ultima && window.hubAutomacao.estado.rodando === false, { timeout: 8000 });
+    const ch4 = await p4.evaluate(() => window.__chamadas);
+    check('ligada "só MPI+": liga só a publicação MPI+', await p4.evaluate(() => JSON.stringify(window.hubAutomacao.estado.ligado) === '{"bloqueio":false,"publicacao":true,"buscaone":false}'));
+    check('o log de ligar diz o que fica de fora', (await logs(p4, /Fila automática LIGADA para publicação MPI\+ \(com backup do DNS antes de aplicar\) \(fica de fora: publicação Busca One e bloqueio de contatos\)/)).length === 1, (await logs(p4, /LIGADA/)).join(' | '));
+    check('a varredura publica o MPI+ e deixa o bloqueio e a Busca One na fila', ch4.doutorBloquear.length === 0 && ch4.resolverMarca.length === 0 && (await logs(p4, /b\.com\.br: pulei — ferramenta Publicar MPI\+ não carregada/)).length === 1 && (await logs(p4, /Publicação Busca One: c\.com\.br/)).length === 0, JSON.stringify(ch4));
+    check('a dica diz que está ligada só para MPI+ e o que fica de fora', await p4.evaluate(() => /LIGADA para publicação MPI\+; a fila é lida a cada 5 min\..*Fica de fora: publicação Busca One e bloqueio de contatos\./.test(document.getElementById('autoFilaChave').title)), await p4.evaluate(() => document.getElementById('autoFilaChave').title));
+    // Pôr um tipo de volta com a fila ligada vale na hora: varre de novo.
+    await p4.click('#autoTiposBtn');
+    await p4.click('#autoTiposMenu input[data-tipo="bloqueio"]');
+    await p4.waitForFunction(() => window.__chamadas.doutorBloquear.length === 1 && window.hubAutomacao.estado.rodando === false, { timeout: 8000 });
+    check('marcar o bloqueio com a fila ligada vale na hora: varre e bloqueia', await p4.evaluate(() => window.hubAutomacao.estado.ligado.bloqueio === true && window.__chamadas.salesforceTarefas === 2));
+    await p4.close();
+
+    // Reaberto com "só MPI+" gravado e a fila ligada: volta assim.
+    const p5 = await abrir({ gravado: true, pronto: true, tipos: { publicacao: true, buscaone: false, bloqueio: false } });
+    check('reaberto com "só MPI+" gravado, volta ligado só para MPI+, com o menu e o rótulo certos', await p5.evaluate(() => document.getElementById('autoFila').checked && JSON.stringify(window.hubAutomacao.estado.ligado) === '{"bloqueio":false,"publicacao":true,"buscaone":false}' && !document.querySelector('#autoTiposMenu input[data-tipo="buscaone"]').checked && /só MPI\+/.test(document.querySelector('.tb-auto-escopo').textContent)));
+    check('e o log da volta diz "só publicação MPI+"', (await logs(p5, /volta ligada, como ficou gravada \(só publicação MPI\+\)/)).length === 1, (await logs(p5, /volta ligada/)).join(' | '));
+    await p5.close();
 
     check('sem erro de página no fim', erros.length === 0, erros.join(' | '));
   } catch (e) {

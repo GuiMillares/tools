@@ -6,8 +6,9 @@
 // window.api.* (preload) + window.log (terminal do app).
 // Um interruptor só liga a fila inteira: bloqueio de contatos, publicação MPI+
 // (ADR-122) e publicação Busca One (ADR-132). Fica gravado no hub-state
-// (state.automacaoFila): reabrir o Asgard volta como estava. Ao lado, o botão
-// "Parar tudo" (ADR-165, pararTudo no app.js) para o Asgard inteiro.
+// (state.automacaoFila): reabrir o Asgard volta como estava. O "▾" ao lado
+// escolhe o que a fila cobre (ADR-166: só MPI+, por exemplo; state.automacaoTipos),
+// e o botão "Parar tudo" (ADR-165, pararTudo no app.js) para o Asgard inteiro.
 //
 // De 13/10 a 16/10/2026 (ADR-149 a 163) isto morou no Escritório (orquestrador,
 // agentes, regras, Gemini), e antes num painel flutuante. A ADR-164 tirou o
@@ -34,6 +35,8 @@
     aguardando: new Map(),
     timer: null,
     ultima: null,
+    // O que a fila cobre quando está ligada (ADR-166). Gravado no hub-state.
+    tipos: { publicacao: true, buscaone: true, bloqueio: true },
   };
 
   // A lista de espera do app (`esperas`, let de topo do app.js, visível por
@@ -416,12 +419,33 @@
   // lista de espera acordarem (como o Escritório fazia).
   const RETOMAR_MS = 15000;
   let chave = null;
-  const ligada = () => !!(estado.ligado.bloqueio && estado.ligado.publicacao && estado.ligado.buscaone);
+  const ligada = () => !!(estado.ligado.bloqueio || estado.ligado.publicacao || estado.ligado.buscaone);
+
+  // O que a fila cobre (ADR-166), em palavras e na ordem do menu.
+  const TIPOS = [
+    { id: 'publicacao', nome: 'Publicação MPI+', curto: 'MPI+', frase: 'publicação MPI+' },
+    { id: 'buscaone', nome: 'Publicação Busca One', curto: 'Busca One', frase: 'publicação Busca One' },
+    { id: 'bloqueio', nome: 'Bloqueio de contatos', curto: 'bloqueio', frase: 'bloqueio de contatos' },
+  ];
+  const tiposMarcados = () => TIPOS.filter((x) => estado.tipos[x.id]);
+  const tudo = () => tiposMarcados().length === TIPOS.length;
+  const listaNomes = (l) => l.length <= 1 ? (l[0] || '') : `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}`;
+  const textoEscopo = () => tudo() ? 'publicação MPI+, Busca One e bloqueio de contatos' : listaNomes(tiposMarcados().map((x) => x.frase));
+  const foraDoEscopo = () => TIPOS.filter((x) => !estado.tipos[x.id]).map((x) => x.frase);
+  // Lê o que está gravado (hub-state), só chaves conhecidas e booleanas, e
+  // nunca tudo desmarcado.
+  function lerTiposGravados() {
+    const g = typeof state !== 'undefined' && state && state.automacaoTipos;
+    if (!g || typeof g !== 'object') return;
+    const novo = {};
+    for (const x of TIPOS) novo[x.id] = g[x.id] !== false;
+    if (TIPOS.some((x) => novo[x.id])) estado.tipos = novo;
+  }
 
   function textoDica() {
     const partes = [ligada()
-      ? 'Fila automática LIGADA: publicação MPI+, Busca One e bloqueio de contatos saem sozinhos; a fila é lida a cada 5 min. Clique para desligar (para entre uma tarefa e outra).'
-      : 'Fila automática desligada. Clique para ligar a publicação MPI+, a Busca One e o bloqueio de contatos da fila de uma vez.'];
+      ? `Fila automática LIGADA para ${textoEscopo()}; a fila é lida a cada 5 min.${tudo() ? '' : ` Fica de fora: ${listaNomes(foraDoEscopo())}.`} Clique para desligar (para entre uma tarefa e outra).`
+      : `Fila automática desligada. Clique para ligar ${tudo() ? 'a publicação MPI+, a Busca One e o bloqueio de contatos da fila de uma vez' : textoEscopo()}; o "▾" ao lado escolhe o que ela cobre.`];
     const u = estado.ultima;
     if (u) partes.push(`Última varredura (${u.quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}): ${u.feitas} feita(s), ${u.aguardando} aguardando o DNS, ${u.puladas} pulada(s), ${u.erros} erro(s).`);
     const abertas = listaDeEspera().filter((e) => e && e.status !== 'concluido');
@@ -443,7 +467,11 @@
     if (input) { input.checked = on; input.setAttribute('aria-checked', on ? 'true' : 'false'); }
     const sub = chave.querySelector('small');
     if (sub) sub.textContent = estado.rodando ? 'lendo…' : !on ? 'desligada' : u ? `${u.feitas}✓ ${u.aguardando}⏳ ${u.erros}✗` : 'ligada';
+    const escopo = chave.querySelector('.tb-auto-escopo');
+    if (escopo) { escopo.textContent = tudo() ? '' : `· só ${tiposMarcados().map((x) => x.curto).join(' + ')}`; escopo.hidden = tudo(); }
     chave.title = textoDica();
+    const menu = document.getElementById('autoTiposMenu');
+    if (menu) for (const x of TIPOS) { const c = menu.querySelector(`input[data-tipo="${x.id}"]`); if (c) c.checked = !!estado.tipos[x.id]; }
   }
   document.addEventListener('hub:esperas', () => { try { atualizarPainel(); } catch (e) {} });
 
@@ -451,7 +479,7 @@
   // reabrir (já está gravado); 'parar' é o "Parar tudo" (grava, e quem avisa
   // no terminal é ele).
   function ligarFila(on, { origem = 'clique' } = {}) {
-    estado.ligado = { bloqueio: on, publicacao: on, buscaone: on };
+    estado.ligado = { bloqueio: on && !!estado.tipos.bloqueio, publicacao: on && !!estado.tipos.publicacao, buscaone: on && !!estado.tipos.buscaone };
     if (!on) estado.parar = true;
     revisarTimer();
     atualizarPainel();
@@ -464,13 +492,39 @@
     }
     if (on) {
       log(origem === 'gravado'
-        ? `Fila automática: volta ligada, como ficou gravada; a primeira leitura da fila sai em ${RETOMAR_MS / 1000}s.`
-        : 'Fila automática LIGADA: publicação MPI+ (com backup do DNS antes de aplicar), Busca One e bloqueio de contatos saem sozinhos; leio a fila agora e a cada 5 min.', 'success');
+        ? `Fila automática: volta ligada, como ficou gravada (${tudo() ? 'tudo' : 'só ' + textoEscopo()}); a primeira leitura da fila sai em ${RETOMAR_MS / 1000}s.`
+        : `Fila automática LIGADA para ${textoEscopo().replace('publicação MPI+', 'publicação MPI+ (com backup do DNS antes de aplicar)')}${tudo() ? '' : ` (fica de fora: ${listaNomes(foraDoEscopo())})`}; leio a fila agora e a cada 5 min.`, 'success');
       if (origem === 'gravado') setTimeout(() => { if (ligada()) rodarVarredura(false); }, RETOMAR_MS);
       else rodarVarredura(false);
     } else if (origem !== 'parar') {
       log(estado.rodando ? 'Fila automática desligada: a varredura em andamento para depois da tarefa atual.' : 'Fila automática desligada.', 'warn');
     }
+  }
+
+  // Muda o que a fila cobre (ADR-166). Com a fila ligada vale na hora: o tipo
+  // tirado não começa mais (a tarefa do meio termina), o tipo posto entra numa
+  // varredura agora. Nunca deixa tudo desmarcado.
+  function escolherTipos(novos, { origem = 'clique' } = {}) {
+    const antes = { ...estado.tipos };
+    const proximo = { ...estado.tipos, ...novos };
+    if (!TIPOS.some((x) => proximo[x.id])) {
+      log('Fila automática: ela precisa cobrir pelo menos um tipo; para não rodar nada, desligue o interruptor.', 'warn');
+      atualizarPainel();
+      return false;
+    }
+    estado.tipos = proximo;
+    const on = ligada();
+    if (on) estado.ligado = { bloqueio: !!proximo.bloqueio, publicacao: !!proximo.publicacao, buscaone: !!proximo.buscaone };
+    if (origem === 'clique' && typeof state !== 'undefined' && state) {
+      state.automacaoTipos = { ...proximo };
+      if (typeof saveHubState === 'function') { try { Promise.resolve(saveHubState()).catch(() => {}); } catch (e) {} }
+    }
+    revisarTimer();
+    atualizarPainel();
+    log(`Fila automática cobre agora: ${textoEscopo()}${tudo() ? '' : ` (fica de fora: ${listaNomes(foraDoEscopo())})`}${on ? '' : '; vale quando você ligar'}.`, 'info');
+    const entrou = TIPOS.some((x) => proximo[x.id] && !antes[x.id]);
+    if (on && entrou) rodarVarredura(false);
+    return true;
   }
 
   // O que o "Parar tudo" usa: desligar (grava desligada, a varredura para
@@ -501,9 +555,27 @@
     chave = document.createElement('label');
     chave.className = 'tb-auto';
     chave.id = 'autoFilaChave';
-    chave.innerHTML = '<input type="checkbox" id="autoFila" role="switch" aria-checked="false" aria-label="Fila automática"><span class="tb-auto-k"></span><span>FILA AUTOMÁTICA</span><small>desligada</small>';
+    chave.innerHTML = '<input type="checkbox" id="autoFila" role="switch" aria-checked="false" aria-label="Fila automática"><span class="tb-auto-k"></span><span>FILA AUTOMÁTICA</span><em class="tb-auto-escopo" hidden></em><small>desligada</small>';
     direita.insertBefore(chave, direita.firstChild);
     chave.querySelector('input').addEventListener('change', (e) => ligarFila(e.target.checked));
+    // O "▾": o que a fila cobre (ADR-166), num menu que abre embaixo.
+    const caixa = document.createElement('span');
+    caixa.className = 'tb-auto-tipos';
+    caixa.innerHTML = '<button type="button" id="autoTiposBtn" aria-haspopup="true" aria-expanded="false" title="O que a fila automática cobre">▾</button>'
+      + '<div id="autoTiposMenu" class="tb-auto-menu" role="menu" hidden><div class="tb-auto-menu-tit">A fila automática cobre</div>'
+      + TIPOS.map((x) => `<label><input type="checkbox" data-tipo="${x.id}" checked><span>${esc(x.nome)}</span></label>`).join('')
+      + '<div class="tb-auto-menu-hint">Fica gravado. Desmarcado, o tipo fica na fila do Salesforce para você fazer à mão.</div></div>';
+    chave.insertAdjacentElement('afterend', caixa);
+    const botaoTipos = caixa.querySelector('#autoTiposBtn');
+    const menuTipos = caixa.querySelector('#autoTiposMenu');
+    const abrirMenu = (abrir) => { menuTipos.hidden = !abrir; botaoTipos.setAttribute('aria-expanded', abrir ? 'true' : 'false'); };
+    botaoTipos.addEventListener('click', (ev) => { ev.stopPropagation(); abrirMenu(menuTipos.hidden); });
+    menuTipos.addEventListener('click', (ev) => ev.stopPropagation());
+    document.addEventListener('click', () => abrirMenu(false));
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') abrirMenu(false); });
+    menuTipos.querySelectorAll('input[data-tipo]').forEach((c) => c.addEventListener('change', () => {
+      if (!escolherTipos({ [c.dataset.tipo]: c.checked })) c.checked = true;
+    }));
     // O "Parar tudo", logo depois do interruptor (ADR-165).
     const parar = document.createElement('button');
     parar.type = 'button';
@@ -511,7 +583,7 @@
     parar.id = 'pararTudoBtn';
     parar.title = 'Para tudo o que o Asgard está fazendo: desliga a fila automática, pausa a lista de espera, interrompe a publicação, o Publicar em massa e as rodadas no meio, e zera o que a fila lembrava. Para você fazer o que precisa agora ou recomeçar do zero. Uma gravação que já saiu termina; o passo seguinte não começa.';
     parar.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></svg><span>PARAR TUDO</span>';
-    chave.insertAdjacentElement('afterend', parar);
+    caixa.insertAdjacentElement('afterend', parar);
     parar.addEventListener('click', async () => {
       if (parar.disabled) return;
       parar.disabled = true;
@@ -532,6 +604,8 @@
   // Volta como ficou gravado, quando o app.js terminar de carregar o estado
   // (credenciais, service account, conta Microsoft e lista de espera).
   function retomarGravado() {
+    lerTiposGravados();
+    atualizarPainel();
     if (typeof state !== 'undefined' && state && state.automacaoFila === true && !ligada()) ligarFila(true, { origem: 'gravado' });
   }
 
@@ -541,7 +615,7 @@
   else document.addEventListener('hub:pronto', retomarGravado, { once: true });
 
   // Exposto para depuração, para a tela e para os testes.
-  window.hubAutomacao = { rodar: () => rodarVarredura(true), ligar: (on) => ligarFila(!!on), desligar: desligarFila, zerar: zerarFila, pararTudo: pararTudoAqui, estado, emEspera, listaDeEspera };
+  window.hubAutomacao = { rodar: () => rodarVarredura(true), ligar: (on) => ligarFila(!!on), tipos: (novos) => escolherTipos(novos || {}), desligar: desligarFila, zerar: zerarFila, pararTudo: pararTudoAqui, estado, emEspera, listaDeEspera };
   // Atalho para validar o bloqueio no painel MPI+ ao vivo (ex.: no console do
   // Asgard): hubBloquearPainel({ dominio, url|cnpj, acao:'bloquear'|'desbloquear' }).
   // Loga o passo a passo no terminal do Asgard.
