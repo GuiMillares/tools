@@ -69,11 +69,11 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
   check('a rodada em massa liga e desliga', /manterAcordado\(true\)/.test(rodada) && /manterAcordado\(false\)/.test(rodada));
   const etapa = recorta(app, 'async function pubRodarEtapa(', '\n}');
   check("a etapa da publicação segura como 'publicacao' e solta no finally", /manterAcordado\(true, 'publicacao'\)/.test(etapa) && /finally \{[\s\S]*manterAcordado\(false, 'publicacao'\)/.test(etapa));
-  // O relógio da automação saiu do renderer (ADR-150): é o orquestrador do
-  // Escritório, no processo principal, que segura a janela enquanto o modo
-  // automático está ligado, e solta ao desligar.
-  check("o Escritório segura como 'escritorio' com o modo automático ligado e solta ao desligar", /function revisarTimerEscritorio\(\)[\s\S]*?invocarLocal\('energia:manterAcordado', \{ ligar: ligado, motivo: 'escritorio' \}\)/.test(main));
-  check('o renderer da automação não tem mais relógio nem manterAcordado (absorvido pelo Escritório)', !/ligarTimer|manterAcordado/.test(auto));
+  // O relógio da automação voltou para o painel flutuante (ADR-164): ele
+  // segura a janela enquanto algum interruptor está ligado, e solta ao
+  // desligar.
+  check("a automação segura como 'automacao' ao ligar e solta ao desligar", /function ligarTimer\(\)[\s\S]*?manterAcordado\(true, 'automacao'\)[\s\S]*?function desligarTimer\(\)[\s\S]*?manterAcordado\(false, 'automacao'\)/.test(auto));
+  check('o processo principal não tem mais relógio de orquestrador', !/revisarTimerEscritorio|motivo: 'escritorio'/.test(main));
 
   console.log('\n=== Nada pulsa para sempre ===');
   const infinitas = [...css.matchAll(/^([^{}\n]+)\{[^}]*animation:[^;}]*infinite/gm)].map((m) => m[1].trim());
@@ -103,11 +103,11 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
   check('a telemetria do topo não trabalha com a janela escondida', /if \(document\.visibilityState === 'hidden'\) return;/.test(recorta(app, 'function iniciarTopbarLive(', '\n}')));
   check('o CSS também saiu', !/\.tb-pill|\.statusbar|\.nav-foot|\.sb-dot/.test(css));
 
-  console.log('\n=== O Escritório voltou ao HTML (ADR-159): sem cena, sem laço de quadros ===');
-  check('index.html não carrega Three.js, a cena, o mapa nem a planta', !/three\.min\.js|escritorio-cena\.js|escritorio-mapa\.js|planta\.js/.test(html));
-  check('os arquivos da cena saíram do repositório', !fs.existsSync(path.join(raiz, 'renderer', 'escritorio-cena.js')) && !fs.existsSync(path.join(raiz, 'renderer', 'escritorio-mapa.js')) && !fs.existsSync(path.join(raiz, 'renderer', 'vendor')) && !fs.existsSync(path.join(raiz, 'lib', 'escritorio', 'planta.js')));
-  check('o app.js não tem mais a tela cheia nem o CSS dela', !/esc-cheia|hubEscritorioSair/.test(app) && !/esc-cheia|esc-borda|esc-palco|esc-mapa/.test(css));
-  check('a tela do Escritório não pede quadro nenhum nem anima para sempre', !/requestAnimationFrame|setInterval/.test(ler('renderer', 'escritorio-ui.js')));
+  console.log('\n=== O Escritório saiu inteiro (ADR-164): sem cena, sem tela, sem orquestrador ===');
+  check('index.html não carrega Three.js, a cena, o mapa, a planta, o resumo nem a tela do Escritório', !/three\.min\.js|escritorio-cena\.js|escritorio-mapa\.js|planta\.js|escritorio-ui\.js|escritorio\/resumo\.js/.test(html));
+  check('os arquivos do Escritório saíram do repositório', !fs.existsSync(path.join(raiz, 'renderer', 'escritorio-cena.js')) && !fs.existsSync(path.join(raiz, 'renderer', 'escritorio-mapa.js')) && !fs.existsSync(path.join(raiz, 'renderer', 'vendor')) && !fs.existsSync(path.join(raiz, 'renderer', 'escritorio-ui.js')) && !fs.existsSync(path.join(raiz, 'lib', 'escritorio')) && !fs.existsSync(path.join(raiz, 'lib', 'hospedagem.js')));
+  check('o app.js e o CSS não têm mais a tela do Escritório', !/escritorio|hubEscritorio|escAtividade/i.test(app) && !/\.esc-|tb-esc/.test(css));
+  check('o processo principal não tem mais o orquestrador nem o Gemini', !/Escritorio|escritorio:|ia:getConfig|gemini-key|invocarLocal/.test(main));
 
   console.log(falhas ? `\n${falhas} falha(s)\n` : '\nTudo passou.\n');
   process.exit(falhas ? 1 : 0);

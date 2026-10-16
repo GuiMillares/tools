@@ -15,7 +15,7 @@ passado.
 <!-- indice:inicio (gerado por tools/indice-adr.js; não edite à mão) -->
 ## Índice
 
-164 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
+165 entrada(s), na ordem do arquivo. Ctrl+F pelo número leva à decisão.
 
 - **ADR-001** — Electron puro, sem framework de UI e sem build step
 - **ADR-002** — Toda rede no processo principal; renderer só fala por IPC
@@ -179,6 +179,7 @@ passado.
 - **ADR-161** — O aprendizado é pela ADR: as regras aprendidas saem, o que o Asgard sabe vira código de triagem, e a falha de agente é pendência "para você" com "Tentar de novo"
 - **ADR-162** — Esperas sem interferência: o cliente é conferido de hora em hora, o domínio novo no Registro.br espera a publicação e troca os nameservers pelo vigia, e erro que repetir não resolve desiste de primeira
 - **ADR-163** — O IP real atrás do proxy da Cloudflare: descoberto pelos hosts que a Cloudflare não proxia e pelo SPF, usado como IP antigo e para os subdomínios proxiados
+- **ADR-164** — O Escritório sai inteiro: sem orquestrador, agentes, regras nem Gemini; a fila volta a ser automatizada pelo motor de antes, com um interruptor só no topo
 - **Pendências conhecidas** (não são decisões — são dívidas)
 - **ADR-146** — Comparativo antes e depois do Hub nas publicações MPI+: só leitura, períodos de mesma duração definidos pelo corte, e o mesmo critério dos indicadores
 <!-- indice:fim -->
@@ -5210,7 +5211,10 @@ onde o domínio aponta: `149.18.103.138` MPI Solutions, `149.18.102.39` MPI+,
 
 ## ADR-120 — Monitor da fila em 2º plano (motor puro + painel flutuante)
 
-**Status:** substituída pela ADR-150 no painel flutuante, nos interruptores e no relógio do renderer (o Escritório faz isso); o motor `lib/automacao.js` continua, chamado pelo executor do Tyr
+**Status:** substituída pela ADR-150 de 13 a 16/10/2026 (o Escritório fazia
+isto); restabelecida pela ADR-164: o motor, o relógio de 5 min e a varredura
+voltam ao renderer, com o painel flutuante trocado por um interruptor só no
+topo ("Fila automática"), que lembra o estado
 
 **Decisão.** `lib/automacao.js` é o motor (puro, injetável, testado sem
 Electron): varre a fila a cada 5 min, triagem, executa uma tarefa por vez,
@@ -7127,13 +7131,9 @@ propriedade criada, listada numa aba "Vincular Analytics". Decisões:
 
 ## ADR-149 — Escritório, fase 1: orquestrador no processo principal, decisão em código antes do modelo, regras aprendidas com aprovação e validação de execução determinística
 
-**Status:** aceita — fase 1 de 5 (núcleo); as regras aprendidas (itens 3a e
-5) saíram na ADR-161, que leva o aprendizado para o código de triagem e para
-a ADR. Nenhum agente executava ainda: o plano ficava guardado e o log dizia
-"executaria". A automação da fila da ADR-120
-(painel flutuante) continua como está até a fase 2, quando os agentes
-Bloqueador, Publicador MPI+ e Publicador Busca One passam a executar pelo
-Escritório e o painel é absorvido.
+**Status:** substituída pela ADR-164 (16/10/2026): o Escritório saiu inteiro
+(orquestrador, estados, regras, validação de plano, modelo). Antes disso, as
+regras aprendidas (itens 3a e 5) já tinham saído na ADR-161
 
 **Contexto.** Pedido de 13/10/2026: transformar o Hub num sistema com um
 orquestrador e vários agentes, partindo da leitura da fila do Salesforce que
@@ -7300,11 +7300,10 @@ uma chamada ao Pro; as conhecidas não chamam modelo nenhum.
 
 ## ADR-150 — Escritório, fase 2: os agentes executam (Tyr e Freyr no processo principal, Thor pela ponte), o painel flutuante é absorvido e os nomes vêm da mitologia nórdica
 
-**Status:** aceita — fase 2 de 5. Substitui a ADR-120 no que diz respeito ao
-painel flutuante e ao relógio do renderer (o motor `lib/automacao.js`
-continua, agora chamado pelo executor); mantém a ADR-122 (o driver do
-Publicar MPI+ no renderer) e a ADR-132/133 (a publicação Busca One), que
-passam a ser acionados pelo orquestrador.
+**Status:** substituída pela ADR-164 (16/10/2026): sem agentes nem ponte; o
+painel flutuante não volta, mas a automação da fila volta ao renderer com
+um interruptor no topo, e a publicação Busca One volta a rodar na tela
+(ADR-132/133)
 
 **Contexto.** Aprovada a fase 1 (ADR-149) em 13/10/2026, o pedido foi:
 começar a fase 2; mostrar o nome do módulo ao lado de cada agente nos
@@ -7451,8 +7450,9 @@ raiz.
 
 ## ADR-152 — Escritório, fase 3: agentes sem modelo (o Gemini é opcional e nasce desligado), Huginn e Ratatoskr executam, e os módulos acionados pela mão aparecem como o agente trabalhando
 
-**Status:** aceita — fase 3 de 5. Ajusta a ADR-149 no papel do modelo: ele
-deixa de ser parte do fluxo e vira uma opção desligada.
+**Status:** substituída pela ADR-164 (16/10/2026): sem agentes, sem Gemini,
+sem Huginn nem Ratatoskr; os módulos acionados pela mão não avisam mais
+nada
 
 **Contexto.** Em 13/10/2026, ao pedir a fase 3, o Guilherme mudou uma
 decisão da proposta: pelo uso que tem do Hub, o Gemini ia custar caro (pôs
@@ -7731,7 +7731,10 @@ A limpeza do user agent (`uaSemElectron`) tira "Hub" e "Asgard".
 ## ADR-155 — Dívidas pagas de uma vez: OAuth criptografado, GA4 sem duplicata por slot reaproveitado, service workers do painel, notificação de pendência e o resumo "Hoje" do Escritório
 
 **Status:** aceita — bloco 1 do pedido de 14/10/2026 ("pode fazer todos
-agora na ordem que achar melhor, menos o Asgard para o time").
+agora na ordem que achar melhor, menos o Asgard para o time"). A notificação
+de pendência e o resumo "Hoje" do Escritório saíram na ADR-164; o OAuth
+criptografado, o GA4 sem duplicata e a limpeza dos service workers do painel
+seguem
 
 **Contexto.** Depois das fases do Escritório, o Guilherme pediu uma lista de
 planos de melhoria e mandou fazer todos, menos distribuir o Asgard para o
@@ -7936,11 +7939,9 @@ apagada e a migração refeita pela 1.0.92; o teste cobre os dois pontos.
 
 ## ADR-159 — O Escritório volta ao HTML: a cena 3D de tela cheia e o mapa saem por peso, o Início volta a ser a abertura, e a automação fica como está
 
-**Status:** aceita (15/10/2026). Substitui a ADR-153 (fases 4 e 5) e a
-ADR-157 (mapa de fluxo) no que diz respeito à tela; a parte dos pacotes
-clicáveis da ADR-156 sai junto. As ADR-149 a 152 (orquestrador, agentes,
-regras aprendidas, validação em código, ponte do Publicar MPI+) seguem
-como estão.
+**Status:** substituída pela ADR-164 (16/10/2026) no que restava do
+Escritório (a tela HTML, o orquestrador e os agentes); a cena 3D, o mapa e
+os pacotes clicáveis já tinham saído aqui
 
 **Contexto.** Pedido de 15/10/2026: "achei legal a ideia do escritório e
 tudo mais, só que está muito pesado; vamos voltar como era a tela inicial
@@ -8000,10 +8001,8 @@ atividade) e o chip do topo. A preferência da cena guardada no localStorage
 
 ## ADR-160 — Reanalisar uma tarefa que espera o DNS: a transição existe, e o reanalisar confere antes de mexer na tarefa
 
-**Status:** aceita (15/10/2026). Ajuste da ADR-149 (estados e reanálise).
-Corrigida pela ADR-162, item 5: a reanálise de uma tarefa já na lista de
-espera parava na validação "Fora da lista de espera" e virava pendência;
-agora volta a aguardando externo.
+**Status:** substituída pela ADR-164 (16/10/2026): sem Escritório não há
+estados de tarefa nem "reanalisar"
 
 **Contexto.** O Guilherme clicou em "reanalisar" em duas tarefas de
 publicação MPI+ que estavam em **aguardando externo** (o site já publicado,
@@ -8047,12 +8046,10 @@ não uma reanálise.
 
 ## ADR-161 — O aprendizado é pela ADR: as regras aprendidas saem, o que o Asgard sabe vira código de triagem, e a falha de agente é pendência "para você" com "Tentar de novo"
 
-**Status:** aceita (15/10/2026). Substitui os itens 3a e 5 da ADR-149 (regra
-aprendida como primeiro passo da decisão; base de conhecimento aprovada na
-tela) e o "ajuste do mesmo dia" dela no que toca a regras ("Avisar sempre",
-"comentário contém"); a pendência de escalação da ADR-149, item 6, muda de
-tipo. Tudo o mais (triagem, validação em código, estados, ponte, agentes)
-segue.
+**Status:** substituída pela ADR-164 (16/10/2026): sem Escritório não há
+pendência nem agente. Da triagem, fica só a publicação com assunto solto e
+temporário MPI+ (`RE_PUBLICACAO_SOLTA`); SSL, suspensão e "Site fora do ar"
+saem com o Huginn
 
 **Contexto.** Pedido de 15/10/2026: "sobre as regras, pode tirar isso. Vamos
 fazer o aprendizado pela ADR". Dois exemplos do dia dizem por quê. Uma
@@ -8130,7 +8127,9 @@ novo", "encaminhar" com preset, respostas de regra recusadas),
 
 **Status:** aceita (15/10/2026). Ajusta a ADR-142 (cadência do cliente), a
 ADR-080 (um caso novo do Registro.br) e a ADR-122/142 (falhas do driver
-automático).
+automático). O item 5 (aguardando externo, pendência "Fora da lista de
+espera") saiu com o Escritório na ADR-164; os itens 1, 2, 3, 4 e 6 seguem,
+no driver e no motor da fila
 
 **Contexto.** Perguntas do Guilherme em 15/10: "o que fazer com sites que
 já fizemos quase tudo e estamos esperando o cliente realizar o apontamento?
@@ -8247,6 +8246,138 @@ A para 158.69.27.204 (evidência: A de mail, ip4 do SPF), e o aviso diria
 isso em vez de pedir para cadastrar à mão. Onde a zona não tem host fora do
 proxy nem SPF com IP, nada muda: aviso e nada copiado, porque chutar o IP do
 e-mail é pior que avisar. Testado em `test-zona.js`.
+
+## ADR-164 — O Escritório sai inteiro: sem orquestrador, agentes, regras nem Gemini; a fila volta a ser automatizada pelo motor de antes, com um interruptor só no topo
+
+**Status:** aceita (16/10/2026). Substitui as ADR-149, 150, 152, 159, 160 e
+161 (o Escritório e tudo o que era dele), os itens do Escritório da ADR-155
+(notificação de pendência, resumo "Hoje") e o item 5 da ADR-162 (aguardando
+externo). Restabelece a ADR-120 (motor e relógio da fila no renderer), a
+ADR-122 e a ADR-132 como estavam até a 1.0.75, com o painel flutuante
+trocado por um interruptor.
+
+**Contexto.** Pedido de 16/10/2026, de manhã: "eu quero que ele pare de ter
+essas regras, procure a ADR em que eu solicitei a criação de agentes usando
+o Gemini e o Escritório, e volte para isso, esqueça agentes, esqueça Gemini,
+quero só que ele volte a publicar como antes sem ter essas regras que agora
+ele tem. Antes o Asgard me ajudava muito, hoje eu estou tendo que fazer
+muitas coisas de forma manual, pois ele lê a fila e não identifica algumas
+tarefas de MPI+ que antes ele identificava". Logo depois: "faça de outra
+forma, ao invés de um painel flutuante automação da fila, decida a melhor
+forma, pode ser um botão liga e desliga de slide igual tem hoje para
+automatizar a fila inteira (publicação MPI+, Busca One, bloqueio de
+contatos)". E o caso do dia: dois sites com o nosso contato técnico no
+Registro.br (lojaderevestimentos.com.br e libelulaexpress.com.br, `tech-c
+BCTDL` no whois) sem a troca de nameservers desde a véspera.
+
+O que a investigação achou:
+
+1. **Duas cópias do app na mesma fila.** Às 08:30 o "PR Merge Tool" 1.0.82
+   (de 14/10, de antes do nome Asgard, em `Programs\pr-merge-tool`, com os
+   dados em `%APPDATA%\pr-merge-tool`) estava aberto junto com o Asgard
+   1.0.97, os dois em modo automático, cada um com a sua fila do Escritório
+   e as suas regras: o antigo tinha lojaderevestimentos, preventsolucoes e
+   libelulaexpress planejadas para o Thor dele. A pasta antiga tinha sido
+   desinstalada pelo `tools/atualizar.js` (ADR-158) e voltou a ser instalada
+   em 16/10 às 08:30, fora do Asgard. As linhas "4 regra(s) aprendida(s)" e
+   "via regra" do log do dia vinham dela.
+2. **A triagem em código nunca deixou de reconhecer as publicações MPI+.**
+   Comparadas a triagem de antes do Escritório (1.0.73) e a de hoje com as
+   24 tarefas gravadas no `escritorio.json`, as duas dão o mesmo tipo,
+   plataforma e domínio a todas as publicações MPI+ e Busca One. O "via
+   regra" aparecia porque o Escritório consultava as regras antes da
+   triagem (ADR-149), não porque a triagem falhasse. O que travava era o
+   Escritório **marcar a tarefa como ignorada para sempre** depois de um
+   "Descartar" ou "Ignorar estas" numa pendência: libelulaexpress, ecoport e
+   primenew estavam assim e nunca mais eram tentadas. O motor de antes
+   (ADR-120) só marca a tarefa como tratada na sessão; reabrir o app tenta
+   de novo.
+3. **"Escritório não iniciou: loja.listarRegras is not a function"** desde a
+   1.0.94: a linha final de `iniciarEscritorio` ainda contava as regras que
+   a ADR-161 tirou. O orquestrador já estava de pé quando a exceção saiu (o
+   relógio ligava antes), mas a linha assustava a cada abertura.
+4. **Os dois sites do dia.** lojaderevestimentos.com.br estava "Novo" no
+   Registro.br na véspera (ADR-162, item 3), e em 16/10 o whois já diz
+   `published`, com os nameservers ainda `a.auto.dns.br`; às 08:26 ele e
+   anrservicos.com.br foram tirados da lista de espera pelo botão "Remover"
+   ("saiu da lista de espera sem terminar … Faça à mão"), e com isso o vigia
+   não ia mais tentar a troca. libelulaexpress.com.br foi publicado em 15/10
+   com a sessão do Registro.br de Busca Cliente expirada (401
+   `session:expired`), e a etapa do contato não mexeu no DNS; o Escritório
+   desistiu e a tarefa foi ignorada.
+
+**Decisão.**
+
+1. **O Escritório sai inteiro.** Saem `lib/escritorio/` (catálogo, estados,
+   executores, ia, loja, orquestrador, regras, resumo, triagem-ia),
+   `lib/hospedagem.js` (só o Huginn usava), `renderer/escritorio-ui.js`, a
+   seção do orquestrador e da ponte no `main.js` (com o registro de handlers
+   locais, `invocarLocal`), os canais `escritorio:*` e `ia:*` e as funções do
+   preload, o item da barra lateral, o chip e o CSS, o resumo "Hoje", a
+   notificação de pendência, os avisos de "agente trabalhando" dos módulos,
+   a parte do Gemini nas Configurações e a dependência `@google/genai`. Os
+   arquivos de dados ficam no disco, sem uso (`escritorio.json`,
+   `escritorio-regras.json`, `ia-config.json`, `gemini-key.enc`); apagar é
+   decisão do Guilherme.
+2. **A fila volta a ser automatizada pelo motor de antes** (`lib/automacao.js`,
+   inalterado desde a ADR-142, e `lib/triagem.js`), no renderer
+   (`renderer/automacao-ui.js`), com **um interruptor deslizante só,
+   "Fila automática", no topo de todas as telas** (à esquerda do MEM/CPU), em
+   vez do painel flutuante com três interruptores. Ligado, ele liga os três
+   tipos de uma vez (publicação MPI+, publicação Busca One, bloqueio de
+   contatos), lê a fila na hora e depois a cada 5 min, e segura a janela sem
+   desacelerar (ADR-126). Desligar é o freio: `estado.parar`, a varredura
+   para entre uma tarefa e outra, a janela volta a desacelerar. O rótulo
+   mostra o placar da última varredura (feitas, aguardando o DNS, erros), e
+   a dica, ao passar o mouse, a última varredura inteira e quem está na
+   lista de espera. O detalhe de cada tarefa vai para o terminal, como
+   sempre. Ele lembra o estado (`automacaoFila` no hub-state), como o modo
+   automático do Escritório lembrava, e **diferente da ADR-120**, que nascia
+   desligada: o pedido foi "igual tem hoje". Ao reabrir, volta ligado, e a
+   primeira leitura espera 15 s para a sessão do Salesforce acordar (o
+   app.js avisa por `hub:pronto` quando estado, credenciais e lista de
+   espera estão carregados).
+3. **A triagem volta a ser publicação ou bloqueio** (`triar`), como antes:
+   saem `triarHospedagem` (SSL e suspensão, do Huginn), `triarIgnorar`
+   ("Site fora do ar") e `prUrlDoTexto` (do Ratatoskr). Ficam o
+   `dominioRaiz` (ADR-151) e a publicação com assunto solto e temporário MPI+
+   no comentário (`RE_PUBLICACAO_SOLTA`, ADR-161), que só reconhece mais. As
+   telas Ativar SSL, Suspender sites e Mergear PRs continuam pela mão.
+4. **A publicação Busca One volta a rodar no renderer**
+   (`window.hubPublicarBuscaOneAuto`, ADR-132/133), com o destinatário do
+   e-mail de vhost em Configurações › **Automação da fila** (a aba que era
+   "Escritório & IA", agora só com ele).
+5. **O que melhorou no meio tempo fica**, porque está no driver e no
+   app.js, não no Escritório: subdomínio (ADR-151), cliente conferido de
+   hora em hora (ADR-162, item 1, e o texto da espera diz "1 h"), domínio
+   novo no Registro.br com a troca pelo vigia (item 3), erro que repetir não
+   resolve desiste de primeira (item 4), erro passageiro do painel ou do
+   Salesforce só adia (item 6), IP real atrás do proxy (ADR-163), OAuth
+   criptografado (ADR-155), a identidade Asgard (ADR-158).
+6. **Desistência vale para a sessão.** O motor marca como tratada a tarefa
+   que deu certo, a que está na lista de espera e a que desistiu (3 erros
+   comuns, ou desistência de primeira); nada fica ignorado para sempre:
+   reabrir o Asgard tenta de novo.
+
+**Consequências.** O Asgard volta a ser o que era na 1.0.75 na fila, com as
+correções de publicação dos últimos dias e um controle só no topo. Perde-se o
+que só o Escritório tinha: pendências com botões, histórico por tarefa, o
+"Hoje", a ativação de SSL e a suspensão automáticas pela fila (Huginn) e o
+modelo opcional; quem quiser um tipo novo de tarefa automática pede ao
+Claude, e ele entra em `lib/triagem.js` e `lib/automacao.js`, com teste e
+ADR. O `npm run atualizar` já fecha e desinstala o `Programs\pr-merge-tool`
+antes de instalar a versão nova (ADR-158); se ele voltar a aparecer, é
+reinstalação de fora, e as duas cópias voltam a disputar a fila. Para os
+sites do dia: lojaderevestimentos.com.br e libelulaexpress.com.br continuam
+com a tarefa aberta no Salesforce e fora da lista de espera, então a
+primeira varredura com a fila ligada roda o Publicar MPI+ de novo para
+eles, contato técnico e troca dos nameservers incluídos; para o libelula, a
+sessão do Registro.br de Busca Cliente tem que estar válida. Testes:
+`test-automacao-browser.js` (o interruptor no topo, uma varredura com os
+três tipos, a dica, gravar e voltar ligado, o freio),
+`test-busca-one-browser.js` (de volta, com o vhost nas Configurações),
+`test-leveza.js` (relógio no renderer, nada do Escritório no main, no
+app.js, no CSS e no index.html), `test-triagem.js`.
 
 ## Pendências conhecidas (não são decisões — são dívidas)
 

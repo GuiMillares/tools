@@ -168,45 +168,4 @@ contextBridge.exposeInMainWorld('api', {
   salesforceMoverTarefa: (payload) => ipcRenderer.invoke('salesforce:moverTarefa', payload),
   statusCredenciais: () => ipcRenderer.invoke('sistema:credenciais'),
   abrirLink: (payload) => ipcRenderer.invoke('sistema:abrirLink', payload),
-  // Escritório (ADR-149): o orquestrador no processo principal e o modelo (Gemini).
-  iaGetConfig: () => ipcRenderer.invoke('ia:getConfig'),
-  iaSetConfig: (payload) => ipcRenderer.invoke('ia:setConfig', payload),
-  iaRemoverChave: () => ipcRenderer.invoke('ia:removerChave'),
-  iaModelos: () => ipcRenderer.invoke('ia:modelos'),
-  iaUsarModelo: (payload) => ipcRenderer.invoke('ia:usarModelo', payload),
-  escritorioAtividade: (payload) => ipcRenderer.invoke('escritorio:atividade', payload),
-  escritorioEstado: () => ipcRenderer.invoke('escritorio:estado'),
-  escritorioLigar: (payload) => ipcRenderer.invoke('escritorio:ligar', payload),
-  escritorioRodar: () => ipcRenderer.invoke('escritorio:rodar'),
-  escritorioResponder: (payload) => ipcRenderer.invoke('escritorio:responder', payload),
-  escritorioEncaminhar: (payload) => ipcRenderer.invoke('escritorio:encaminhar', payload),
-  escritorioReanalisar: (payload) => ipcRenderer.invoke('escritorio:reanalisar', payload),
-  escritorioConfirmar: (payload) => ipcRenderer.invoke('escritorio:confirmar', payload),
-  escritorioTarefa: (payload) => ipcRenderer.invoke('escritorio:tarefa', payload),
-  escritorioEsperas: (payload) => ipcRenderer.invoke('escritorio:esperas', payload),
-  onEscritorioEvento: (callback) => {
-    const handler = (_event, dados) => callback(dados);
-    ipcRenderer.on('escritorio:evento', handler);
-    return () => ipcRenderer.removeListener('escritorio:evento', handler);
-  },
-  // O processo principal pede para abrir o Escritório numa gaveta (a notificação clicada, ADR-155).
-  onEscritorioAbrir: (callback) => {
-    const handler = (_event, dados) => callback(dados);
-    ipcRenderer.on('escritorio:abrir', handler);
-    return () => ipcRenderer.removeListener('escritorio:abrir', handler);
-  },
-  onEscritorioLog: (callback) => {
-    const handler = (_event, dados) => callback(dados);
-    ipcRenderer.on('escritorio:log', handler);
-    return () => ipcRenderer.removeListener('escritorio:log', handler);
-  },
-  // A ponte (ADR-150): o processo principal pede, a tela roda o driver do
-  // Publicar MPI+ e devolve; ao nascer, a tela avisa (chamadas penduradas falham).
-  onEscritorioExecutar: (callback) => {
-    const handler = (_event, dados) => callback(dados);
-    ipcRenderer.on('escritorio:executar', handler);
-    return () => ipcRenderer.removeListener('escritorio:executar', handler);
-  },
-  escritorioResultado: (payload) => ipcRenderer.invoke('escritorio:resultado', payload),
-  escritorioRendererPronto: () => ipcRenderer.invoke('escritorio:rendererPronto'),
 });

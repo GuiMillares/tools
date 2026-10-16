@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, clipboard, session, Notification, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, clipboard, session, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
@@ -8,22 +8,9 @@ const crypto = require('crypto');
 // 335 do googleapis na abertura (ADR-107). Mesma cara e mesmo google.options().
 const { google } = require(path.join(__dirname, 'lib', 'google'));
 
-// Registro dos handlers (ADR-149): cada canal do IPC vira também uma função
-// chamável de dentro do processo principal (`invocarLocal`), para o
-// Escritório usar as rotinas que já existem como ferramentas dos agentes,
-// sem reescrever nada. O renderer continua chamando pelo preload como sempre.
-const handlersLocais = new Map();
-const ipcHandleOriginal = ipcMain.handle.bind(ipcMain);
-ipcMain.handle = (canal, fn) => { handlersLocais.set(canal, fn); return ipcHandleOriginal(canal, fn); };
 function janelaPrincipal() {
   const janelas = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
   return janelas.find((w) => w.isVisible()) || janelas[0] || null;
-}
-async function invocarLocal(canal, payload) {
-  const fn = handlersLocais.get(canal);
-  if (!fn) throw new Error(`canal desconhecido: ${canal}`);
-  const win = janelaPrincipal();
-  return fn({ sender: win ? win.webContents : null }, payload);
 }
 
 // O app chamava pr-merge-tool e os dados moravam em %APPDATA%\pr-merge-tool
@@ -147,10 +134,6 @@ if (!instanciaUnica) {
 
   app.whenReady().then(() => {
     createWindow();
-    // O orquestrador do Escritório (ADR-149) nasce com a janela: lê o que
-    // ficou gravado, abre a pendência das tarefas interrompidas e, se o modo
-    // automático ficou ligado, volta a ler a fila a cada 5 min.
-    iniciarEscritorio();
     migrarSegredosAntigos();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -4140,7 +4123,8 @@ function painelDescartarJanela() {
   try {
     const m = app.getAppMetrics();
     const mb = Math.round(m.reduce((s, p) => s + ((p.memory && p.memory.workingSetSize) || 0), 0) / 1024);
-    escritorioEnviar('escritorio:log', { message: `Painel: janela descartada depois de ${Math.round(PAINEL_JANELA_TTL_MS / 60000)} min sem uso; processos do Asgard agora: ${m.length} (${mb} MB).`, type: 'info' });
+    const agora = new Date();
+    gravarLinhasDeLog([{ ts: `${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR', { hour12: false })}`, type: 'info', message: `Painel: janela descartada depois de ${Math.round(PAINEL_JANELA_TTL_MS / 60000)} min sem uso; processos do Asgard agora: ${m.length} (${mb} MB).` }]).catch(() => {});
   } catch (e) { /* diagnóstico, não é erro */ }
 }
 
@@ -9602,7 +9586,6 @@ ipcMain.handle('sistema:credenciais', () => {
       item('painel', 'Painel MPI+', painel && painel.email && painel.senha, painel && painel.email ? painel.email : 'sem login'),
       item('doutor', 'Painel /doutor', doutor && doutor.senha, doutor && doutor.emailMpi ? doutor.emailMpi : 'sem senha'),
       item('dnshist', 'Histórico de DNS (WhoisXML)', dnsHist, dnsHist ? 'chave gravada' : 'opcional'),
-      item('gemini', 'Gemini (IA do Escritório)', tenta(() => readIaKey(), ''), tenta(() => readIaKey(), '') ? 'chave gravada (DPAPI)' : 'sem chave'),
     ],
     hestia: {
       ip: pub.hestiaIpPublico || '',
@@ -9610,353 +9593,4 @@ ipcMain.handle('sistema:credenciais', () => {
       servidor: 'o de produção que o painel lista',
     },
   };
-});
-
-// ---------- Escritório (ADR-149): o orquestrador mora aqui, no processo principal ----------
-//
-// Por quê aqui e não no renderer, como o painel da automação (ADR-120): o
-// estado sobrevive ao Ctrl+R (hoje a lista de processadas zera e já repetiu
-// publicação, ADR-124), o SDK do Gemini e a chave ficam onde os outros
-// segredos ficam, e cada handler existente é chamado por `invocarLocal` como
-// ferramenta, sem reescrever rotina nenhuma. O renderer só mostra e responde
-// (renderer/escritorio-ui.js), e manda para cá a lista de espera do DNS, que
-// mora no localStorage dele.
-const EscritorioLoja = require(path.join(__dirname, 'lib', 'escritorio', 'loja'));
-const EscritorioOrquestrador = require(path.join(__dirname, 'lib', 'escritorio', 'orquestrador'));
-const EscritorioIa = require(path.join(__dirname, 'lib', 'escritorio', 'ia'));
-const EscritorioExecutores = require(path.join(__dirname, 'lib', 'escritorio', 'executores'));
-
-const iaConfigPath = () => path.join(app.getPath('userData'), 'ia-config.json');
-const iaKeyPath = () => path.join(app.getPath('userData'), 'gemini-key.enc');
-function readIaConfig() {
-  try {
-    return fs.existsSync(iaConfigPath()) ? EscritorioIa.normalizarConfig(JSON.parse(fs.readFileSync(iaConfigPath(), 'utf-8'))) : EscritorioIa.configPadrao();
-  } catch (e) {
-    return EscritorioIa.configPadrao();
-  }
-}
-// A chave do Gemini cifrada pelo safeStorage, como as outras credenciais
-// (ADR-004). Nunca volta inteira para o renderer: a tela só sabe se existe.
-function readIaKey() {
-  try {
-    if (!fs.existsSync(iaKeyPath())) return '';
-    return safeStorage.decryptString(fs.readFileSync(iaKeyPath())) || '';
-  } catch (e) {
-    return '';
-  }
-}
-
-const ESCRITORIO_INTERVALO_MS = 5 * 60 * 1000;
-const escritorio = { loja: null, orq: null, timer: null, esperas: null, credenciais: null, atividades: {}, prCache: new Map() };
-
-function escritorioEnviar(canal, dados) {
-  const win = janelaPrincipal();
-  if (!win) return false;
-  try { win.webContents.send(canal, dados); return true; } catch (e) { return false; }
-}
-
-// Uma notificação do Windows quando nasce uma pendência (ADR-155): o chip no
-// topo só avisa quem está olhando. Clicar nela traz o Asgard e abre as
-// pendências. Desliga em Configurações › Escritório & IA.
-function notificarEscritorio(evento) {
-  if (!evento || evento.tipo !== 'pendencia' || !evento.nova) return false;
-  if (readIaConfig().notificar === false) return false;
-  if (!Notification.isSupported()) return false;
-  const p = escritorio.loja ? escritorio.loja.pendencias().find((x) => x.id === evento.id) : null;
-  const corpo = p ? String(p.pergunta || '').slice(0, 180) : 'O orquestrador tem uma pergunta para você.';
-  try {
-    const n = new Notification({ title: `Asgard · Escritório · ${evento.id}`, body: corpo });
-    n.on('click', () => {
-      const win = janelaPrincipal();
-      if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
-      escritorioEnviar('escritorio:abrir', { gaveta: 'pendencias' });
-    });
-    n.show();
-    return true;
-  } catch (e) { return false; }
-}
-
-// O log do orquestrador vai para o arquivo do dia daqui (o renderer pode nem
-// ter carregado ainda) e para o terminal pelo renderer, que o mostra sem
-// gravar de novo.
-function logEscritorio(message, type = 'info') {
-  const agora = new Date();
-  gravarLinhasDeLog([{ ts: `${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR', { hour12: false })}`, type, message }]).catch(() => {});
-  escritorioEnviar('escritorio:log', { message, type });
-}
-
-function montarIa() {
-  return EscritorioIa.criarIa({
-    chave: readIaKey(),
-    config: readIaConfig(),
-    log: logEscritorio,
-    contador: {
-      podeChamar: () => {
-        if (!escritorio.loja) return { ok: true };
-        const teto = readIaConfig().tetoChamadasDia;
-        const c = escritorio.loja.contadores();
-        return teto && c.chamadas >= teto ? { ok: false, motivo: `teto diário de ${teto} chamadas ao modelo atingido (${c.chamadas} hoje; muda em Configurações › IA & Escritório)` } : { ok: true };
-      },
-      registrar: (uso) => { if (escritorio.loja) escritorio.loja.registrarChamada(uso); },
-    },
-  });
-}
-
-// As credenciais gravadas, lidas uma vez por varredura (as regras de execução
-// conferem de forma síncrona).
-async function atualizarCredenciaisDoEscritorio() {
-  try {
-    const r = await invocarLocal('sistema:credenciais');
-    const itens = {};
-    for (const i of (r && r.itens) || []) itens[i.id] = !!i.ok;
-    escritorio.credenciais = itens;
-  } catch (e) {
-    escritorio.credenciais = null;
-  }
-}
-
-// O contexto das regras de execução. O que não dá para conferir fica
-// `undefined`, e a regra barra com "verificação indisponível" em vez de
-// aprovar no escuro: a lista de espera só existe depois que o renderer a
-// manda; as credenciais, depois da primeira leitura.
-const ctxExecucaoEscritorio = {
-  get configurado() {
-    const itens = escritorio.credenciais;
-    return itens ? (id) => !!itens[id] : undefined;
-  },
-  get emEspera() {
-    const lista = escritorio.esperas;
-    if (!Array.isArray(lista)) return undefined;
-    return (dominio) => {
-      const d = String(dominio || '').toLowerCase();
-      const e = lista.find((x) => x && String(x.dominio || '').toLowerCase() === d && x.status !== 'concluido');
-      return e ? { motivo: e.cliente ? 'aguardando o cliente apontar' : e.status === 'falhou' ? 'na lista de espera com pendência' : 'aguardando a propagação do Registro.br', cliente: !!e.cliente } : null;
-    };
-  },
-  marcaDoDominio: async (dominio) => {
-    const r = await invocarLocal('dns:marca', { dominio });
-    return { marca: r && r.ok ? r.marca || null : null, ips: (r && r.ips) || [] };
-  },
-  // Huginn (ADR-152): para onde cada domínio aponta, pela mesma consulta da
-  // tela de suspensão (m3, vesta, outro, misto, erro).
-  apontamento: async (dominios) => {
-    const r = await invocarLocal('dns:checkBatch', { domains: dominios });
-    return r && r.ok ? (r.resultados || []).map((x) => ({ dominio: x.dominio, status: x.status, label: x.label, ips: x.ips || [] })) : [];
-  },
-  // Ratatoskr (ADR-152): o PR como o "Mergear PRs" o lê, com as credenciais
-  // gravadas; 60 s de cache porque duas regras olham o mesmo PR.
-  pr: async (url) => {
-    const agora = Date.now();
-    const c = escritorio.prCache.get(url);
-    if (c && agora - c.quando < 60000) return c.r;
-    const creds = lerCredsArquivo();
-    if (!creds) return { ok: false, error: 'Bitbucket não configurado' };
-    const r = await invocarLocal('pr:fetch', { url, creds });
-    escritorio.prCache.set(url, { quando: agora, r });
-    return r;
-  },
-};
-
-// ---------- a ponte main → renderer (ADR-150) ----------
-//
-// A máquina de etapas do Publicar MPI+ mora no renderer (ADR-122). O
-// orquestrador manda `escritorio:executar` { id, driver, payload }, a tela
-// roda o driver (window.hubPublicarTarefaAuto) e devolve por
-// `escritorio:resultado`. Uma publicação pode levar mais de meia hora (a
-// espera da propagação), então não há prazo curto; se a janela recarregar no
-// meio, o renderer avisa que nasceu de novo e as chamadas penduradas falham
-// com motivo, em vez de esperar para sempre.
-const pontePendentes = new Map();
-let ponteSeq = 0;
-function executarNoRenderer(driver, payload) {
-  return new Promise((resolve) => {
-    const win = janelaPrincipal();
-    if (!win) { resolve({ ok: false, pulou: true, motivo: 'a janela do Asgard não está aberta' }); return; }
-    const id = `ponte-${++ponteSeq}`;
-    pontePendentes.set(id, { resolve, driver, quando: Date.now() });
-    try { win.webContents.send('escritorio:executar', { id, driver, payload }); } catch (e) {
-      pontePendentes.delete(id);
-      resolve({ ok: false, pulou: true, motivo: `não consegui falar com a janela (${e.message})` });
-    }
-  });
-}
-ipcMain.handle('escritorio:resultado', (event, { id, resultado } = {}) => {
-  const p = pontePendentes.get(id);
-  if (!p) return { ok: false, error: 'chamada desconhecida' };
-  pontePendentes.delete(id);
-  p.resolve(resultado || { ok: false, motivo: 'o driver não devolveu nada' });
-  return { ok: true };
-});
-ipcMain.handle('escritorio:rendererPronto', () => {
-  for (const [id, p] of pontePendentes) {
-    pontePendentes.delete(id);
-    p.resolve({ ok: false, motivo: `o Asgard recarregou no meio da ${p.driver}; o estado da publicação ficou na tela` });
-  }
-  return { ok: true };
-});
-
-// O que o Freyr (Busca One) precisa ler desta máquina, sem o renderer: as
-// credenciais do Bitbucket (cifradas), a workspace por marca e o e-mail de
-// vhost (hub-state), a service account (google-config) e a sessão Microsoft.
-function lerHubStateArquivo() {
-  try { return fs.existsSync(hubStatePath()) ? JSON.parse(fs.readFileSync(hubStatePath(), 'utf-8')) || {} : {}; } catch (e) { return {}; }
-}
-function lerCredsArquivo() {
-  try { return fs.existsSync(credsPath()) ? JSON.parse(safeStorage.decryptString(fs.readFileSync(credsPath()))) : null; } catch (e) { return null; }
-}
-function emailVhostConfigurado() {
-  const hub = lerHubStateArquivo();
-  if (hub.mailVhost && typeof hub.mailVhost === 'object' && String(hub.mailVhost.to || '').trim()) return { to: String(hub.mailVhost.to || ''), cc: String(hub.mailVhost.cc || '') };
-  if (hub.mailSsl && typeof hub.mailSsl === 'object' && String(hub.mailSsl.to || '').trim()) return { to: String(hub.mailSsl.to || ''), cc: String(hub.mailSsl.cc == null ? '' : hub.mailSsl.cc) };
-  return null;
-}
-function montarExecutores() {
-  return EscritorioExecutores.criarExecutores({
-    ferramentas: invocarLocal,
-    log: logEscritorio,
-    ponte: executarNoRenderer,
-    parar: () => !!paradaPedida,
-    config: {
-      creds: lerCredsArquivo,
-      hubState: lerHubStateArquivo,
-      saPath: () => { try { const g = fs.existsSync(googleConfigPath()) ? JSON.parse(fs.readFileSync(googleConfigPath(), 'utf-8')) : {}; return g.saPath || ''; } catch (e) { return ''; } },
-      msConectado: () => { const t = readMsToken(); return !!(t && (t.refresh_token || t.access_token)); },
-      emailVhost: emailVhostConfigurado,
-    },
-  });
-}
-
-function iniciarEscritorio() {
-  try {
-    const loja = EscritorioLoja.criarLoja({ pasta: app.getPath('userData') });
-    const carga = loja.carregar();
-    escritorio.loja = loja;
-    escritorio.orq = EscritorioOrquestrador.criarOrquestrador({
-      loja,
-      ia: montarIa(),
-      log: logEscritorio,
-      emitir: (evento) => { escritorioEnviar('escritorio:evento', evento); notificarEscritorio(evento); },
-      lerFila: () => invocarLocal('salesforce:tarefas'),
-      contexto: async (t) => {
-        const r = await invocarLocal('salesforce:contexto', { tarefa: t.link });
-        return r && r.ok ? { razao: r.razao || '', empresa: r.empresa || '', via: r.via || '' } : null;
-      },
-      ctxExecucao: ctxExecucaoEscritorio,
-      // Fase 2 (ADR-150): Tyr e Freyr executam aqui mesmo; Thor vai pela
-      // ponte até a máquina de etapas do renderer. Fase 3 (ADR-152): Huginn
-      // e Ratatoskr.
-      executar: montarExecutores().executar,
-      // Um módulo rodando pela mão na tela é o agente dele trabalhando.
-      atividadeManual: (id) => escritorio.atividades[id] || null,
-    });
-    for (const a of carga.avisos || []) logEscritorio(`Escritório: ${a}`, 'warn');
-    escritorio.orq.tratarInterrompidas(carga.interrompidas || []);
-    revisarTimerEscritorio();
-    const l = loja.ligado;
-    const abertas = loja.tarefasAbertas().length;
-    const pend = loja.pendenciasAbertas().length;
-    const iaCfg = readIaConfig();
-    const modeloTexto = !iaCfg.usarModelo ? 'desligado (sem custo)' : readIaKey() ? `${iaCfg.modeloOrquestrador} ligado` : 'ligado, mas sem chave';
-    logEscritorio(`Escritório pronto: modo ${!l.geral ? 'manual' : l.observacao ? 'automático em observação (só anota)' : 'automático'}, ${abertas} tarefa(s) em aberto, ${pend} pendência(s), ${loja.listarRegras().length} regra(s) aprendida(s), modelo ${modeloTexto}.`, 'info');
-  } catch (e) {
-    logEscritorio(`Escritório não iniciou: ${e.message}`, 'error');
-  }
-}
-
-function revisarTimerEscritorio() {
-  const ligado = !!(escritorio.loja && escritorio.loja.ligado.geral);
-  if (ligado && !escritorio.timer) {
-    escritorio.timer = setInterval(() => { escritorioVarrer(false); }, ESCRITORIO_INTERVALO_MS);
-    // A primeira leitura espera a janela mandar a lista de espera e a sessão
-    // do Salesforce acordar.
-    setTimeout(() => { escritorioVarrer(false); }, 15000);
-  }
-  if (!ligado && escritorio.timer) { clearInterval(escritorio.timer); escritorio.timer = null; }
-  // Ligado, a janela não desacelera em segundo plano (ADR-126).
-  invocarLocal('energia:manterAcordado', { ligar: ligado, motivo: 'escritorio' }).catch(() => {});
-}
-
-async function escritorioVarrer(manual) {
-  if (!escritorio.orq) return { ok: false, error: 'Escritório não iniciado' };
-  await atualizarCredenciaisDoEscritorio();
-  return escritorio.orq.varrer({ manual: !!manual });
-}
-
-const comOrquestrador = (fn) => async (event, payload) => {
-  if (!escritorio.orq) return { ok: false, error: 'Escritório não iniciado' };
-  try { return await fn(payload || {}); } catch (e) { return { ok: false, error: e && e.message ? e.message : String(e) }; }
-};
-
-ipcMain.handle('ia:getConfig', () => ({ ok: true, config: readIaConfig(), temChave: !!readIaKey(), sugeridos: EscritorioIa.MODELOS_SUGERIDOS, niveis: EscritorioIa.NIVEIS_PENSAMENTO }));
-
-ipcMain.handle('ia:setConfig', (event, { config, apiKey } = {}) => {
-  try {
-    // A tela manda só os campos dela; o liga/desliga do modelo (Comando) fica.
-    fs.writeFileSync(iaConfigPath(), JSON.stringify(EscritorioIa.normalizarConfig({ ...readIaConfig(), ...(config || {}) }), null, 2));
-    const chave = String(apiKey || '').trim();
-    if (chave) {
-      if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: 'Criptografia do sistema indisponível; não vou gravar a chave em texto puro.' };
-      fs.writeFileSync(iaKeyPath(), safeStorage.encryptString(chave));
-    }
-    if (escritorio.orq) escritorio.orq.trocarIa(montarIa());
-    return { ok: true, temChave: !!readIaKey(), config: readIaConfig() };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-});
-
-// Liga ou desliga o modelo (ADR-152): desligado, nenhuma chamada sai; a
-// tarefa desconhecida vira pendência; o aprendizado é por ADR (ADR-161).
-ipcMain.handle('ia:usarModelo', (event, { ligar } = {}) => {
-  try {
-    const cfg = EscritorioIa.normalizarConfig({ ...readIaConfig(), usarModelo: !!ligar });
-    fs.writeFileSync(iaConfigPath(), JSON.stringify(cfg, null, 2));
-    if (escritorio.orq) escritorio.orq.trocarIa(montarIa());
-    logEscritorio(`Escritório: modelo ${cfg.usarModelo ? 'LIGADO (o que a triagem não reconhece vai ao Gemini)' : 'desligado (o que a triagem não reconhece vira pendência, sem custo)'}${cfg.usarModelo && !readIaKey() ? ' — sem chave gravada, continua sem chamar' : ''}.`, cfg.usarModelo ? 'warn' : 'info');
-    escritorioEnviar('escritorio:evento', { tipo: 'modelo' });
-    return { ok: true, usarModelo: cfg.usarModelo, temChave: !!readIaKey() };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-});
-
-// A atividade dos módulos acionados pela mão (ADR-152): a tela avisa quando
-// um começa e termina, e o cartão do agente mostra "trabalhando".
-ipcMain.handle('escritorio:atividade', (event, { agente, ligado, detalhe } = {}) => {
-  const id = String(agente || '');
-  if (!id) return { ok: false, error: 'sem agente' };
-  if (ligado) escritorio.atividades[id] = { detalhe: String(detalhe || ''), desde: new Date().toISOString() };
-  else delete escritorio.atividades[id];
-  escritorioEnviar('escritorio:evento', { tipo: 'atividade', agente: id, ligado: !!ligado });
-  return { ok: true };
-});
-
-ipcMain.handle('ia:removerChave', () => {
-  try {
-    if (fs.existsSync(iaKeyPath())) fs.unlinkSync(iaKeyPath());
-    if (escritorio.orq) escritorio.orq.trocarIa(montarIa());
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-});
-
-// Os modelos que a chave gravada enxerga (para o seletor e o "Testar").
-ipcMain.handle('ia:modelos', async () => {
-  try { return await montarIa().listarModelos(); } catch (e) { return { ok: false, codigo: 'erro', erro: e.message }; }
-});
-
-ipcMain.handle('escritorio:estado', comOrquestrador(() => ({ ok: true, ...escritorio.orq.snapshot() })));
-ipcMain.handle('escritorio:ligar', comOrquestrador((p) => { const r = escritorio.orq.ligar(p); revisarTimerEscritorio(); return r; }));
-ipcMain.handle('escritorio:rodar', comOrquestrador(() => escritorioVarrer(true)));
-ipcMain.handle('escritorio:responder', comOrquestrador(({ id, resposta }) => escritorio.orq.responder(id, resposta || {})));
-ipcMain.handle('escritorio:encaminhar', comOrquestrador(({ id, agente, parametros }) => escritorio.orq.encaminhar(id, { agente, parametros })));
-ipcMain.handle('escritorio:reanalisar', comOrquestrador(({ id }) => escritorio.orq.reanalisar(id)));
-ipcMain.handle('escritorio:confirmar', comOrquestrador(async ({ id }) => { await atualizarCredenciaisDoEscritorio(); return escritorio.orq.confirmar(id); }));
-ipcMain.handle('escritorio:tarefa', comOrquestrador(({ id }) => escritorio.orq.historico(id)));
-// A lista de espera do Publicar MPI+ (localStorage do renderer): vem para cá
-// ao abrir e a cada mudança, para a regra "fora da lista de espera".
-ipcMain.handle('escritorio:esperas', (event, { lista } = {}) => {
-  escritorio.esperas = Array.isArray(lista) ? lista.map((e) => ({ dominio: String((e && e.dominio) || ''), status: String((e && e.status) || ''), cliente: !!(e && e.cliente) })) : [];
-  return { ok: true, total: escritorio.esperas.length };
 });

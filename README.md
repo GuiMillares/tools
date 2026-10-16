@@ -369,35 +369,21 @@ A chave fica criptografada nesta máquina, como a do Bitbucket, e nunca volta pa
 
 > **Por que não o SecurityTrails.** Era o plano inicial, mas o serviço não tem mais plano gratuito público, o preço hoje começa na casa dos US$ 500/mês. A WhoisXML entrega a mesma resposta com 500 créditos grátis.
 
-## 12. Configurando o Escritório (Gemini e e-mail de vhost)
+## 12. A fila automática (e o e-mail de vhost)
 
-O Escritório (o segundo item da barra lateral, logo abaixo do Início, ADR-149
-e ADR-159) usa o Gemini para o que a
-triagem em código do Asgard não resolve. Sem chave ele funciona igual, só
-que toda tarefa desconhecida vira pendência para você; para um tipo de tarefa
-entrar sozinho, a regra vira código de triagem com a decisão na ADR (ADR-161).
+O interruptor **Fila automática**, no topo de todas as telas (à esquerda do
+MEM/CPU), liga de uma vez a publicação MPI+, a publicação Busca One e o
+bloqueio de contatos da fila do Salesforce (ADR-164). Ligado, ele lê a fila
+na hora e a cada 5 minutos; desligado, para entre uma tarefa e outra. Ele
+lembra o estado: reabrir o Asgard volta como estava. Passe o mouse para ver
+a última varredura e quem está na lista de espera; o detalhe de cada tarefa
+sai no terminal. Não há agente, regra nem modelo de IA: o que o Asgard
+reconhece sozinho está em `lib/triagem.js`, e um tipo novo de tarefa entra
+ali, com teste e ADR.
 
-1. Crie uma chave em [Google AI Studio](https://aistudio.google.com/api-keys).
-2. **Vincule uma conta de faturamento ao projeto da chave** e pré-pague
-   US$ 5. No plano gratuito o Google usa o conteúdo enviado para melhorar
-   os produtos, e as tarefas levam razão social e e-mail de cliente; no
-   pago, não usa. O modelo Pro (`gemini-3.1-pro-preview`, o do
-   orquestrador) só responde com faturamento.
-3. No Asgard, Configurações › **Escritório & IA**: cole a chave (fica
-   criptografada nesta máquina e nunca volta para a tela), clique em
-   "Listar os modelos desta chave" e escolha o modelo do orquestrador (o
-   Pro) e o dos agentes (o Flash). Os nomes vêm da API; nada é fixo no
-   código. Ajuste o teto diário de chamadas se quiser (200 por padrão).
-4. Salve (Ctrl+S). O chip "ESCRITÓRIO" no topo e a tela mostram o modelo e
-   os contadores do dia.
-
-Na mesma aba fica o **e-mail de vhost e banco** que o Freyr (Publicador
-Busca One) manda ao suporte: "Para" e "Cc" editáveis; em branco, vale o
-destino do e-mail de ativação de SSL. Os agentes têm nomes da mitologia
-nórdica (Odin orquestra; Thor publica MPI+; Freyr publica Busca One; Tyr
-bloqueia contatos; Huginn, Ratatoskr, Mímir, Heimdall e Bragi são os
-demais); o papel e os módulos de cada um aparecem ao lado do nome
-(ADR-150).
+Em Configurações › **Automação da fila** fica o **e-mail de vhost e banco**
+que a publicação Busca One manda ao suporte: "Para" e "Cc" editáveis; em
+branco, vale o destino do e-mail de ativação de SSL.
 
 ## 13. Testes
 

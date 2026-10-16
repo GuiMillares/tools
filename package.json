@@ -1,7 +1,7 @@
 {
   "name": "asgard",
   "version": "1.0.97",
-  "description": "Asgard: o Hub da equipe com o orquestrador e os agentes (merge de PRs, publicação, propriedades Google, e-mails, relatórios)",
+  "description": "Asgard: o Hub da equipe (merge de PRs, publicação e fila automática, propriedades Google, e-mails, relatórios)",
   "main": "main.js",
   "author": "Guilherme",
   "license": "UNLICENSED",
@@ -20,7 +20,6 @@
     "playwright": "^1.62.1"
   },
   "dependencies": {
-    "@google/genai": "^2.29.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "googleapis": "^176.0.0",

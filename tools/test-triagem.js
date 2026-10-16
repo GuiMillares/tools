@@ -26,7 +26,6 @@ check('dominioRaiz: subdomínio .com.br', T.dominioRaiz('loja.cliente.com.br') =
 check('dominioRaiz: raiz fica igual; www sai', T.dominioRaiz('cliente.com.br') === 'cliente.com.br' && T.dominioRaiz('https://www.loja.cliente.com.br/x') === 'cliente.com.br');
 check('dominioRaiz: .com, .net.br, .eco.br, cidade .br, co.uk, com.ar', T.dominioRaiz('sub.cliente.com') === 'cliente.com' && T.dominioRaiz('a.b.cliente.net.br') === 'cliente.net.br' && T.dominioRaiz('x.cliente.eco.br') === 'cliente.eco.br' && T.dominioRaiz('x.empresa.rio.br') === 'empresa.rio.br' && T.dominioRaiz('x.y.co.uk') === 'y.co.uk' && T.dominioRaiz('x.y.com.ar') === 'y.com.ar');
 check('dominioRaiz: vazio → vazio', T.dominioRaiz('') === '');
-check('prUrlDoTexto acha o link do PR e ignora o resto', T.prUrlDoTexto('veja https://bitbucket.org/ws/repo-x/pull-requests/12/diff ok') === 'https://bitbucket.org/ws/repo-x/pull-requests/12' && T.prUrlDoTexto('nada aqui') === '');
 
 console.log('\n=== Publicação MPI+ (tarefas reais) ===');
 {

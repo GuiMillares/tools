@@ -159,7 +159,7 @@ function wireBrandSelect(selectId, onChange) {
 // ---------- Estado ----------
 
 const state = {
-  // A tela de abertura é o Início (ADR-159; de ADR-149 a 158 foi o Escritório).
+  // A tela de abertura é o Início.
   view: 'home',
   recents: [],
   creds: null,
@@ -194,6 +194,10 @@ const state = {
   // Publicar em massa: criar a tarefa "Publicação V1 -> V2" no Salesforce de
   // cada site publicado, achando o caso sozinho (ADR-097). Lembrado.
   sfTarefasAuto: false,
+  // A fila automática (ADR-164): o interruptor do topo que liga publicação
+  // MPI+, Busca One e bloqueio de contatos de uma vez. Lembrado: reabrir o
+  // Asgard volta como estava.
+  automacaoFila: false,
   npFind: null, // resultado da busca por propriedades existentes
   npPicked: { idAnalytics: '', tagmanager: '' }, // o que foi escolhido pra reaproveitar
   oauthClientId: '', // credenciais do login manual (ferramenta "Conceder acesso")
@@ -354,15 +358,7 @@ function apararTerminal() {
   }
 }
 
-// Um módulo rodando pela mão é o agente dele "trabalhando" no Escritório
-// (ADR-152). Quem avisa é o próprio módulo, no começo e no fim.
-function escAtividade(agente, ligado, detalhe) {
-  try { if (typeof window.hubEscritorioAtividade === 'function') window.hubEscritorioAtividade(agente, ligado, detalhe); } catch (e) { /* a tela do Escritório pode não existir num build antigo */ }
-}
-
-// `arquivo: false` mostra sem gravar no arquivo do dia: é o que o Escritório
-// usa para as linhas que o processo principal já gravou (ADR-149).
-function log(message, type = 'info', { arquivo = true } = {}) {
+function log(message, type = 'info') {
   const entry = {
     seq: ++logSeq,
     ts: new Date().toLocaleTimeString('pt-BR', { hour12: false }),
@@ -371,7 +367,7 @@ function log(message, type = 'info', { arquivo = true } = {}) {
   };
   logBuffer.push(entry);
   if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
-  if (arquivo) logParaArquivo(entry);
+  logParaArquivo(entry);
 
   el.terminal.appendChild(logLineElement(entry));
   apararTerminal();
@@ -584,6 +580,7 @@ function saveHubState() {
     sslProjeto: state.sslProjeto,
     npSteps: state.npSteps,
     sfTarefasAuto: state.sfTarefasAuto,
+    automacaoFila: !!state.automacaoFila,
     // A fila de PRs sobrevive ao fechar (ADR-156): só os links, os dados voltam da API.
     filaPrs: state.queue.filter((q) => q.url && q.status !== 'merged').map((q) => q.url),
   });
@@ -603,14 +600,11 @@ function render() {
   // As configurações moram num nó fixo (ids e listeners não se perdem);
   // antes de qualquer tela sobrescrever o painel, ele volta para o esconderijo.
   guardarSettingsBox();
-  el.leftPanel.classList.toggle('wide', state.view === 'home' || state.view === 'kanban' || state.view === 'config' || state.view === 'escritorio');
+  el.leftPanel.classList.toggle('wide', state.view === 'home' || state.view === 'kanban' || state.view === 'config');
   document.querySelector('.app-body')?.classList.toggle('home', state.view === 'home');
   renderChrome();
   // Os atalhos leem os campos da tela nova, então esperam ela existir.
   queueMicrotask(renderAtalhosTerminal);
-  // O Escritório desenha a si mesmo (renderer/escritorio-ui.js, ADR-149); sem
-  // ele carregado, o Início cobre.
-  if (state.view === 'escritorio') { if (typeof window.renderEscritorioTool === 'function') window.renderEscritorioTool(); else renderHome(); return; }
   if (state.view === 'home') { renderHome(); return; }
   if (state.view === 'kanban') { renderKanbanTool(); return; }
   if (state.view === 'config') { renderConfigTool(); return; }
@@ -649,8 +643,6 @@ const NAV_ICON = {
 };
 
 NAV_ICON.merge = ICONS.merge;
-// O Escritório (ADR-149): a planta com as salas.
-NAV_ICON.escritorio = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v9M12 12v9M7.5 16.5h.01M16.5 16.5h.01M7.5 7.5h.01M16.5 7.5h.01"/></svg>';
 // A bandeja: as filas de deploy na home (o foguete do "deploy" vira um borrão
 // em 14px).
 NAV_ICON.filas = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 13h4l2 3h4l2-3h4"/></svg>';
@@ -660,8 +652,6 @@ NAV_ICON.config = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 // configurações ficam no pé da sidebar, fora desta lista.
 const MODULES = [
   { id: 'home', nome: 'Início', icon: 'home', tag: 'HOME' },
-  // O Escritório (ADR-149) vem logo abaixo do Início (ADR-159).
-  { id: 'escritorio', nome: 'Escritório', icon: 'escritorio', tag: 'MOD_ESCRITORIO' },
   { id: 'merge', nome: 'Mergear PRs', icon: 'merge', tag: 'MOD_GIT_MERGE' },
   { id: 'kanban', nome: 'Salesforce Kanban', icon: 'kanban', tag: 'MOD_SF_KANBAN' },
   { id: 'publish', nome: 'Publicar MPI+', icon: 'publish', tag: 'MOD_PUBLISH_MPI' },
@@ -1469,13 +1459,13 @@ async function bloquearContatosDoutor() {
     ? `Desbloquear os contatos de ${dominio} no /doutor (${nomeMarca})?\n\nOs telefones/WhatsApp da empresa voltam a aparecer no site.`
     : `Bloquear os contatos de ${dominio} no /doutor (${nomeMarca})?\n\nOs telefones/WhatsApp da empresa são removidos do site.`;
   if (!confirm(pergunta)) { log('Ação cancelada.', 'info'); return; }
-  doutorEstado.rodando = true; escAtividade('bloqueador', true, 'Bloquear Contatos');
+  doutorEstado.rodando = true;
   doutorEstado.ultimo = null;
   renderDoutorTool();
   log(`/doutor: ${desb ? 'desbloqueando' : 'bloqueando'} os contatos de ${dominio} (${nomeMarca}).`, 'cmd');
   const res = await withBusy(`${desb ? 'desbloqueando' : 'bloqueando'} contatos de ${dominio}`, () => window.api.doutorBloquear({ dominio, marca, acao }));
   if (res.log) for (const e of res.log) log(e.message, e.type);
-  doutorEstado.rodando = false; escAtividade('bloqueador', false);
+  doutorEstado.rodando = false;
   const alvo = res.empresa || dominio;
   if (res.ok && res.jaEstava) doutorEstado.ultimo = { ok: true, titulo: `${alvo}: já estava ${desb ? 'com contatos no ar' : 'sem contatos'}`, sub: 'nada a fazer' };
   else if (res.ok) doutorEstado.ultimo = { ok: true, titulo: `Contatos ${desb ? 'restaurados' : 'removidos'}: ${alvo}`, sub: desb ? 'os telefones voltam ao site' : 'os telefones saem do site (o painel pode ter mostrado 504)' };
@@ -1673,7 +1663,7 @@ async function rodarOuvidoria() {
   if (ouvEstado.rodando || !ouvEstado.dominios.length) return;
   const sf = await window.api.salesforceGetConfig();
   if (!(sf && sf.ok && sf.conectado)) { log('Conecte o Salesforce nas configurações antes de conferir.', 'error'); return; }
-  ouvEstado.rodando = true; escAtividade('auditor', true, 'Ouvidoria & Auditoria');
+  ouvEstado.rodando = true;
   ouvEstado.parar = false;
   ouvEstado.linhas = [];
   ouvEstado.feito = false;
@@ -1687,7 +1677,7 @@ async function rodarOuvidoria() {
     renderOuvidoria();
     if (linha.precisaReconectar) { log('Salesforce recusou o acesso. Reconecte e rode de novo.', 'error'); break; }
   }
-  ouvEstado.rodando = false; escAtividade('auditor', false);
+  ouvEstado.rodando = false;
   ouvEstado.parar = false;
   ouvEstado.feito = true;
   const achados = ouvEstado.linhas.filter((l) => l.achou);
@@ -1833,7 +1823,7 @@ function renderQuando() {
 
 async function rodarQuando() {
   if (qpEstado.rodando || !qpEstado.dominios.length) return;
-  qpEstado.rodando = true; escAtividade('auditor', true, 'Quando publicou');
+  qpEstado.rodando = true;
   qpEstado.parar = false;
   qpEstado.linhas = [];
   renderQuando();
@@ -1851,7 +1841,7 @@ async function rodarQuando() {
     }
     renderQuando();
   }
-  qpEstado.rodando = false; escAtividade('auditor', false);
+  qpEstado.rodando = false;
   qpEstado.parar = false;
   const c = (s) => qpEstado.linhas.filter((l) => l.situacao === s).length;
   log(`Quando publicou: ${c('publicado')} com data, ${c('sem repositório')} sem repositório, ${c('não encontrado')} não encontrado(s), ${c('erro')} erro(s), de ${qpEstado.linhas.length}.`, 'success');
@@ -2227,7 +2217,7 @@ function vincTipoLog(r) {
 async function rodarVinculos({ continuar = false } = {}) {
   if (vincEstado.rodando || !vincEstado.itens.length) return;
   const V = window.Vinculos;
-  vincEstado.rodando = true; escAtividade('conferente', true, 'Conferir Vínculos');
+  vincEstado.rodando = true;
   vincEstado.parar = false;
   if (!continuar) vincEstado.resultados = [];
   const fila = continuar ? vincRestantes() : vincEstado.itens;
@@ -2268,7 +2258,7 @@ async function rodarVinculos({ continuar = false } = {}) {
       }
     }
   } finally {
-    vincEstado.rodando = false; escAtividade('conferente', false);
+    vincEstado.rodando = false;
     vincEstado.parar = false;
     window.api.manterAcordado(false, 'vinculos').catch(() => {});
     if (btn) btn.disabled = false;
@@ -2291,7 +2281,7 @@ async function vincVincularIncompletos() {
   if (!fila.length) { log('Ninguém incompleto para vincular.', 'info'); return; }
   if (!state.googleSaPath) { log('Configure o caminho da service account do Google nas Configurações antes de vincular.', 'error'); return; }
   if (!(state.brandAccounts?.mpiplus || '').trim()) log('Sem conta do Google configurada para a MPI+ nas Configurações: o Relatório do painel não vai ser sincronizado, só as Integrações.', 'warn');
-  vincEstado.rodando = true; escAtividade('conferente', true, 'Conferir Vínculos');
+  vincEstado.rodando = true;
   vincEstado.parar = false;
   renderVinculos();
   log(`Vincular os incompletos: ${fila.length} cliente(s), um por vez. ${vincEstado.criar ? 'Crio no Google o que não existir' : 'Só reaproveito o que já existe no Google'}; o que existe nunca é duplicado (ADR-047). Depois de cada um, leio o painel de novo.`, 'cmd');
@@ -2344,7 +2334,7 @@ async function vincVincularIncompletos() {
       renderVinculos();
     }
   } finally {
-    vincEstado.rodando = false; escAtividade('conferente', false);
+    vincEstado.rodando = false;
     vincEstado.parar = false;
     window.api.manterAcordado(false, 'vinculos').catch(() => {});
   }
@@ -2568,7 +2558,7 @@ function relDeps() {
 async function rodarRelatorio({ continuar = false } = {}) {
   if (relEstado.rodando || !relEstado.itens.length) return;
   const R = window.Relatorio;
-  relEstado.rodando = true; escAtividade('relator', true, 'Planilha do Relatório');
+  relEstado.rodando = true;
   relEstado.parar = false;
   if (!continuar) relEstado.resultados = [];
   const fila = continuar ? relRestantes() : relEstado.itens;
@@ -2590,7 +2580,7 @@ async function rodarRelatorio({ continuar = false } = {}) {
       renderRelatorio();
     }
   } finally {
-    relEstado.rodando = false; escAtividade('relator', false);
+    relEstado.rodando = false;
     relEstado.parar = false;
     window.api.manterAcordado(false, 'relatorio').catch(() => {});
   }
@@ -3199,7 +3189,6 @@ async function mergeItem(localId) {
   }
 
   state.queue[idx] = { ...item, status: 'merging' };
-  escAtividade('integrador', true, 'Mergear PRs');
   renderQueue();
 
   // Tudo que sair no terminal a partir daqui é o registro deste merge.
@@ -3225,7 +3214,6 @@ async function mergeItem(localId) {
 
   // Registra tentativa que deu certo E tentativa que falhou: saber por que um
   // merge não passou é justamente o que some quando o terminal é limpo.
-  escAtividade('integrador', false);
   await recordMerge(item, res, logSince(marca));
 
   // Só depois do await, senão o card pode ter sido removido nesse meio-tempo.
@@ -4955,7 +4943,7 @@ async function conferirCasosSalesforce() {
   if (!linhas.length) return;
   const sf = await window.api.salesforceGetConfig().catch(() => null);
   if (!sf || !sf.ok || !sf.conectado) { log('O Salesforce não está conectado. Conecte nas configurações e tente de novo.', 'error'); return; }
-  bulkRodando = true; escAtividade('publicador-mpiplus', true, 'Publicação em Massa');
+  bulkRodando = true;
   renderBulkLista();
   log(`Conferindo no Salesforce o caso de ${linhas.length} site(s). Só leitura: nada é criado.`, 'cmd');
   const achados = [];
@@ -4977,7 +4965,7 @@ async function conferirCasosSalesforce() {
       }
     }
   } finally {
-    bulkRodando = false; escAtividade('publicador-mpiplus', false); escAtividade('publicador-mpiplus', false);
+    bulkRodando = false;
     renderBulkLista();
   }
   log(`Conferência: ${achados.length} com caso encontrado, ${semCaso.length} sem.`, semCaso.length ? 'warn' : 'success');
@@ -4995,13 +4983,13 @@ async function criarTarefasPendentes() {
   }
   bulkSfConectado = true;
   const linhas = bulkSfPendentes.slice();
-  bulkRodando = true; escAtividade('publicador-mpiplus', true, 'Publicação em Massa');
+  bulkRodando = true;
   renderBulkLista();
   log(`Salesforce: criando as ${linhas.length} tarefa(s) pendente(s).`, 'cmd');
   try {
     await criarTarefasSalesforce(linhas);
   } finally {
-    bulkRodando = false; escAtividade('publicador-mpiplus', false); escAtividade('publicador-mpiplus', false);
+    bulkRodando = false;
     renderBulkLista();
   }
   await fecharRodadaSalva();
@@ -5289,7 +5277,7 @@ async function rodarBulk({ retomando = false } = {}) {
 
   // Sem confirmação de lista (ADR-072): o botão diz o que vai acontecer, e a
   // lista já está na tela. A parada que fica é a do DNS, uma por domínio.
-  bulkRodando = true; escAtividade('publicador-mpiplus', true, 'Publicação em Massa');
+  bulkRodando = true;
   bulkParar = false;
   bulkParouNoMeio = false;
   // Rodada longa: o Windows não pode suspender o app no meio (ADR-094).
@@ -5498,7 +5486,7 @@ async function rodarBulk({ retomando = false } = {}) {
     renderBulkLista();
   }
 
-  bulkRodando = false; escAtividade('publicador-mpiplus', false);
+  bulkRodando = false;
   bulkParar = false;
   window.api.manterAcordado(false).catch(() => {});
   if (bulkParouNoMeio) {
@@ -5580,7 +5568,7 @@ async function conferirBulkPublicacao() {
   const fila = bulkRows.filter(bulkTemPainel);
   if (!fila.length) return;
 
-  bulkRodando = true; escAtividade('publicador-mpiplus', true, 'Publicação em Massa');
+  bulkRodando = true;
   bulkParar = false;
   bulkParouNoMeio = false;
   renderBulkLista();
@@ -5626,7 +5614,7 @@ async function conferirBulkPublicacao() {
     renderBulkLista();
   }
 
-  bulkRodando = false; escAtividade('publicador-mpiplus', false);
+  bulkRodando = false;
   bulkParar = false;
   if (bulkParouNoMeio) { bulkParouNoMeio = false; await pararTerminou(); log('Conferência parada por você.', 'warn'); }
   renderBulkLista();
@@ -8696,7 +8684,6 @@ function openSettings(tab) {
   });
 
   renderSalesforce();
-  preencherConfigIa();
   preencherVhost();
 
   el.dnsHistKeyInput.value = '';
@@ -8719,20 +8706,9 @@ function closeSettings() {
 el.settingsBtn.addEventListener('click', () => openSettings());
 el.cancelSettingsBtn.addEventListener('click', closeSettings);
 
-// ---------- IA & Escritório (ADR-149): a chave do Gemini e os modelos ----------
-//
-// A chave nunca volta do processo principal: o campo só diz se existe uma
-// gravada, e em branco não altera. Os modelos vêm da API pela própria chave.
-const iaEl = () => ({
-  key: document.getElementById('iaKeyInput'), teto: document.getElementById('iaTetoInput'),
-  orq: document.getElementById('iaModeloOrqInput'), ag: document.getElementById('iaModeloAgInput'),
-  nivel: document.getElementById('iaNivelSelect'), lista: document.getElementById('iaModelosLista'),
-  status: document.getElementById('iaStatus'), listar: document.getElementById('iaListarBtn'), remover: document.getElementById('iaRemoverBtn'),
-  notificar: document.getElementById('iaNotificarInput'),
-});
-let iaConfigLida = null;
 // O e-mail de vhost da Busca One (ADR-132): editado aqui, gravado no
-// hub-state (mailVhost), lido pelo Freyr no processo principal (ADR-150).
+// hub-state (mailVhost), lido pela publicação Busca One automática da fila
+// (automacao-ui.js, ADR-164).
 function vhostAtual() {
   if (state.mailVhost && typeof state.mailVhost === 'object') return { to: String(state.mailVhost.to || ''), cc: String(state.mailVhost.cc || '') };
   const ssl = state.mailSsl || (typeof MAIL_MODOS !== 'undefined' && MAIL_MODOS.ssl && MAIL_MODOS.ssl.defaults) || {};
@@ -8746,50 +8722,6 @@ function preencherVhost() {
   const v = vhostAtual();
   para.value = v.to; cc.value = v.cc;
 }
-function preencherConfigIa() {
-  const f = iaEl();
-  if (!f.key || !window.api.iaGetConfig) return;
-  f.key.value = '';
-  window.api.iaGetConfig().then((r) => {
-    if (!r || !r.ok) return;
-    iaConfigLida = r;
-    f.key.placeholder = r.temChave ? 'Já configurada, digite para trocar' : 'AIza…';
-    f.teto.value = r.config.tetoChamadasDia;
-    f.orq.value = r.config.modeloOrquestrador || '';
-    f.ag.value = r.config.modeloAgentes || '';
-    f.nivel.value = r.config.nivelPensamento || '';
-    if (f.notificar) f.notificar.checked = r.config.notificar !== false;
-    if (f.status) f.status.textContent = r.temChave ? 'chave gravada nesta máquina' : 'sem chave: o Escritório abre pendência para o que a triagem não reconhece';
-  }).catch(() => {});
-}
-async function listarModelosIa() {
-  const f = iaEl();
-  if (!f.listar) return;
-  f.listar.disabled = true;
-  if (f.status) f.status.textContent = 'consultando a API…';
-  log('Gemini: listando os modelos que a chave gravada enxerga…', 'cmd');
-  try {
-    const r = await window.api.iaModelos();
-    if (!r || !r.ok) { log(`Gemini: ${(r && r.erro) || 'não respondeu'}`, 'error'); if (f.status) f.status.textContent = (r && r.erro) || 'falhou'; return; }
-    f.lista.innerHTML = r.modelos.map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.nome || m.id)}</option>`).join('');
-    for (const m of r.modelos) log(`  ${m.id}${m.nome && m.nome !== m.id ? ' — ' + m.nome : ''}${m.entrada ? ` (entrada ${m.entrada} tokens)` : ''}`, 'info');
-    log(`Gemini: ${r.modelos.length} modelo(s) disponíveis; a lista dos campos foi preenchida.`, 'success');
-    if (f.status) f.status.textContent = `${r.modelos.length} modelo(s) na lista`;
-    const avisa = (campo, papel) => { if (campo.value && !r.modelos.some((m) => m.id === campo.value)) log(`Gemini: o modelo ${papel} "${campo.value}" não está na lista desta chave; escolha outro ou confira o faturamento do projeto.`, 'warn'); };
-    avisa(f.orq, 'do orquestrador'); avisa(f.ag, 'dos agentes');
-  } catch (e) {
-    log(`Gemini: ${e.message}`, 'error');
-  } finally {
-    f.listar.disabled = false;
-  }
-}
-document.getElementById('iaListarBtn')?.addEventListener('click', listarModelosIa);
-document.getElementById('iaRemoverBtn')?.addEventListener('click', async () => {
-  if (!window.api.iaRemoverChave) return;
-  const r = await window.api.iaRemoverChave();
-  log(r && r.ok ? 'Chave do Gemini removida desta máquina.' : `Não consegui remover a chave: ${(r && r.error) || '?'}`, r && r.ok ? 'warn' : 'error');
-  preencherConfigIa();
-});
 
 el.saveSettingsBtn.addEventListener('click', async () => {
   const email = el.emailInput.value.trim();
@@ -8921,7 +8853,7 @@ el.saveSettingsBtn.addEventListener('click', async () => {
   }
 
   {
-    // E-mail de vhost (Freyr): no hub-state, como sempre foi (mailVhost).
+    // E-mail de vhost da Busca One: no hub-state, como sempre foi (mailVhost).
     const para = document.getElementById('vhostParaInput');
     const cc = document.getElementById('vhostCcInput');
     if (para && cc) {
@@ -8931,23 +8863,6 @@ el.saveSettingsBtn.addEventListener('click', async () => {
         state.mailVhost = novo;
         await saveHubState();
         log(`E-mail de vhost: para ${novo.to || '(em branco)'}${novo.cc ? ', cc ' + novo.cc : ''}.`, 'info');
-      }
-    }
-  }
-
-  {
-    // IA & Escritório (ADR-149): config em arquivo, chave no safeStorage.
-    const f = iaEl();
-    if (f.key && window.api.iaSetConfig) {
-      const config = { modeloOrquestrador: f.orq.value.trim(), modeloAgentes: f.ag.value.trim(), nivelPensamento: f.nivel.value, tetoChamadasDia: Number(f.teto.value), notificar: f.notificar ? !!f.notificar.checked : true };
-      const apiKey = f.key.value.trim();
-      const mudou = !iaConfigLida || apiKey || JSON.stringify({ ...iaConfigLida.config, ...config, temperatura: undefined }) !== JSON.stringify({ ...iaConfigLida.config, temperatura: undefined });
-      if (mudou) {
-        const resIa = await window.api.iaSetConfig({ config, apiKey });
-        if (!resIa || !resIa.ok) { log(`Erro ao salvar a configuração da IA: ${(resIa && resIa.error) || '?'}`, 'error'); return; }
-        log(apiKey ? 'Chave do Gemini salva, criptografada nesta máquina; modelos e teto gravados.' : 'Configuração da IA gravada.', 'success');
-        f.key.value = '';
-        iaConfigLida = null;
       }
     }
   }
@@ -9015,6 +8930,7 @@ async function init() {
     // Só as chaves conhecidas, e sempre booleano: hub-state velho ou editado à
     // mão não pode injetar etapa que não existe nem valor estranho.
     if (typeof hubRes.state.sfTarefasAuto === 'boolean') state.sfTarefasAuto = hubRes.state.sfTarefasAuto;
+    if (typeof hubRes.state.automacaoFila === 'boolean') state.automacaoFila = hubRes.state.automacaoFila;
     if (hubRes.state.npSteps && typeof hubRes.state.npSteps === 'object') {
       for (const e of NP_STEPS) {
         if (e.id in hubRes.state.npSteps) state.npSteps[e.id] = !!hubRes.state.npSteps[e.id];
@@ -9086,6 +9002,10 @@ async function init() {
   });
   // As filas do Salesforce entram na home assim que a sessão for confirmada.
   setTimeout(() => { if (hubSfConectado && state.view === 'home') carregarTarefasSf(false); }, 1200);
+  // Estado, credenciais e lista de espera carregados: a fila automática
+  // (automacao-ui.js) pode voltar como ficou gravada.
+  window.__hubPronto = true;
+  try { document.dispatchEvent(new CustomEvent('hub:pronto')); } catch (e) {}
 }
 
 init();

@@ -28,8 +28,6 @@ function montar(api) {
     const log = (m, t) => logs.push({ m, t });
     const withBusy = (_r, fn) => fn();
     const renderBulkLista = () => {};
-    // A rodada avisa o Escritório quando começa e termina (ADR-152); aqui não há tela.
-    const escAtividade = () => {};
     const window = { api };
     ${recorta(app, 'async function criarTarefasSalesforce(linhas)', '\nfunction renderBulkLista() {')}
     return {

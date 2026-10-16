@@ -50,8 +50,8 @@ const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falh
   page.on('pageerror', (e) => erros.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') erros.push('console: ' + m.text()); });
   // A home pronta é a dos indicadores (ADR-138); o cartão de WHOIS saiu.
-  // O Hub abre no Escritório (ADR-149); este roteiro é o da tela inicial, então
-  // toda carga vai para o Início antes de esperar os indicadores.
+  // Este roteiro é o da tela inicial: toda carga vai para o Início antes de
+  // esperar os indicadores.
   const pronto = async () => {
     await page.waitForFunction(() => typeof goHome === 'function' && typeof render === 'function', null, { timeout: 15000 });
     await page.evaluate(() => { if (state.view !== 'home') goHome(); });

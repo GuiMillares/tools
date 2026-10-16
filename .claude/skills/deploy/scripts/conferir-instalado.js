@@ -67,7 +67,7 @@ for (const a of dentro) {
   if (apagados.has(a)) { if (lista.includes('/' + a)) falha(`${a} foi apagado no commit e ainda está no asar`); else ok(`${a} apagado no commit, e fora do asar`); continue; }
   if (!lista.includes('/' + a)) { falha(`${a} deveria estar no asar e não está`); continue; }
   // O leitor do asar separa o caminho pelo separador do sistema: com barra
-  // normal, "lib/escritorio/catalogo.js" (dois níveis) não é achado no Windows.
+  // normal, "lib/x/y.js" (dois níveis) não é achado no Windows.
   const doAsar = asar.extractFile(asarPath, a.split('/').join(path.sep));
   const doRepo = fs.readFileSync(path.join(RAIZ, a));
   // O electron-builder reescreve o package.json dentro do asar (tira scripts e

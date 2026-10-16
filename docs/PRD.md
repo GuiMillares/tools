@@ -418,7 +418,7 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
   WHOIS/DNS não tem mais cartão: um domínio na busca do topo, ou `whois
   <domínio>` no terminal, responde no terminal da direita. As ferramentas
   ficam na barra lateral; a grade "Automações & scripts" saiu (ADR-127). O
-  chip do Escritório (4.15) aparece no topo em todas as telas.
+  interruptor **Fila automática** (4.10) fica no topo em todas as telas.
 - **Terminal de atividade:** painel direito, presente em todas as
   ferramentas. É onde toda chamada de API e todo aviso aparecem. Ver ADR-011.
   Minimiza (vira um trilho fino que conta o que chegou, em vermelho se veio
@@ -456,21 +456,26 @@ nos últimos 7 dias). As colunas são os status reais da org, lidos do
   Hub estiver aberto, inclusive na primeira chamada da manhã (ADR-136); só
   pede reconexão se o Salesforce revogar o acesso.
 
-### 4.10 Automação da fila — pelo Escritório
+### 4.10 Automação da fila — o interruptor do topo
 
-Até a 1.0.76 era um painel flutuante com três interruptores, um relógio de
-5 minutos e o motor da fila dentro da tela (ADR-119, ADR-120). Na fase 2 do
-Escritório (ADR-150) tudo isso passou para o orquestrador (4.15): é ele quem
-lê a fila, decide, valida em código e manda executar, com um interruptor por
-agente e o histórico por tarefa. O que a automação faz por tipo de tarefa
-continua o mesmo, agora com nome:
+Um interruptor deslizante só, **Fila automática**, no topo de todas as telas
+(à esquerda do MEM/CPU), liga a fila inteira: publicação MPI+, publicação
+Busca One e bloqueio de contatos (ADR-164). Ligado, lê a fila do Salesforce
+na hora e depois a cada 5 minutos, uma tarefa por vez, pela triagem em
+código (`lib/triagem.js`) e pelo motor da fila (`lib/automacao.js`,
+ADR-119, ADR-120). Desligar é o freio: a varredura para entre uma tarefa e
+outra. O estado fica gravado: reabrir o Asgard volta como estava, e a
+primeira leitura espera 15 s para a sessão do Salesforce acordar. Passar o
+mouse mostra a última varredura (feitas, aguardando o DNS, puladas, erros) e
+quem está na lista de espera; o detalhe de cada tarefa vai para o terminal.
+Não há orquestrador, agente, regra aprendida nem modelo: de 13 a 16/10/2026
+isto foi o Escritório (ADR-149 a 163), que saiu inteiro pela ADR-164.
 
-| Agente | Tarefa da fila | O que o Hub faz | Como termina |
+| Tipo | Tarefa da fila | O que o Asgard faz | Como termina |
 | --- | --- | --- | --- |
-| **Tyr** (Bloqueador de Contatos) | `BLOQUEIO DE CONTATOS - {domínio}` / `RETIRAR CONTATOS…` | descobre a marca pelo IP e censura os contatos no /doutor (Busca Cliente, MPI Solutions) ou no painel MPI+ (ADR-116, ADR-121) | fecha a tarefa comentando "Contatos removidos" |
-| **Thor** (Publicador MPI+) | `Publicação (Troca de DNS) [MPI+] - {domínio}` com temporário `cliente.mpitemporario.com.br` | o Publicar MPI+ (4.7) inteiro, sem perguntar: backup do DNS do cliente no lugar da parada, empresa pelo caso/fila (ADR-122, ADR-123) | fecha a tarefa quando o site está no ar (SSL com o vigia, se o DNS demorar). **DNS do cliente**: publica, faz tags e planilha, e o site vai para a lista de espera como "aguardando o cliente" (ADR-142); a tarefa fica como aguardando externo; o vigia confere de hora em hora e termina SSL, Search Console e tarefa quando o cliente apontar. **Domínio novo no Registro.br** (ADR-162): a troca de nameservers fica com o vigia. Erro que repetir não resolve (o site redireciona para outro domínio, a conta não pode editar o DNS) desiste de primeira e vira pendência para você, em vez de três tentativas iguais |
-| **Huginn** (Hospedagem & E-mails) | pela triagem em código (ADR-161): "Ativação de SSL" no assunto ou no comentário → pedido de SSL; "Suspensão"/"Suspender" no assunto → suspensão; os domínios vêm da tarefa | o mesmo e-mail da tela Ativar SSL / Suspender sites, pela sua caixa, um por domínio de cliente da tarefa, só se todos apontarem para a faixa da M3 e nunca repetindo o que esta tarefa já mandou (ADR-152) | a tarefa fica com você para fechar quando o suporte fizer; nada é escrito no Salesforce |
-| **Freyr** (Publicador Busca One) | `Publicação (Troca de DNS) - …` com o temporário `deploy.buscaclientes.com.br/{repo}/` (Busca Cliente) ou `producao.mpitemporario.com.br/{repo}/` (MPI Solutions) no comentário, ou "Apontado via registro." | a **parte automática** (ADR-132, ADR-133): cria ou acha as propriedades no Google na marca da empresa, commita o `geral.php` no repositório do Bitbucket com `$idProjetoBusca` = o "ID do painel xxxx" da tarefa (MPI Solutions: fixo 39) e manda o e-mail de criação de vhost e banco ao suporte, com o modelo da empresa. Roda inteiro no processo principal, sem depender da tela | a tarefa vai para **Em andamento** no seu nome e **fica aberta**: vhost, clone no servidor e DNS são manuais. As chaves e o resumo saem no terminal, nunca em comentário no Salesforce (ADR-134) |
+| **Bloqueio de contatos** | `BLOQUEIO DE CONTATOS - {domínio}` / `RETIRAR CONTATOS…` | descobre a marca pelo IP e censura os contatos no /doutor (Busca Cliente, MPI Solutions) ou no painel MPI+ (ADR-116, ADR-121) | fecha a tarefa comentando "Contatos removidos" |
+| **Publicação MPI+** | `Publicação (Troca de DNS) [MPI+] - {domínio}` com temporário `cliente.mpitemporario.com.br` | o Publicar MPI+ (4.7) inteiro, sem perguntar: backup do DNS do cliente no lugar da parada, empresa pelo caso/fila (ADR-122, ADR-123) | fecha a tarefa quando o site está no ar (SSL com o vigia, se o DNS demorar). **DNS do cliente**: publica, faz tags e planilha, e o site vai para a lista de espera como "aguardando o cliente" (ADR-142); a fila anota e segue para a próxima tarefa; o vigia confere de hora em hora e termina SSL, Search Console e tarefa quando o cliente apontar. **Domínio novo no Registro.br** (ADR-162): a troca de nameservers fica com o vigia. Erro que repetir não resolve (o site redireciona para outro domínio, a conta não pode editar o DNS) desiste de primeira, em vez de três tentativas iguais; erro passageiro (o painel ou o Salesforce demoraram) só adia para a próxima varredura |
+| **Publicação Busca One** | `Publicação (Troca de DNS) - …` com o temporário `deploy.buscaclientes.com.br/{repo}/` (Busca Cliente) ou `producao.mpitemporario.com.br/{repo}/` (MPI Solutions) no comentário, ou "Apontado via registro." | a **parte automática** (ADR-132, ADR-133): cria ou acha as propriedades no Google na marca da empresa, commita o `geral.php` no repositório do Bitbucket com `$idProjetoBusca` = o "ID do painel xxxx" da tarefa (MPI Solutions: fixo 39) e manda o e-mail de criação de vhost e banco ao suporte, com o modelo da empresa. | a tarefa vai para **Em andamento** no seu nome e **fica aberta**: vhost, clone no servidor e DNS são manuais. As chaves e o resumo saem no terminal, nunca em comentário no Salesforce (ADR-134) |
 
 Na Busca One, tudo vem da própria tarefa, escrita no modelo combinado com o
 atendimento:
@@ -489,19 +494,21 @@ repositório** do Bitbucket, que nem sempre coincide com o domínio; o
 nossos hosts e os e-mails), e é ele que vai para as propriedades, o
 `geral.php` e o e-mail. Sem temporário, a empresa vem do caso da tarefa e
 depois da fila. O destinatário e a cópia do e-mail de vhost ficam em
-Configurações › **Escritório & IA** e são gravados; o assunto ("Criação de
+Configurações › **Automação da fila** e são gravados; o assunto ("Criação de
 Vhost e Banco - Busca Cliente - {domínio}", ou "- MPI -") e o corpo são
 fixos, do jeito que a equipe manda. Nada é enviado sem a conta Microsoft
 conectada, o Bitbucket configurado e a service account do Google — e,
 faltando qualquer um, nada é feito (nem as propriedades), para a tarefa ser
 retomada inteira depois.
 
-Antes de agir, cada agente passa pela validação em código do Escritório
-(domínio válido, temporário MPI+, fora da lista de espera do DNS, sem
-duplicidade, marca pelo apontamento, credenciais gravadas); o que não passa
-vira pendência com o motivo. Erro comum tenta de novo até três varreduras e
-então escala para você; "o Hub está ocupado com outra publicação" só adia.
-O botão **Freio** do Escritório desliga o modo automático e interrompe uma
+Erro comum tenta de novo até três varreduras e então desiste da tarefa
+("revisar à mão"); "desistir" de primeira é a falha que não se resolve
+sozinha (contato técnico do cliente fora do .br, contrato não achado, erro
+que repetir não resolve). A desistência vale para a sessão: reabrir o
+Asgard tenta de novo, porque nada fica marcado como ignorado para sempre.
+"O Asgard está ocupado com outra publicação" e erro passageiro só adiam.
+Quem está na lista de espera do DNS não é publicado de novo: a fila anota e
+segue, e o vigia da lista termina. O **freio do Asgard** interrompe uma
 publicação no meio (ADR-102).
 
 ### 4.11 Quando publicou — `hosting`
@@ -656,102 +663,6 @@ Cliente** (não o do idealplus); a busca nele foi feita na sessão do usuário,
 fora da tela. Quem segue sem GA4 pode ganhar uma propriedade criada pela
 convenção do "Criar propriedades", listada na aba **Vincular Analytics**.
 
-### 4.15 Escritório — `escritorio`
-
-A segunda tela da barra lateral, logo abaixo do Início (ADR-159; da ADR-149
-à ADR-158 foi a de abertura, e por um dia em 3D de tela cheia, ADR-153, que
-saiu por peso): o
-**orquestrador** e os **agentes** que fazem sozinhos o que antes era feito
-módulo a módulo (ADR-149, ADR-150). O orquestrador, **Odin**, lê a fila de
-deploy do Salesforce a cada 5 minutos, decide o que cada tarefa precisa e
-para qual agente vai, valida em código e executa ou pergunta. Os nomes são
-da mitologia nórdica; o papel e os módulos de cada um aparecem ao lado em
-toda tela e em todo seletor.
-
-- **Como ele decide, sempre nesta ordem (ADR-161):** a triagem em código
-  do próprio Asgard (publicação MPI+, Busca One, bloqueio de contatos,
-  ativação de SSL e suspensão nascem planejadas; "Site fora do ar" é
-  ignorado; nada disso chama modelo); o modelo (Gemini), só se estiver
-  ligado, para o que sobrou; e, no normal (modelo desligado), a tarefa que a
-  triagem não reconhece vira **pendência para você**: encaminhe para um
-  agente, marque como tratada ou ignore. **Ele nunca chuta**: parâmetro que
-  não está na tarefa vira pergunta. **Aprendizado pela ADR:** não há mais
-  regras editadas na tela; quando um tipo de tarefa deve entrar sozinho,
-  você diz a regra ao Claude, ela vira código em `lib/triagem.js` e a
-  decisão fica registrada na ADR, com teste.
-- **Agentes** (um cartão por agente, com sala, nome, papel, módulos, estado
-  e o interruptor dele): **Thor** (Publicador MPI+:
-  Publicar MPI+ e Publicação em Massa), **Freyr** (Publicador Busca One:
-  propriedades, geral.php, vhost), **Tyr** (Bloqueador de Contatos),
-  **Huginn** (Hospedagem & E-mails: SSL e suspensão), **Ratatoskr**
-  (Integrador: merge de PRs), **Mímir** (Auditor: Ouvidoria & Auditoria,
-  Quando publicou), **Heimdall** (Conferente de Vínculos) e **Bragi**
-  (Relator: Planilha do Relatório). Os quatro últimos ficam em **standby**:
-  só rodam quando você aciona pelo módulo; o orquestrador no máximo sugere.
-  Cada agente automático tem o seu interruptor. Executam Tyr, Thor, Freyr
-  e Huginn (4.10); Ratatoskr executa, mas em standby. **Nenhum agente usa
-  modelo de IA**: são as ferramentas do Hub rodando sozinhas (ADR-152).
-- **Modo automático** (interruptor geral): liga a leitura da fila e a
-  execução. **Modo observação**: lê, planeja, valida a seco e anota
-  "executaria", sem executar; é como se começa. Com o geral desligado
-  (modo manual), o plano espera o seu "Executar". Os interruptores lembram a
-  escolha ao reabrir. O botão **Freio** desliga o automático e interrompe
-  uma publicação no meio. O Comando mostra quem está na lista de espera do
-  DNS (aguardando o cliente ou a propagação).
-- **Validação em código antes de agir:** cada agente tem regras com nome
-  (domínio válido, temporário MPI+, fora da lista de espera do DNS, sem
-  duplicidade, marca pelo apontamento, credenciais gravadas…); o que não
-  passa barra e vira pendência com o motivo; o que não dá para conferir
-  também barra, nunca aprova no escuro.
-- **Pendências:** a pergunta, as tarefas que ela cobre (cada uma com a
-  leitura do comentário) e as respostas: "Encaminhar" para um agente (com
-  o preset, quando houver: Huginn · Ativação de SSL / Suspensão), "Marcar
-  como tratada", "Ignorar estas", "Descartar", "Retomar" para tarefa
-  interrompida. **Falha de agente** (3 tentativas, ou desistência de
-  primeira) é pendência "para você" com o motivo e **"Tentar de novo"**, que
-  zera as tentativas e replaneja (ADR-161); não pede regra nenhuma.
-- **Fila de tarefas e histórico:** cada tarefa com estado (na fila, em
-  análise, planejada, pendente, aguardando confirmação, executando,
-  concluída, falhou, aguardando externo, escalada, ignorada, interrompida),
-  agente, origem do plano e último evento; "histórico" abre tudo que foi
-  decidido e por quê, qual regra validou, entradas, saídas e erros. Tarefa
-  que estava executando quando o Hub fechou vira "retomar?" em vez de
-  retomar sozinha. Falha comum tenta até 3 vezes e então escala para você.
-  "Reanalisar" vale para qualquer tarefa que não esteja executando nem
-  concluída, inclusive a que já foi publicada e espera o DNS do cliente
-  (ADR-160): ela volta à análise, ganha o plano de novo e o Thor, que
-  reconhece o site já publicado pela lista de espera, só confere o DNS.
-- **Modelo (opcional, desligado por padrão):** o interruptor "Perguntar ao
-  Gemini" no Comando liga o modelo só para a tarefa que a triagem não
-  reconhece (ler o comentário e decidir plano, pergunta, avisar ou ignorar).
-  Desligado, ela vira pendência e você decide. A chave e os modelos ficam em
-  Configurações › Escritório & IA, com o teto diário de chamadas e os
-  contadores do dia na tela (ADR-152).
-- **Atividade dos módulos:** quando você aciona um módulo pela mão
-  (Conferir Vínculos, Planilha do Relatório, Quando publicou, Ouvidoria,
-  Bloquear Contatos, Publicação em Massa, Mergear PRs), o cartão do agente
-  mostra "trabalhando" com o nome do módulo.
-- **Aviso fora da tela (ADR-155):** quando nasce uma pendência, uma
-  notificação do Windows com a pergunta; clicar nela traz o Asgard e abre as
-  pendências. Desliga em Configurações › Escritório & IA.
-- **Resumo "Hoje e últimos 7 dias" (ADR-155):** quantas tarefas os agentes
-  fizeram sozinhos, quantas você fez à mão, falhas, ignoradas, pendências e
-  o tempo médio da fila até a execução, no título da tela (a frase do dia) e
-  numa tabela abaixo dos cartões dos agentes (com o total por agente). É a
-  medida para decidir se vale tirar um agente do standby.
-- **A tela (ADR-159):** HTML no painel da esquerda, como qualquer outra
-  ferramenta: o cabeçalho com o modo e as pendências, "Rodar agora" e Freio;
-  o Comando com os interruptores, os contadores do dia e a lista de espera do
-  DNS; os cartões dos agentes; a tabela do resumo; as abas Pendências, Fila
-  de tarefas e Concluídas e ignoradas; o histórico de uma tarefa num painel
-  lateral. Nada anima parado e nada pede quadro: a tela só
-  se redesenha quando o orquestrador avisa que algo mudou. O escritório em
-  3D de tela cheia (ADR-153) e o mapa de fluxo (ADR-157) saíram em 15/10/2026
-  porque pesavam demais na máquina; ficaram no histórico do git.
-
-O painel flutuante da automação foi absorvido pelo Escritório (4.10,
-ADR-150).
-
 ## 5. Fora de escopo
 
 Explicitamente **não** é objetivo do Hub, e um pedido nessa direção deve virar
@@ -830,12 +741,6 @@ Sem isso o app abre mas não faz nada útil:
 6. **Git for Windows**, para o Git Bash dentro do Hub. A instalação por usuário
    (`AppData\Local\Programs\Git`) serve; sem ela, o resto do Hub funciona e o
    Git Bash diz o que instalar (ADR-128).
-7. **Chave da API do Gemini** (Google AI Studio), para o Escritório perguntar
-   ao modelo o que a triagem em código não resolve. Opcional: sem ela, as
-   tarefas desconhecidas viram pendência para você. Vincule faturamento ao projeto da
-   chave (US$ 5): no plano gratuito o Google usa o conteúdo enviado para
-   melhorar produtos, e o modelo Pro não tem cota gratuita (ADR-149).
-
 ## 8. Como o produto cresce
 
 Uma ferramenta nova é: uma entrada no array `TOOLS` (`renderer/app.js`), uma
@@ -843,9 +748,9 @@ função `renderNomeDaFerramenta()` que desenha o painel esquerdo, e — se prec
 de rede — um handler no `main.js` mais uma linha no `preload.js`.
 
 A ferramenta nova herda de graça o terminal, as configurações, a busca e os
-recentes. Um agente novo do Escritório é uma entrada no catálogo
-(`lib/escritorio/catalogo.js`): sala, modo, módulos, parâmetros, canais que
-pode chamar e regras de execução com nome (ADR-149). O que ela precisa respeitar são os princípios da seção 3, em especial
+recentes. Um tipo novo de tarefa na fila automática é uma função de triagem em
+`lib/triagem.js` (com teste) e um caso no motor `lib/automacao.js`
+(ADR-164). O que ela precisa respeitar são os princípios da seção 3, em especial
 o primeiro.
 
 ## 9. Glossário
