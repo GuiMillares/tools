@@ -663,6 +663,15 @@ Cliente** (não o do idealplus); a busca nele foi feita na sessão do usuário,
 fora da tela. Quem segue sem GA4 pode ganhar uma propriedade criada pela
 convenção do "Criar propriedades", listada na aba **Vincular Analytics**.
 
+Atualização de 16/10/2026: a saída ganha **Situação do Contrato** (Ativo,
+Desativado, Rascunho, pelo Status do contrato no Salesforce) e **Modelo**
+(Busca One, Busca One Híbrido, Plataforma, MPI+, cada um com a sua cor)
+entre a razão social e o nome fantasia. Contrato desativado é pulado depois
+do Salesforce e a linha sai inteira em vermelho, com texto branco. MPI+ não
+tem ID do painel nem palavras (o resto é preenchido). O ID também vem do
+formulário do site (`name="projeto"`, temas antigos e plataforma), e as
+propriedades repetidas do domínio vão para a aba **GA4 duplicados**.
+
 ## 5. Fora de escopo
 
 Explicitamente **não** é objetivo do Hub, e um pedido nessa direção deve virar

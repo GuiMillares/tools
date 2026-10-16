@@ -2408,12 +2408,17 @@ function montarXlsx(colunas, linhas, aba) {
 
 // Várias abas num arquivo só: [{ aba, colunas, linhas }]. Abas sem linhas são
 // puladas (não crio "Outros clientes" vazia, por exemplo).
+// Aba com `cores` ([{ linha, coluna, fundo, texto }]) sai pintada pelo
+// lib/xlsx-cores.js (a Planilha do Relatório, ADR-148).
 function montarXlsxAbas(abas) {
   const XLSX = require('xlsx');
   const wb = XLSX.utils.book_new();
-  for (const a of abas || []) if (a && Array.isArray(a.colunas) && a.colunas.length && (a.linhas || []).length) anexarAba(wb, a.colunas, a.linhas, a.aba);
+  const anexadas = [];
+  for (const a of abas || []) if (a && Array.isArray(a.colunas) && a.colunas.length && (a.linhas || []).length) { anexarAba(wb, a.colunas, a.linhas, a.aba); anexadas.push(a); }
   if (!wb.SheetNames.length) throw new Error('Sem dados para exportar.');
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  if (!anexadas.some((a) => Array.isArray(a.cores) && a.cores.length)) return buf;
+  return require('./lib/xlsx-cores').aplicarCores(buf, anexadas.map((a) => ({ colunas: a.colunas.length, cores: a.cores || [] })));
 }
 
 ipcMain.handle('planilha:exportar', async (event, { nomeSugerido, colunas, linhas, aba, abas, pasta }) => {

@@ -23,11 +23,16 @@ const args = process.argv.slice(2);
 const opt = (nome) => { const i = args.indexOf(nome); return i >= 0 ? args[i + 1] : ''; };
 const opts = (nome) => args.map((a, i) => (a === nome ? args[i + 1] : null)).filter(Boolean);
 
-// A mesma pasta de dados do Hub instalado (%APPDATA%\pr-merge-tool).
-app.setPath('userData', path.join(app.getPath('appData'), 'pr-merge-tool'));
+// A mesma pasta de dados do Hub instalado: %APPDATA%\asgard desde a ADR-158
+// (antes, %APPDATA%\pr-merge-tool, que ficou de reserva).
+const pastaAsgard = path.join(app.getPath('appData'), 'asgard');
+app.setPath('userData', fs.existsSync(pastaAsgard) ? pastaAsgard : path.join(app.getPath('appData'), 'pr-merge-tool'));
 const userData = () => app.getPath('userData');
 const lerJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf-8')); } catch (e) { return null; } };
 const lerCifrado = (f) => { try { return JSON.parse(safeStorage.decryptString(fs.readFileSync(f))); } catch (e) { return null; } };
+// Segredo do OAuth: o .enc (ADR-155) ou, de antes dele, o .json em texto.
+const lerSegredo = (nome) => lerCifrado(path.join(userData(), `${nome}.enc`)) || lerJson(path.join(userData(), `${nome}.json`));
+const temSegredo = (nome) => fs.existsSync(path.join(userData(), `${nome}.enc`)) || fs.existsSync(path.join(userData(), `${nome}.json`));
 
 app.whenReady().then(async () => {
   const { google } = require('googleapis');
@@ -80,7 +85,7 @@ app.whenReady().then(async () => {
 
   // ---------- Google: service account e sessões OAuth ----------
   const gCfg = lerJson(path.join(userData(), 'google-config.json')) || {};
-  const oauthCfg = lerJson(path.join(userData(), 'oauth-config.json')) || {};
+  const oauthCfg = lerSegredo('oauth-config') || {};
   const SCOPES_SA = [
     'https://www.googleapis.com/auth/analytics.readonly',
     // Só o --criar-analytics escreve (cria a propriedade e o data stream), como o Hub.
@@ -103,15 +108,18 @@ app.whenReady().then(async () => {
     { slot: 'bc', email: brandAccounts.bc || '', analytics: false, searchConsole: true },
     { slot: 'mpiplus', email: brandAccounts.mpiplus || '', analytics: false, searchConsole: true },
     { slot: 'mpisolutions', email: brandAccounts.mpisolutions || '', analytics: false, searchConsole: true },
-    ...contasRelatorio.map((email, i) => ({ slot: `rel-${i + 1}`, email, analytics: true, searchConsole: true, tagManager: true })),
+    // --sem-api-gtm: os logins não listam containers pela API do Tag Manager
+    // (lenta e com cota; em 16/10 travou a rodada): fica o gtm.js público e,
+    // sem ele, o domínio do data stream.
+    ...contasRelatorio.map((email, i) => ({ slot: `rel-${i + 1}`, email, analytics: true, searchConsole: true, tagManager: !args.includes('--sem-api-gtm') })),
   ].filter((s) => s.email);
   const authDoSlot = async (slot) => {
-    const f = path.join(userData(), slot ? `oauth-token-${slot}.json` : 'oauth-token.json');
-    const token = lerJson(f);
+    const nome = slot ? `oauth-token-${slot}` : 'oauth-token';
+    const token = lerSegredo(nome);
     if (!token || !token.access_token || !oauthCfg.clientId) return null;
     const c = new google.auth.OAuth2(oauthCfg.clientId, oauthCfg.clientSecret);
     c.setCredentials(token);
-    c.on('tokens', (fresh) => { try { fs.writeFileSync(f, JSON.stringify({ ...token, ...fresh, refresh_token: fresh.refresh_token || token.refresh_token }, null, 2)); } catch (e) { /* ok */ } });
+    c.on('tokens', (fresh) => { try { fs.writeFileSync(path.join(userData(), `${nome}.enc`), safeStorage.encryptString(JSON.stringify({ ...token, ...fresh, refresh_token: fresh.refresh_token || token.refresh_token }))); } catch (e) { /* ok */ } });
     return c;
   };
   const cachePath = path.join(userData(), 'analytics-streams-cache.json');
@@ -134,7 +142,7 @@ app.whenReady().then(async () => {
     contasConhecidas: [...Object.values(brandAccounts), ...contasRelatorio],
     padraoMarca: { Busca: { ga: brandAccounts.bc || '', gsc: brandAccounts.mpiplus || brandAccounts.bc || '' }, MPI: { ga: brandAccounts.mpisolutions || '', gsc: brandAccounts.mpisolutions || '' }, 'MPI+': { ga: brandAccounts.mpiplus || '', gsc: brandAccounts.mpiplus || '' } },
   });
-  log(`Logins: ${slots.map((s) => `${s.email} (${s.slot}${fs.existsSync(path.join(userData(), `oauth-token-${s.slot}.json`)) ? ', conectado' : ', sem sessão'})`).join('; ') || 'nenhum'}.`, 'info');
+  log(`Logins: ${slots.map((s) => `${s.email} (${s.slot}${temSegredo(`oauth-token-${s.slot}`) ? ', conectado' : ', sem sessão'})`).join('; ') || 'nenhum'}.`, 'info');
 
   // ---------- --acessos: o que a service account e cada login enxergam ----------
   //
@@ -293,10 +301,13 @@ app.whenReady().then(async () => {
   // A rodada grava o JSON a cada linha e o .xlsx a cada 25; com --continuar,
   // as linhas já gravadas são puladas (cair no meio não perde nada).
   const XLSX = require('xlsx');
+  const { aplicarCores } = require(path.join(ROOT, 'lib', 'xlsx-cores'));
   const gravarXlsx = (rs) => {
     const wb = XLSX.utils.book_new();
-    for (const a of R.montarAbasXlsx(rs)) if (a.linhas.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([a.colunas, ...a.linhas]), a.aba);
-    XLSX.writeFile(wb, `${saida}.xlsx`);
+    const abas = R.montarAbasXlsx(rs).filter((a) => a.linhas.length);
+    for (const a of abas) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([a.colunas, ...a.linhas]), a.aba);
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    fs.writeFileSync(`${saida}.xlsx`, aplicarCores(buf, abas.map((a) => ({ colunas: a.colunas.length, cores: a.cores || [] }))));
   };
   let resultados = [];
   if (args.includes('--continuar') && fs.existsSync(`${saida}.json`)) {
@@ -313,8 +324,8 @@ app.whenReady().then(async () => {
     const r = await Rodada.preencherItem(it, fontes, log);
     resultados.push(r);
     log(R.textoLinha(r), r.situacao === 'completo' ? 'success' : r.situacao === 'erro' ? 'error' : 'warn');
-    const s = r.saida;
-    log(`  nome_fantasia=${s[2]} | responsavel=${s[3]} <${s[4]}> ${s[5]} | contrato=${s[7]} | external_id=${s[9]} | ga=${s[11]} / ${s[12]} / ${s[13]} | gsc=${s[14]} ${s[15]} | pacote=${s[16]} | valor=${s[17]} | tipo=${r.dados.tipo} (${r.dados.tipoOrigem}) | palavras=${s[18] ? s[18].split('|').length : 0}`, 'info');
+    const v = Object.fromEntries(R.COLUNAS.map((c, i) => [c, r.saida[i]]));
+    log(`  contrato=${v.numero_contrato} (${v[R.COL_SITUACAO_CONTRATO]}) | modelo=${v[R.COL_MODELO]} | nome_fantasia=${v.nome_fantasia} | responsavel=${v.nome_responsavel} <${v.email_responsavel}> ${v.telefone_responsavel} | external_id=${v.external_id} | ga=${v.ga_account_key} / ${v.ga_property_id} / ${v.ga_oauth_connection_name} | gsc=${v.gsc_oauth_connection_name} ${v.gsc_site_url} | pacote=${v.pacote_palavras} | valor=${v.valor_mensal} | tipo=${r.dados.tipo} (${r.dados.tipoOrigem}) | palavras=${v.palavras ? v.palavras.split('|').length : 0}${(r.dados.ga && r.dados.ga.duplicadas || []).length ? ` | GA4 duplicados=${r.dados.ga.duplicadas.length}` : ''}`, 'info');
     if (r.observacoes.length) log(`  obs: ${r.observacoes.join('; ')}`, 'info');
     try { fs.writeFileSync(`${saida}.json.tmp`, JSON.stringify(resultados)); fs.renameSync(`${saida}.json.tmp`, `${saida}.json`); } catch (e) { log(`não gravei o JSON: ${e.message}`, 'warn'); }
     if (n % 25 === 0) { try { gravarXlsx(resultados); } catch (e) { log(`não gravei o .xlsx: ${e.message}`, 'warn'); } log(`PROGRESSO ${resultados.length}/${itens.length} linhas, ${Math.round((Date.now() - inicio) / 60000)} min`, 'cmd'); }

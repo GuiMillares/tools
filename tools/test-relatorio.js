@@ -10,6 +10,7 @@ const R = require(path.join(__dirname, '..', 'lib', 'relatorio'));
 const Rodada = require(path.join(__dirname, '..', 'lib', 'relatorio-rodada'));
 
 let falhas = 0;
+const C = (l, nome) => l[R.COLUNAS.indexOf(nome)];
 const check = (n, c, d = '') => { if (c) console.log(`  ok   ${n}`); else { falhas++; console.log(`  FALHOU  ${n}${d ? ` (${d})` : ''}`); } };
 
 // ---------- Fixtures ----------
@@ -79,8 +80,8 @@ const SITEMAP_1 = `<?xml version="1.0"?><urlset><url><loc>https://www.jrplastico
 (async () => {
   console.log('\n=== Entrada: as duas abas ===');
   const ent = R.lerEntrada([
-    { aba: 'Busca', linhas: [R.COLUNAS, ['34.199.037/0001-02', 'L.C DA SILVA REMOCOES', '', '', '', '', 'Busca Cliente', '', 'd8d1', '', 'busca_cliente'], ['', '', '', '', '', '', 'Busca Cliente'], ['118.022.678-08', 'NANCY', '', '', '', '', 'Busca Cliente', '', 'd8d1', '', 'busca_cliente']] },
-    { aba: 'MPI', linhas: [R.COLUNAS, ['', 'MOREIRA LOPES CONFECCAO LTDA', '', '', '', '', 'MPI Solutions', '2041343', 'd8d1', '', 'mpi_solutions']] },
+    { aba: 'Busca', linhas: [R.COLUNAS_CONFIG, ['34.199.037/0001-02', 'L.C DA SILVA REMOCOES', '', '', '', '', 'Busca Cliente', '', 'd8d1', '', 'busca_cliente'], ['', '', '', '', '', '', 'Busca Cliente'], ['118.022.678-08', 'NANCY', '', '', '', '', 'Busca Cliente', '', 'd8d1', '', 'busca_cliente']] },
+    { aba: 'MPI', linhas: [R.COLUNAS_CONFIG, ['', 'MOREIRA LOPES CONFECCAO LTDA', '', '', '', '', 'MPI Solutions', '2041343', 'd8d1', '', 'mpi_solutions']] },
     { aba: 'Resumo', linhas: [['x', 'y'], ['1', '2']] },
   ]);
   check('lê as duas abas e ignora a que não é Busca/MPI', ent.itens.length === 3 && ent.ignoradas.length === 1 && /Resumo/.test(ent.ignoradas[0]));
@@ -178,7 +179,7 @@ const SITEMAP_1 = `<?xml version="1.0"?><urlset><url><loc>https://www.jrplastico
   const subMenu = R.menuDoHtml('<a href="https://www.bbbfestas.com.br/locacoes-de-barracas/servicos">Serviços</a><ul class="sub-menu"><li><a href="https://www.bbbfestas.com.br/locacoes-de-barracas/barracas">Barracas</a></li></ul>', 'www.bbbfestas.com.br/locacoes-de-barracas');
   const subSm = R.paresDoSitemap(['https://www.bbbfestas.com.br/locacoes-de-barracas/barracas/barraca-de-pipoca/barraca-de-pipoca-osasco', 'barracas/barraca-de-crepe/barraca-de-crepe-sp'], 'www.bbbfestas.com.br/locacoes-de-barracas');
   check('leitores com subpasta: menu, sitemap absoluto e relativo', subMenu.categorias.length === 1 && subMenu.categorias[0].slug === 'barracas' && subSm.pares.length === 2 && subSm.pares.every((p) => p.categoria === 'barracas'));
-  check('célula acima do limite do Excel é cortada e a aba Palavras recebe a lista', (() => { const pal = Array.from({ length: 3000 }, (_, i) => `palavra chave numero ${i}`); const achado = { categorias: [{ slug: 'c', titulo: 'Cat' }], palavras: pal.map((t, i) => ({ slug: 'p' + i, titulo: t, categoria: 'c' })) }; const r = { empresa: 'Busca', aba: 'Busca', linha: 2, razao: 'X', situacao: 'completo', pendencias: [], observacoes: [], dados: { tipo: 'plataforma', site: 'x.com.br', achado, palavras: R.montarPalavras('plataforma', achado) } }; const abas = R.montarAbasXlsx([r]); const cel = abas[0].linhas[0][18]; return cel.length <= R.LIMITE_CELULA + 60 && /aba Palavras\)$/.test(cel) && abas[4].aba === 'Palavras' && abas[4].linhas.length === 3001 && abas[4].linhas[0][5] === 'categoria'; })());
+  check('célula acima do limite do Excel é cortada e a aba Palavras recebe a lista', (() => { const pal = Array.from({ length: 3000 }, (_, i) => `palavra chave numero ${i}`); const achado = { categorias: [{ slug: 'c', titulo: 'Cat' }], palavras: pal.map((t, i) => ({ slug: 'p' + i, titulo: t, categoria: 'c' })) }; const r = { empresa: 'Busca', aba: 'Busca', linha: 2, razao: 'X', situacao: 'completo', pendencias: [], observacoes: [], dados: { tipo: 'plataforma', site: 'x.com.br', achado, palavras: R.montarPalavras('plataforma', achado) } }; const abas = R.montarAbasXlsx([r]); const cel = abas[0].linhas[0][R.COLUNAS.indexOf('palavras')]; return cel.length <= R.LIMITE_CELULA + 60 && /aba Palavras\)$/.test(cel) && abas[4].aba === 'Palavras' && abas[4].linhas.length === 3001 && abas[4].linhas[0][5] === 'categoria'; })());
   check('título da página pelo breadcrumb, senão pelo <title> sem a empresa', R.tituloDaPagina(CAT_CADEIRAS) === 'Cadeiras de Plástico' && R.tituloDaPagina('<title>Comodato de Impressora - 3R informática</title>') === 'Comodato de Impressora');
   check('host com ou sem www e http', R.cardsDoHtml('<a href="http://jrplasticos.com.br/x-y"><h2 class="card__title">X</h2></a>', HOST_HIB).length === 1);
 
@@ -189,18 +190,29 @@ const SITEMAP_1 = `<?xml version="1.0"?><urlset><url><loc>https://www.jrplastico
     numeroContrato: '02007819', site: '3rsustentavel.com.br', idProjeto: '6452', ga: { accountId: '389582297', propertyId: 'properties/536412612', conexao: 'bcrelatorios2@gmail.com' },
     gsc: { siteUrl: 'https://www.3rsustentavel.com.br', conexao: 'bcrelatoriotags@gmail.com' }, pacote: '150', valor: 2034.24, palavras: 'a|b', tipo: 'one',
   };
-  const linha = R.linhaSaida(item, dados);
-  check('19 colunas na ordem da planilha', linha.length === 19 && linha[0] === '34.199.037/0001-02' && linha[6] === 'Busca Cliente' && linha[10] === 'busca_cliente');
-  check('primeiro nome do contato, contrato, ID, GA, GSC, pacote, valor, palavras', linha[3] === 'Sergio' && linha[4] === 'esergio@x.com.br' && linha[7] === '02007819' && linha[9] === '6452' && linha[11] === '389582297' && linha[12] === 'properties/536412612' && linha[13] === 'bcrelatorios2@gmail.com' && linha[14] === 'bcrelatoriotags@gmail.com' && linha[15] === 'https://www.3rsustentavel.com.br' && linha[16] === '150' && linha[17] === 'R$2034,24' && linha[18] === 'a|b');
-  check('o nº do contrato da planilha MPI fica como veio (7 dígitos)', R.linhaSaida(ent.itens[2], { ...dados, numeroContrato: '02041343' })[7] === '2041343');
+  const linha = R.linhaSaida(item, { ...dados, statusContrato: 'Activated' });
+  check('as 19 colunas do Relatório + Situação do Contrato e Modelo depois da razão social', linha.length === 21 && R.COLUNAS.slice(0, 5).join(',') === 'cnpj,razao_social,Situação do Contrato,Modelo,nome_fantasia' && R.COLUNAS.filter((c) => R.COLUNAS_CONFIG.includes(c)).join() === R.COLUNAS_CONFIG.join() && linha[0] === '34.199.037/0001-02' && C(linha, 'bu_nome') === 'Busca Cliente' && C(linha, 'contract_type') === 'busca_cliente');
+  check('situação do contrato e modelo', C(linha, 'Situação do Contrato') === 'Ativo' && C(linha, 'Modelo') === 'Busca One' && R.situacaoDoContrato('Desativado') === 'Desativado' && R.situacaoDoContrato('Draft') === 'Rascunho' && C(R.linhaSaida(item, { ...dados, tipo: 'hibrido' }), 'Modelo') === 'Busca One Híbrido' && C(R.linhaSaida(item, { ...dados, tipo: '' }), 'Modelo') === '');
+  check('primeiro nome do contato, contrato, ID, GA, GSC, pacote, valor, palavras', C(linha, 'nome_responsavel') === 'Sergio' && C(linha, 'email_responsavel') === 'esergio@x.com.br' && C(linha, 'numero_contrato') === '02007819' && C(linha, 'external_id') === '6452' && C(linha, 'ga_account_key') === '389582297' && C(linha, 'ga_property_id') === 'properties/536412612' && C(linha, 'ga_oauth_connection_name') === 'bcrelatorios2@gmail.com' && C(linha, 'gsc_oauth_connection_name') === 'bcrelatoriotags@gmail.com' && C(linha, 'gsc_site_url') === 'https://www.3rsustentavel.com.br' && C(linha, 'pacote_palavras') === '150' && C(linha, 'valor_mensal') === 'R$2034,24' && C(linha, 'palavras') === 'a|b');
+  check('o nº do contrato da planilha MPI fica como veio (7 dígitos)', C(R.linhaSaida(ent.itens[2], { ...dados, numeroContrato: '02041343' }), 'numero_contrato') === '2041343');
+  check('contrato desativado: sem pendência, situação própria; MPI+ sem ID e palavras não é pendência', R.pendenciasDaLinha(item, { ...dados, statusContrato: 'Desativado', ga: {}, palavras: '' }).length === 0 && R.situacao(item, { ...dados, statusContrato: 'Desativado' }) === 'desativado' && R.pendenciasDaLinha(item, { ...dados, tipo: 'mpi+', idProjeto: '', palavras: '' }).length === 0 && R.pendenciasDaLinha(item, { ...dados, tipo: 'one', idProjeto: '' }).includes('id'));
   check('completo sem pendências', R.pendenciasDaLinha(item, dados).length === 0 && R.situacao(item, dados) === 'completo');
   check('sem conta = erro; faltando GA e palavras = parcial', R.situacao(item, { ...dados, contaId: '' }) === 'erro' && R.situacao(item, { ...dados, ga: {}, palavras: '' }) === 'parcial' && R.pendenciasDaLinha(item, { ...dados, ga: { propertyId: 'properties/1' } }).includes('gaConexao'));
   const abas = R.montarAbasXlsx([
     { empresa: 'Busca', aba: 'Busca', linha: 2, razao: 'A', situacao: 'completo', pendencias: [], observacoes: [], dados, saida: linha },
     { empresa: 'MPI', aba: 'MPI', linha: 2, razao: 'B', situacao: 'parcial', pendencias: ['ga'], observacoes: ['x'], dados: { ...dados, ga: {} } },
   ]);
-  check('abas Busca, MPI, Diagnóstico e Pendências', abas.map((a) => a.aba).join(',') === 'Busca,MPI,Diagnóstico,Pendências,Palavras' && abas[0].linhas.length === 1 && abas[1].linhas.length === 1 && abas[2].linhas.length === 2 && abas[3].linhas.length === 1 && abas[3].linhas[0][4] === 'sem propriedade do GA4');
-  check('resumo e linha de texto', /1 completa\(s\), 1 parcial/.test(R.textoResumo([{ situacao: 'completo' }, { situacao: 'parcial' }])) && /completo \(2 palavras\)/.test(R.textoLinha({ razao: 'A', situacao: 'completo', dados })));
+  check('abas Busca, MPI, Diagnóstico e Pendências', abas.map((a) => a.aba).join(',') === 'Busca,MPI,Diagnóstico,Pendências,Palavras,GA4 duplicados' && abas[0].linhas.length === 1 && abas[1].linhas.length === 1 && abas[2].linhas.length === 2 && abas[3].linhas.length === 1 && abas[3].linhas[0][4] === 'sem propriedade do GA4');
+  const dup = [{ account: 'BC 1', accountId: '1', property: 'properties/10', displayName: 'x.com.br', measurementIds: ['G-AAAAAAA'], uris: ['https://x.com.br'], porque: 'data stream e nome' }, { account: 'Busca Cliente 01', accountId: '2', property: 'properties/20', displayName: 'x.com.br', measurementIds: ['G-BBBBBBB'], uris: ['https://www.x.com.br'], porque: 'data stream', viaLogin: 'bcrelatorios2@gmail.com' }];
+  const abas2 = R.montarAbasXlsx([
+    { empresa: 'Busca', aba: 'Busca', linha: 2, razao: 'A', situacao: 'completo', pendencias: [], observacoes: [], dados: { ...dados, tipo: 'hibrido', tags: { ga: ['G-BBBBBBB'], gtm: [] }, ga: { ...dados.ga, propertyId: 'properties/20', duplicadas: dup } } },
+    { empresa: 'Busca', aba: 'Busca', linha: 3, razao: 'D', situacao: 'desativado', pendencias: [], observacoes: [], dados: { ...dados, statusContrato: 'Desativado' } },
+    { empresa: 'Busca', aba: 'Busca', linha: 4, razao: 'S', situacao: 'parcial', pendencias: ['tipo'], observacoes: [], dados: { ...dados, tipo: '' } },
+  ]);
+  const iMod = R.COLUNAS.indexOf('Modelo');
+  check('cores: Modelo pela cor do modelo, linha do desativado inteira em vermelho; desativado fora das Pendências', JSON.stringify(abas2[0].cores) === JSON.stringify([{ linha: 0, coluna: iMod, fundo: '33B833', texto: 'FFFFFF' }, { linha: 1, coluna: null, fundo: 'C00000', texto: 'FFFFFF' }]) && abas2[3].linhas.length === 1 && abas2[3].linhas[0][2] === 'S');
+  check('aba GA4 duplicados: uma linha por propriedade, marcando a da planilha e a da tag do site', abas2[5].linhas.length === 2 && abas2[5].linhas[1][4] === 2 && abas2[5].linhas[1][13] === 'sim' && abas2[5].linhas[1][14] === 'sim' && abas2[5].linhas[0][13] === 'não' && abas2[5].linhas[1][12] === 'bcrelatorios2@gmail.com');
+  check('resumo e linha de texto', /1 completa\(s\), 1 parcial\(is\), 0 sem conta, 1 com contrato desativado/.test(R.textoResumo([{ situacao: 'completo' }, { situacao: 'parcial' }, { situacao: 'desativado' }])) && /completo \(2 palavras\)/.test(R.textoLinha({ razao: 'A', situacao: 'completo', dados })));
 
   console.log('\n=== A rodada de uma linha, com fontes falsas ===');
   const chamadas = [];
@@ -217,7 +229,7 @@ const SITEMAP_1 = `<?xml version="1.0"?><urlset><url><loc>https://www.jrplastico
   check('ordem: Salesforce, site, Google; ID do site dispensa geral.php e painel', chamadas.join(' ') === 'salesforce site:jrplasticos.com.br google:GTM-KMVTSPZM');
   check('o site diz híbrido e ganha da planilha de fluxo', r.dados.tipo === 'hibrido' && /site diz/.test(r.dados.tipoOrigem));
   check('ID do campo oculto, G- vindo do Google entra nas tags', r.dados.idProjeto === '4675' && /campo oculto/.test(r.dados.idOrigem) && r.dados.tags.ga.includes('G-ABC12345'));
-  check('linha completa, com as palavras do híbrido', r.situacao === 'completo' && r.saida[18].split('|').length === 8 && r.saida[17] === 'R$2034,24' && r.saida[3] === 'Ana');
+  check('linha completa, com as palavras do híbrido', r.situacao === 'completo' && C(r.saida, 'palavras').split('|').length === 8 && C(r.saida, 'valor_mensal') === 'R$2034,24' && C(r.saida, 'nome_responsavel') === 'Ana' && C(r.saida, 'Situação do Contrato') === 'Ativo' && C(r.saida, 'Modelo') === 'Busca One Híbrido');
   check('observa a categoria fora de /categorias e as palavras só do sitemap', r.observacoes.some((o) => /sumida/.test(o)) && r.observacoes.some((o) => /2 palavra\(s\) só no sitemap/.test(o)));
   check('o log das fontes passa adiante', logs.includes('info:sf ok'));
 
@@ -246,9 +258,44 @@ const SITEMAP_1 = `<?xml version="1.0"?><urlset><url><loc>https://www.jrplastico
   check('o Google e o ID são procurados para o site Busca One achado', r6.dados.idProjeto === '7777' && r6.dados.tags.gtm[0] === 'GTM-5KW2PF5L' && r6.dados.tipo === 'hibrido');
 
   const r4 = await Rodada.preencherItem(ent.itens[1], { ...deps, salesforce: async () => ({ ok: true, achou: false, motivo: 'nenhuma conta com esse CNPJ', log: [] }) }, () => {});
-  check('conta não achada: situação erro, nada mais é chamado, a linha sai com os fixos', r4.situacao === 'erro' && /CNPJ/.test(r4.erro) && r4.saida[6] === 'Busca Cliente' && r4.saida[18] === '');
+  check('conta não achada: situação erro, nada mais é chamado, a linha sai com os fixos', r4.situacao === 'erro' && /CNPJ/.test(r4.erro) && C(r4.saida, 'bu_nome') === 'Busca Cliente' && C(r4.saida, 'palavras') === '' && C(r4.saida, 'Situação do Contrato') === '');
   const r5 = await Rodada.preencherItem(ent.itens[0], { ...deps, site: async () => { throw new Error('tempo esgotado'); } }, () => {});
   check('fonte que lança não derruba a linha: vira observação e pendência', r5.situacao === 'parcial' && r5.observacoes.some((o) => /tempo esgotado/.test(o)) && r5.pendencias.includes('palavras'));
+
+  console.log('\n=== Regras de 16/10/2026: contrato desativado, MPI+, ID do formulário, subpasta, cores ===');
+  chamadas.length = 0;
+  const desativado = { ...deps, salesforce: async (p) => { chamadas.push('salesforce'); const base = await deps.salesforce(p); chamadas.pop(); return { ...base, contratos: [{ numero: '02000001', status: 'Desativado' }, { numero: '02000009', status: 'Activated', projeto: 'MPI Solutions' }], escolhido: { ...base.escolhido, status: 'Desativado' } }; } };
+  const r7 = await Rodada.preencherItem(ent.itens[0], desativado, () => {});
+  check('contrato desativado: só o Salesforce, a linha diz Desativado e a situação é desativado', chamadas.join(' ') === 'salesforce' && r7.situacao === 'desativado' && r7.pendencias.length === 0 && C(r7.saida, 'Situação do Contrato') === 'Desativado' && C(r7.saida, 'nome_fantasia') === 'JR' && r7.observacoes.some((o) => /desativado.*outro contrato ativo: 02000009/.test(o)));
+  chamadas.length = 0;
+  const mpiPlus = { ...deps, tipoFluxo: async () => ({ tipo: 'MPI+' }), site: async (p) => { chamadas.push('site:' + p.dominio); return { ok: true, host: 'x.com.br', ehBuscaOne: false, ocultos: { idProjeto: '', tipoProjeto: '', projeto: '' }, tags: { ga: ['G-ABC12345'], gtm: [] }, achado: null, fontes: [] }; } };
+  const r8 = await Rodada.preencherItem(ent.itens[0], mpiPlus, () => {});
+  check('MPI+: sem geral.php nem painel, sem ID e sem palavras, e isso não é pendência', r8.dados.tipo === 'mpi+' && !chamadas.includes('geralPhp') && !chamadas.includes('painelId') && C(r8.saida, 'external_id') === '' && C(r8.saida, 'Modelo') === 'MPI+' && !r8.pendencias.includes('id') && !r8.pendencias.includes('palavras'));
+  const kaizen = '<input type="hidden" name="site" value="https://familiakaizen.com.br/">\n<input type="hidden" name="projeto" value="6318">';
+  const cabflix = '<input type="hidden" name="projeto" value="5451">\n<input type="hidden" name="projeto" id="idProjeto" value="">';
+  check('ID do formulário do site (name="projeto"); o 2º vazio não apaga o 1º', R.camposOcultos(kaizen).projeto === '6318' && R.camposOcultos(cabflix).projeto === '5451' && R.camposOcultos(HOME_ONE).projeto === '');
+  chamadas.length = 0;
+  const peloForm = { ...deps, site: async (p) => ({ ok: true, host: HOST_HIB, ehBuscaOne: true, ocultos: R.camposOcultos(kaizen), tags: { ga: [], gtm: [] }, achado: achadoHib, fontes: [] }), geralPhp: async () => { chamadas.push('geralPhp'); return { ok: true }; }, painelId: async () => ({ ok: true }) };
+  const r9 = await Rodada.preencherItem(ent.itens[0], peloForm, () => {});
+  check('o ID do formulário fica por último: o geral.php vem antes e, sem ID nele, vale o do formulário', r9.dados.idProjeto === '6318' && /formulário/.test(r9.dados.idOrigem) && r9.dados.idDoSite === '6318' && chamadas.includes('geralPhp'));
+  const r10 = await Rodada.preencherItem(ent.itens[0], { ...peloForm, geralPhp: async () => ({ ok: true, idProjetoBusca: '4084' }) }, () => {});
+  check('formulário copiado de outro cliente não ganha do geral.php: fica o 4084 e a observação', r10.dados.idProjeto === '4084' && /geral\.php/.test(r10.dados.idOrigem) && r10.observacoes.some((o) => /formulário do site diz projeto 6318/.test(o)));
+  const menuCab = R.menuDoHtml('<li class="dropdown"><a href="https://cabflix.com.br/teleinformatica/servicos" title="Serviços">Serviços</a> <ul class="sub-menu "><li><a href="https://cabflix.com.br/teleinformatica/sistemas-cftv">Sistemas cftv</a></li></ul>', 'cabflix.com.br/teleinformatica');
+  const achadoCab = R.juntarFontes({ menu: menuCab, dataMpi: [], sitemap: { pares: [{ categoria: 'sistemas-cftv', slug: 'sistema-cftv' }], nivel1: [] } });
+  check('categorias só embaixo de Serviços no menu, sem o site nem a planilha de fluxo dizerem: Plataforma', menuCab.institucional === true && achadoCab.menuInstitucional === true && R.decidirTipo({ achado: achadoCab }).tipo === 'plataforma' && R.decidirTipo({ tipoFluxo: 'Busca One Hibrido', achado: achadoCab }).tipo === 'hibrido' && R.menuDoHtml(HOME_HIB, HOST_HIB).institucional === false);
+  check('subpasta já extraída não some (cabflix.com.br/teleinformatica)', R.caminhoDoSite('teleinformatica') === 'teleinformatica' && R.caminhoDoSite('/aulas-de-tenis/') === 'aulas-de-tenis' && R.caminhoDoSite('https://www.cabflix.com.br/teleinformatica/') === 'teleinformatica' && R.caminhoDoSite('') === '');
+
+  // As cores no .xlsx (lib/xlsx-cores.js): o SheetJS lê de volta o fundo pedido.
+  const XLSX = require('xlsx');
+  const Cores = require(path.join(__dirname, '..', 'lib', 'xlsx-cores'));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['a', 'b', 'c'], ['x', '', 'y'], ['z', null, 'w']]), 'Busca');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['h'], ['1']]), 'MPI');
+  const pintado = Cores.aplicarCores(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), [{ colunas: 3, cores: [{ linha: 0, coluna: null, fundo: 'C00000', texto: 'FFFFFF' }, { linha: 1, coluna: 1, fundo: '006400', texto: 'FFFFFF' }] }, { colunas: 1, cores: [] }]);
+  const relido = XLSX.read(pintado, { type: 'buffer', cellStyles: true });
+  const fundo = (ref) => { const c = relido.Sheets.Busca[ref]; return c && c.s && c.s.fgColor && c.s.fgColor.rgb; };
+  check('xlsx-cores: linha inteira e célula vazia pintadas, conteúdo e abas intactos', fundo('A2') === 'C00000' && fundo('C2') === 'C00000' && fundo('B3') === '006400' && !fundo('A3') && !fundo('A1') && relido.SheetNames.join() === 'Busca,MPI' && XLSX.utils.sheet_to_json(relido.Sheets.Busca, { header: 1, defval: '' })[2].join('|') === 'z||w');
+  check('xlsx-cores: sem cores, o arquivo volta igual', Cores.aplicarCores(Buffer.from('x'), [{ colunas: 1, cores: [] }]).toString() === 'x' && Cores.crc32(Buffer.from('123456789')) === 0xcbf43926);
 
   console.log(falhas ? `\n${falhas} verificação(ões) FALHOU(ARAM)` : '\nTudo certo.');
   process.exit(falhas ? 1 : 0);

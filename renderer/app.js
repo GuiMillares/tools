@@ -2469,6 +2469,7 @@ function renderRelatorioTool() {
 function relBadge(r) {
   if (r.situacao === 'completo') return ['ok', 'Completo'];
   if (r.situacao === 'parcial') return ['warn', 'Parcial'];
+  if (r.situacao === 'desativado') return ['err', 'Contrato desativado'];
   return ['err', 'Sem conta'];
 }
 
@@ -2478,7 +2479,7 @@ function relDetalhe(r) {
   const partes = [];
   if (d.site) partes.push(d.site);
   if (d.tipo) partes.push(R.TIPO_ROTULO[d.tipo] || d.tipo);
-  if (d.numeroContrato) partes.push(`contrato ${d.numeroContrato}`);
+  if (d.numeroContrato) partes.push(`contrato ${d.numeroContrato}${d.statusContrato ? ` (${R.situacaoDoContrato(d.statusContrato)})` : ''}`);
   if (d.idProjeto) partes.push(`ID ${d.idProjeto}`);
   if (d.ga && d.ga.propertyId) partes.push(`${d.ga.propertyId}${d.ga.conexao ? ' · ' + d.ga.conexao : ''}`);
   if (d.gsc && d.gsc.siteUrl) partes.push(`SC ${d.gsc.conexao || '?'}`);
@@ -2575,7 +2576,7 @@ async function rodarRelatorio({ continuar = false } = {}) {
       if (relEstado.parar) { log('Parado por você. O que já foi preenchido fica na lista, salvo; "Continuar" retoma daqui.', 'warn'); break; }
       const r = await withBusy(`preenchendo ${item.razao || item.cnpj || item.numeroContrato}`, () => window.RelatorioRodada.preencherItem(item, deps, log));
       relEstado.resultados.push(r);
-      log(R.textoLinha(r), r.situacao === 'completo' ? 'success' : r.situacao === 'parcial' ? 'warn' : 'error');
+      log(R.textoLinha(r), r.situacao === 'completo' ? 'success' : r.situacao === 'parcial' ? 'warn' : r.situacao === 'desativado' ? 'info' : 'error');
       await relSalvar();
       renderRelatorio();
     }

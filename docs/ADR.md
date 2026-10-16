@@ -7126,6 +7126,71 @@ propriedade criada, listada numa aba "Vincular Analytics". Decisões:
   account e dos logins, e não cria se achar. Ficam de fora os sites fora do
   ar e os MPI+. A aba **Vincular Analytics** lista conta, propriedade, G-,
   login, a tag que está hoje no site e onde pôr o G- novo.
+- **Tag que não é de nenhuma propriedade visível** (commit fd1efe5): a
+  busca pelo G- do site não acha nada (tag de outra agência, conta que
+  nenhum login vê), e a busca pelo domínio do data stream, que antes só
+  rodava quando o site não tinha tag, vira a reserva para os dois casos.
+
+**Atualização (16/10/2026): situação do contrato, modelo, MPI+, o ID do
+formulário e os GA4 duplicados.** Pedido do dia, com a planilha inteira
+rodada de novo:
+
+- **Situação do Contrato** e **Modelo**: duas colunas novas na saída, entre
+  `razao_social` e `nome_fantasia` (`COLUNAS` passa a ter 21;
+  `COLUNAS_CONFIG` guarda as 19 do Relatório, que a entrada usa quando não
+  tem cabeçalho). A situação vem do `Status` do contrato escolhido
+  (Activated → Ativo, Desativado, Draft → Rascunho). O modelo é o tipo:
+  Busca One `#006400`, Busca One Híbrido `#33b833`, Plataforma `#dae32b`,
+  MPI+ `#1e91e3`, na cor da célula; sem tipo, a célula fica vazia.
+- **Contrato desativado é pulado.** Depois do Salesforce, a linha com o
+  contrato escolhido desativado para (sem site, ID, Google nem palavras),
+  sai com a situação "Contrato desativado", sem pendência, e a linha
+  inteira fica vermelha (`#C00000`) com texto branco. No MPI vale o
+  contrato da planilha; se a conta tiver outro contrato ativo, o
+  diagnóstico diz qual.
+- **MPI+ não tem ID do painel nem palavras.** O geral.php e a busca no
+  painel não são chamados, o ID que o site trouxer não vai para a coluna, e
+  nem ID nem palavras contam como pendência; o resto (Salesforce, GA4,
+  Search Console) é preenchido.
+- **O ID do formulário do site.** Plataforma e temas antigos não têm o
+  campo `idProjeto`; o ID está no formulário do BuscaZap/cotação,
+  `<input name="projeto" value="6318">` (familiakaizen; no cabflix há dois,
+  o 2º vazio). Ele vale como ID do site. Na planilha, o ID do site que bate
+  com um dos projetos que a pesquisa no painel da Busca Cliente devolveu
+  (familiakaizen: pesquisa pelo domínio → 6318, site
+  restaurantefamiliakaizen2.com.br, que a escada de 14/10 recusava por ser
+  outro domínio) entra; "sem ID" fica só para quem não está nem no site nem
+  no painel.
+- **Subpasta do contrato.** A rodada já passava o caminho extraído
+  ("teleinformatica") e a fonte do site extraía de novo, como se fosse um
+  endereço: a subpasta sumia, e a raiz do cabflix.com.br (outro site, sem
+  link para ela) ficava sem palavras. `caminhoDoSite` aceita o caminho
+  pronto. O menu do tema tinha `<ul class="sub-menu ">` (com espaço), que
+  o leitor do menu não pegava. Categorias só embaixo de Serviços/Produtos
+  no menu, sem o site nem a planilha de fluxo dizerem o tipo, é
+  **Plataforma** (tema antigo), não Híbrido. cabflix: 77 palavras, ID 5451.
+- **GA4 duplicados.** A busca do Google lista todas as propriedades do
+  domínio (data stream com o domínio, pelo cache que a varredura enche, ou
+  propriedade com o nome do domínio) nas contas da service account e dos
+  logins; havendo mais de uma, todas vão para a aba **GA4 duplicados**
+  (conta, propriedade, G-, URL do stream, login que vê, se é a da planilha
+  e se é a tag do site). No dia, ~metade dos domínios tinha mais de uma.
+- **GA4 do tema em subpasta.** Achada só pelo domínio (nenhuma tag casou),
+  a propriedade da raiz ganhava da do tema; com o tema numa subpasta, vale
+  a propriedade cujo data stream aponta para ela
+  (aplicadorabrilhonovo.com.br/raspagem-de-assoalho/: a da conta BC 1, não
+  a "www… - GA4" da Busca Cliente 23). A rodada passa a `subpasta` ao Google.
+- **Rodada mais rápida em pedaços.** O script de amostra aceita
+  `--sem-api-gtm` (a listagem de containers pela API travou a rodada na
+  cota do Google); a rodada inteira foi dividida em três processos
+  (`--linhas` com um terço cada), juntados no fim pela chave Aba!Linha.
+- **Cores no .xlsx.** O SheetJS gratuito não grava estilo; o
+  `lib/xlsx-cores.js` abre o .xlsx gerado (zip, só `zlib`), acrescenta
+  fontes, preenchimentos e formatos ao `styles.xml` e põe `s="N"` nas
+  células (criando as vazias da linha pintada). O `planilha:exportar` pinta
+  as abas que trazem `cores`.
+- O script de amostra lê as sessões de `%APPDATA%\asgard` e os segredos do
+  OAuth em `.enc` (ADR-155/158).
 
 ---
 
