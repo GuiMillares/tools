@@ -7196,6 +7196,59 @@ rodada de novo:
 - O script de amostra lê as sessões de `%APPDATA%\asgard` e os segredos do
   OAuth em `.enc` (ADR-155/158).
 
+**Atualização (16/10/2026, fim da tarde): 140 linhas ativas sem modelo e
+sem palavras que estavam no ar.** A conferência site a site (um script que
+baixou a home e a pasta do contrato/Search Console de cada um) mostrou cinco
+causas, todas na leitura, nenhuma nos sites:
+
+- **Subpasta falsa.** `/x/sitemap.xml` que redireciona para `/sitemap.xml`
+  passava por "sitemap próprio da pasta x" (veterinariapets `/acupunturas/`,
+  induspro e telhaton `/missao/`), e o tema da raiz era lido na pasta errada:
+  zero. Agora a pasta só vale se o endereço final ainda está nela e o
+  sitemap cita URLs dela (ou a página tem cara de tema); e se a subpasta não
+  rende, a raiz é lida de novo. `/cortinas/` que redireciona para
+  `/cortinas-persianas/` vale pela pasta final (casarene).
+- **Tema no `www` quando a raiz vai para outro lugar.** `artfitacademia.com.br`
+  redireciona para `web.…` (WordPress do cliente); o tema está em
+  `www.…/aulas-de-tenis/`. A pasta do contrato/Search Console é testada na
+  origem que respondeu, em `https://www.dom` e em `https://dom`. A home que
+  redireciona para dentro de uma pasta (`moveiscorporativos.interioresmoveis
+  .com.br/mobiliario/`) já é o tema.
+- **Segunda passada pelo Search Console.** Sem cara de Busca One na 1ª
+  leitura e com o Search Console apontando outra pasta
+  (`www.cobeve.com.br/coberturas-para-eventos`) ou outro host do mesmo domínio
+  (`medicina.semework.com.br`), a rodada lê de lá e refaz tipo, ID e Google
+  (as tags do tema são outras). Com as sessões do Search Console vencidas, o
+  script aceita `--dicas` (o endereço de uma rodada anterior).
+- **Links de dois níveis e de outro host.** Menus e cartões só aceitavam
+  link da raiz do site. Nos temas antigos a categoria é `/servicos/<slug>` e
+  a palavra `/hospitalar/<slug>` (horahhospitalar), e o `/categorias` do
+  www.interioresmoveis aponta para `moveiscorporativos.interioresmoveis.com.br
+  /mobiliario/<slug>`. `caminhoInterno` resolve link absoluto ou relativo
+  contra o host (com subpasta) e aceita outro host do mesmo domínio
+  registrável; `/produtos/x`, `/blog/x` e afins ficam fora (o catálogo do
+  Busca One). O sub-menu pode ter comentário, `<span>` ou `<div>` entre o
+  pai e a lista, e outras classes além de `sub-menu`. Páginas de categoria
+  sem cartões: `a.category__keyword` (horah) ou, por último, os links com
+  `title` que a home não tem (cartões Bootstrap do mc).
+- **Template novo em Tailwind** (irvnatal): campos `idProject`/`urlProject`/
+  `emailProject` (o ID bate com o `$idProjetoBusca`), menu do celular com a
+  categoria e as palavras recuadas (`pl-4`). `menuIndentado` lê; o tipo sai
+  **Plataforma** (regra do híbrido), como os outros templates novos.
+- **Tema antigo = Plataforma.** Formulário do BuscaZap 2.0 (`<input
+  name="projeto">`) sem os campos da barra do /doutor é tema antigo: o
+  tipo sai Plataforma antes da planilha de fluxo e da estrutura (veterinariapets,
+  induspro, telhaton e cerca de 200 outros que saíam "Busca One Híbrido").
+- **Site em construção.** A home que é a página padrão da hospedagem
+  ("Something amazing will be constructed here", reidaspolpas) vira
+  observação: o site ainda não foi publicado.
+
+Fora da leitura: as sessões dos quatro logins de relatório venceram nesse
+meio-tempo (`invalid_grant`; app em modo de teste, 7 dias desde 09/10), e o
+Search Console/login do GA4 da revisão vêm da rodada do meio-dia quando a
+revisão ficou sem eles. Os 955 ativos cujo tipo não vinha do `tipoProjeto`
+foram revistos em seis processos.
+
 ---
 
 ## ADR-149 — Escritório, fase 1: orquestrador no processo principal, decisão em código antes do modelo, regras aprendidas com aprovação e validação de execução determinística

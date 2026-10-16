@@ -286,6 +286,11 @@ app.whenReady().then(async () => {
     const wb = XLSX.read(fs.readFileSync(planilha), { type: 'buffer' });
     const abas = wb.SheetNames.map((n) => ({ aba: n, linhas: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }).map((l) => l.map((c) => String(c ?? '').trim())) }));
     const ent = R.lerEntrada(abas);
+    // --dicas <json>: { "Busca!8": "https://www.site.com.br/pasta" }, o endereço do
+    // Search Console de uma rodada anterior, pista para a 2ª passada da rodada
+    // quando as sessões do Search Console venceram.
+    const dicas = opt('--dicas') ? JSON.parse(fs.readFileSync(opt('--dicas'), 'utf-8')) : {};
+    for (const it of ent.itens) if (dicas[R.chaveItem(it)]) it.dicaGsc = dicas[R.chaveItem(it)];
     const pedidas = (opt('--linhas') || '').split(',').map((s) => s.trim()).filter(Boolean);
     for (const p of pedidas) {
       // "Busca:2" ou "Busca=2" (o Git Bash converte listas com ":" como se fossem caminhos).

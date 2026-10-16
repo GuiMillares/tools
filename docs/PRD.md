@@ -682,6 +682,17 @@ tem ID do painel nem palavras (o resto é preenchido). O ID também vem do
 formulário do site (`name="projeto"`, temas antigos e plataforma), e as
 propriedades repetidas do domínio vão para a aba **GA4 duplicados**.
 
+Ainda em 16/10/2026, a leitura do site passou a cobrir: o tema numa pasta
+do `www` quando a raiz redireciona para outro lugar, a home que redireciona
+para dentro da pasta do tema, uma segunda leitura pelo endereço que o Search
+Console registra (outra pasta ou outro host do mesmo domínio), menus e
+cartões com links de dois níveis (`/servicos/x`, `/hospitalar/x`) ou de
+outro host do mesmo domínio, o template novo em Tailwind (`idProject`) e a
+regra **tema antigo (formulário do BuscaZap sem `tipoProjeto`) = Plataforma**.
+Um `/x/sitemap.xml` que redireciona para a raiz não faz de `/x/` uma
+subpasta. A home que é a página padrão da hospedagem vira observação ("site
+ainda não publicado").
+
 ## 5. Fora de escopo
 
 Explicitamente **não** é objetivo do Hub, e um pedido nessa direção deve virar
